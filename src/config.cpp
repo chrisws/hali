@@ -88,7 +88,7 @@ void NitroConfig::load_settings() {
   root.get_str("sandbox", sandbox_);
 
   std::string kv_preset;
-  root.get_str("kv_preset", kv_preset);
+  root.get_str("kv_cache_preset", kv_preset);
   kv_preset_ = to_kv_preset(kv_preset);
 
   // Integer fields
