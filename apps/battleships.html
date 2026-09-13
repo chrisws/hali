@@ -703,6 +703,7 @@
     const c = msg.col;
     const result = msg.result;
 
+    lastAiResult = result;
     playerShots[r][c] = result;
 
     // Update player grid cell
@@ -758,6 +759,8 @@
     setPhase("PLAYER_TURN");
   }
 
+  let lastAiResult = "miss"; // result of AI's most recent shot (fed to stub for targeting)
+
   function onAiCellClick(e) {
     if (phase !== "PLAYER_TURN") return;
     const r = parseInt(e.currentTarget.dataset.r);
@@ -766,22 +769,13 @@
     // Can't shoot already-shot cells
     if (aiShots[r][c] !== null) return;
 
-    // We don't know if it's a hit or miss (AI will tell us)
-    // For now, mark as "pending" visually
+    // Visual feedback: mark as pending
     e.currentTarget.style.boxShadow = "inset 0 0 0 2px #fff";
 
     setPhase("AI_THINKING");
 
-    // We send our shot; the "result" field tells the AI how our shot went
-    // But we don't know the result yet — the stub uses it for its own strategy.
-    // For the stub, we send "miss" as default since it's a mock.
-    // Actually, looking at the stub protocol: the client sends the result of ITS OWN shot.
-    // But we don't know if we hit the AI's ship... The AI stub doesn't validate.
-    // For the stub, we just send the shot coordinates. The stub doesn't actually check hits on the player board.
-    // Let's just send the shot and the stub will handle it.
-    sendToAI({ type: "shot", row: r, col: c, result: "miss" });
-    // Note: for a real AI, we'd need to send the actual hit/miss.
-    // For the stub, it just uses this for its own targeting strategy.
+    // Send our shot. "result" = outcome of AI's *previous* shot (for stub targeting).
+    sendToAI({ type: "shot", row: r, col: c, result: lastAiResult });
   }
 
   function setPhase(p) {
