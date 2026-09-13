@@ -1,0 +1,879 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Battleship — AI vs Human</title>
+  <style>
+    :root {
+      --bg: #1a1a2e;
+      --surface: #16213e;
+      --text: #e4e4e4;
+      --text-muted: #888;
+      --accent: #00d9ff;
+      --accent-2: #0099cc;
+      --hit: #ff4757;
+      --miss: #2ed573;
+      --ship: #e44d6d;
+      --ship-hover: #ff6b81;
+      --grid-line: #333;
+      --cell-size: 36px;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, "Segoe UI", "Inter", system-ui, sans-serif;
+      margin: 0;
+      padding: 1.5rem;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      min-height: 100vh;
+    }
+
+    h1 { font-size: 1.4rem; margin: 0 0 0.8rem; }
+
+    /* ── Overlays ── */
+    .overlay {
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.78);
+      display: flex; align-items: center; justify-content: center;
+      z-index: 100;
+    }
+    .overlay.hidden { display: none; }
+    .overlay-panel {
+      background: var(--surface);
+      border-radius: 12px;
+      padding: 2rem 2.5rem;
+      text-align: center;
+      box-shadow: 0 8px 40px rgba(0,0,0,0.5);
+      border: 1px solid #333;
+      max-width: 420px;
+    }
+    .overlay-panel h2 { margin: 0 0 0.4rem; font-size: 1.4rem; color: var(--accent); }
+    .overlay-panel p { margin: 0 0 1rem; color: var(--text-muted); font-size: 0.9rem; line-height: 1.5; }
+    .overlay-panel button {
+      font-size: 1rem;
+      padding: 0.7rem 1.5rem;
+      margin: 0.3rem;
+      border: 2px solid var(--accent);
+      border-radius: 8px;
+      background: transparent;
+      color: var(--accent);
+      cursor: pointer;
+      transition: background 0.15s, color 0.15s, box-shadow 0.15s;
+    }
+    .overlay-panel button:hover {
+      background: var(--accent);
+      color: #000;
+      box-shadow: 0 0 20px rgba(0,217,255,0.5);
+    }
+
+    /* ── Setup phase ── */
+    #setup-area {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      gap: 1rem;
+    }
+    #setup-area.visible { display: flex; }
+
+    #setup-layout {
+      display: flex;
+      gap: 1.5rem;
+      flex-wrap: wrap;
+      justify-content: center;
+      align-items: flex-start;
+    }
+
+    /* ── Ship tray ── */
+    #ship-tray {
+      background: var(--surface);
+      border-radius: 8px;
+      border: 1px solid #333;
+      padding: 1rem;
+      min-width: 180px;
+    }
+    #ship-tray h3 {
+      font-size: 0.9rem;
+      color: var(--text-muted);
+      margin: 0 0 0.6rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+    .ship-item {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.4rem 0.5rem;
+      margin: 0.2rem 0;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: background 0.15s;
+      border: 1px solid transparent;
+    }
+    .ship-item:hover { background: rgba(0,217,255,0.08); }
+    .ship-item.selected {
+      border: 1px solid var(--accent);
+      background: rgba(0,217,255,0.12);
+    }
+    .ship-item.placed {
+      opacity: 0.35;
+      cursor: default;
+      pointer-events: none;
+    }
+    .ship-item .ship-bits {
+      display: flex;
+      gap: 2px;
+    }
+    .ship-item .bit {
+      width: 14px; height: 14px;
+      background: var(--ship);
+      border-radius: 2px;
+    }
+    .ship-item .ship-name {
+      font-size: 0.82rem;
+      flex: 1;
+    }
+
+    #rotate-btn {
+      margin-top: 0.6rem;
+      font-size: 0.85rem;
+      padding: 0.4rem 0.8rem;
+      border: 1px solid var(--accent);
+      border-radius: 6px;
+      background: transparent;
+      color: var(--accent);
+      cursor: pointer;
+    }
+    #rotate-btn:hover { background: var(--accent); color: #000; }
+    #rotate-btn:disabled { opacity: 0.4; cursor: default; }
+
+    /* ── Grid (shared) ── */
+    .grid-wrap {
+      position: relative;
+    }
+    .grid-label {
+      display: block;
+      margin-bottom: 0.3rem;
+      font-size: 0.78rem;
+      color: var(--text-muted);
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      text-align: center;
+    }
+
+    .grid-frame {
+      position: relative;
+      display: inline-block;
+    }
+
+    /* Column headers (A-J) */
+    .col-headers {
+      display: grid;
+      grid-template-columns: 20px repeat(10, var(--cell-size));
+      margin-left: 0;
+    }
+    .col-headers span {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.72rem;
+      color: var(--text-muted);
+      user-select: none;
+    }
+
+    /* Row+grid container */
+    .grid-rows {
+      display: grid;
+      grid-template-columns: 20px repeat(10, var(--cell-size));
+    }
+    .row-header {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.72rem;
+      color: var(--text-muted);
+      user-select: none;
+    }
+
+    #player-grid, #ai-grid {
+      display: contents;
+    }
+
+    .cell {
+      width: var(--cell-size);
+      height: var(--cell-size);
+      border: 1px solid var(--grid-line);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      background: #0d1117;
+    }
+    .cell.placement-hover {
+      background: rgba(0, 217, 255, 0.22);
+      box-shadow: inset 0 0 0 2px var(--accent);
+    }
+    .cell.placement-invalid {
+      background: rgba(255, 71, 87, 0.22);
+      box-shadow: inset 0 0 0 2px var(--hit);
+    }
+    .cell.ship {
+      background: rgba(228, 77, 109, 0.35);
+    }
+    .cell.ship::after {
+      content: "";
+      position: absolute;
+      inset: 3px;
+      border-radius: 4px;
+      background: radial-gradient(circle at center, var(--ship-hover), var(--ship));
+      opacity: 0.85;
+    }
+    .cell.hit::after {
+      content: "✕";
+      color: var(--hit);
+      font-size: 16px;
+      font-weight: bold;
+    }
+    .cell.miss::after {
+      content: "•";
+      color: var(--miss);
+      font-size: 14px;
+    }
+    .cell.valid-shoot {
+      cursor: crosshair;
+    }
+    .cell.valid-shoot:hover {
+      box-shadow: inset 0 0 0 2px var(--hit);
+      background: rgba(255, 71, 87, 0.12);
+    }
+    .cell.shot-disabled {
+      cursor: default;
+      opacity: 0.6;
+    }
+
+    /* ── Status bar ── */
+    #status-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      max-width: 580px;
+      width: 100%;
+      padding: 0.5rem 1rem;
+      background: var(--surface);
+      border-radius: 8px;
+      border: 1px solid #333;
+      font-size: 0.9rem;
+    }
+    #turn-indicator { font-weight: 600; }
+    #turn-indicator.ai-turn { color: var(--hit); }
+    #turn-indicator.player-turn { color: var(--accent); }
+    #turn-indicator.setup { color: var(--text-muted); }
+
+    #btn-bar {
+      display: flex;
+      gap: 0.5rem;
+    }
+    #btn-bar button {
+      font-size: 0.85rem;
+      padding: 0.4rem 0.9rem;
+      border: 1px solid var(--accent);
+      border-radius: 6px;
+      background: transparent;
+      color: var(--accent);
+      cursor: pointer;
+      transition: background 0.15s, color 0.15s;
+    }
+    #btn-bar button:hover { background: var(--accent); color: #000; }
+    #btn-bar button:disabled { opacity: 0.35; cursor: not-allowed; }
+    #btn-bar button.danger { border-color: var(--hit); color: var(--hit); }
+    #btn-bar button.danger:hover { background: var(--hit); color: #fff; }
+
+    /* ── Log ── */
+    #shot-log {
+      max-width: 580px;
+      width: 100%;
+      background: var(--surface);
+      padding: 0.6rem 1rem;
+      border-radius: 8px;
+      border: 1px solid #333;
+      max-height: 160px;
+      overflow-y: auto;
+      font-size: 0.82rem;
+      font-family: "SF Mono", "Consolas", monospace;
+    }
+    #shot-log h4 { margin: 0 0 0.4rem; font-size: 0.85rem; color: var(--text-muted); }
+    .log-row { margin-bottom: 0.15rem; }
+    .log-row .who { color: var(--text-muted); margin-right: 0.4rem; }
+    .log-row .res-hit { color: var(--hit); }
+    .log-row .res-miss { color: var(--miss); }
+
+    /* ── Responsive ── */
+    @media (max-width: 760px) {
+      :root { --cell-size: 28px; }
+      .col-headers, .grid-rows {
+        grid-template-columns: 18px repeat(10, var(--cell-size));
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Game over overlay -->
+  <div id="gameover-overlay" class="overlay hidden">
+    <div class="overlay-panel">
+      <h2 id="gameover-title">Game Over</h2>
+      <p id="gameover-msg"></p>
+      <button onclick="location.reload()">Play Again</button>
+    </div>
+  </div>
+
+  <!-- Setup phase -->
+  <div id="setup-area">
+    <h1>🚢 Battleship — Fleet Setup</h1>
+    <p style="color:var(--text-muted);font-size:0.85rem">Place all 5 ships, then launch the battle.</p>
+
+    <div id="setup-layout">
+      <!-- Ship tray -->
+      <div id="ship-tray">
+        <h3>Your Fleet</h3>
+        <div id="ship-list"></div>
+        <button id="rotate-btn" onclick="toggleOrientation()" disabled>↻ Rotate</button>
+      </div>
+
+      <!-- Player grid -->
+      <div class="grid-wrap">
+        <span class="grid-label">Your Grid</span>
+        <div class="grid-frame" id="setup-grid-frame"></div>
+      </div>
+    </div>
+
+    <div id="status-bar">
+      <div><span id="turn-indicator" class="setup">Select a ship, then click the grid to place it.</span></div>
+      <div id="btn-bar">
+        <button id="start-btn" onclick="startBattle()" disabled>🚀 Launch Battle</button>
+        <button id="reset-btn" onclick="resetPlacement()">↺ Reset</button>
+      </div>
+    </div>
+
+    <div id="shot-log" style="display:none"></div>
+  </div>
+
+  <!-- Battle phase -->
+  <div id="battle-area" style="display:none;flex-direction:column;align-items:center;gap:0.8rem">
+    <h1>🚢 Battleship</h1>
+
+    <div id="battle-layout" style="display:flex;gap:1.2rem;flex-wrap:wrap;justify-content:center;align-items:flex-start">
+      <div class="grid-wrap">
+        <span class="grid-label">Your Fleet</span>
+        <div class="grid-frame" id="battle-player-frame"></div>
+      </div>
+      <div class="grid-wrap">
+        <span class="grid-label">AI Fleet</span>
+        <div class="grid-frame" id="battle-ai-frame"></div>
+      </div>
+    </div>
+
+    <div id="status-bar">
+      <div><span id="turn-indicator"></span></div>
+      <div id="btn-bar">
+        <button id="resign-btn" onclick="resign()" class="danger" disabled>🏳️ Resign</button>
+      </div>
+    </div>
+
+    <div id="shot-log">
+      <h4>Shot Log</h4>
+      <div id="shot-list"></div>
+    </div>
+  </div>
+
+  <script>
+  /* ═══════════════════════════════════════════
+     CONSTANTS
+     ═══════════════════════════════════════════ */
+  const N = 10;
+  const SHIPS = [
+    { name: "Battleship",  size: 4 },
+    { name: "Cruiser",     size: 3 },
+    { name: "Destroyer",   size: 2 },
+    { name: "Submarine",   size: 2 },
+    { name: "Patrol Boat", size: 1 }
+  ];
+  const COLS = "ABCDEFGHIJ";
+
+  const AI_WS_URL = "ws://localhost:8001";
+
+  /* ═══════════════════════════════════════════
+     STATE
+     ═══════════════════════════════════════════ */
+  let phase = "SETUP"; // SETUP | PLAYER_TURN | AI_THINKING | GAME_OVER
+  let ws = null;
+
+  // Player board: 10x10, each cell is null or { shipId, name }
+  let playerBoard = [];
+  // AI board (we don't know it, but we track what we've shot)
+  let aiShots = []; // 10x10: "hit" | "miss" | null
+  // Player shots (AI's shots at us, we know the result)
+  let playerShots = []; // 10x10: "hit" | "miss" | null
+
+  // Placement state
+  let selectedShipIdx = -1;
+  let shipOrientation = "H"; // H or V
+  let shipsPlaced = []; // indices of SHIPS placed
+  let hoverCells = [];   // cells currently highlighted for placement
+
+  /* ═══════════════════════════════════════════
+     GRID BUILDING
+     ═══════════════════════════════════════════ */
+  function buildGrid(frameId, isAiGrid) {
+    const frame = document.getElementById(frameId);
+    frame.innerHTML = "";
+
+    // Column headers row
+    const colHdr = document.createElement("div");
+    colHdr.className = "col-headers";
+    const corner = document.createElement("span");
+    colHdr.appendChild(corner);
+    for (let c = 0; c < N; c++) {
+      const s = document.createElement("span");
+      s.textContent = COLS[c];
+      colHdr.appendChild(s);
+    }
+    frame.appendChild(colHdr);
+
+    // Grid rows
+    const rowsWrap = document.createElement("div");
+    rowsWrap.className = "grid-rows";
+    for (let r = 0; r < N; r++) {
+      const rh = document.createElement("div");
+      rh.className = "row-header";
+      rh.textContent = String(r + 1);
+      rowsWrap.appendChild(rh);
+
+      for (let c = 0; c < N; c++) {
+        const cell = document.createElement("div");
+        cell.className = "cell";
+        cell.dataset.r = r;
+        cell.dataset.c = c;
+        if (!isAiGrid) {
+          cell.addEventListener("click", onCellClick);
+          cell.addEventListener("mousemove", onCellHover);
+          cell.addEventListener("mouseleave", onCellLeave);
+        } else {
+          cell.addEventListener("click", onAiCellClick);
+        }
+        rowsWrap.appendChild(cell);
+      }
+    }
+    frame.appendChild(rowsWrap);
+  }
+
+  function getCells(frameId) {
+    return document.getElementById(frameId).querySelectorAll(".cell");
+  }
+
+  function getCell(frameId, r, c) {
+    return document.getElementById(frameId).querySelector(`.cell[data-r="${r}"][data-c="${c}"]`);
+  }
+
+  /* ═══════════════════════════════════════════
+     SETUP: SHIP PLACEMENT
+     ═══════════════════════════════════════════ */
+  function initSetup() {
+    phase = "SETUP";
+    playerBoard = Array.from({length: N}, () => Array(N).fill(null));
+    aiShots = Array.from({length: N}, () => Array(N).fill(null));
+    playerShots = Array.from({length: N}, () => Array(N).fill(null));
+    selectedShipIdx = -1;
+    shipsPlaced = [];
+    shipOrientation = "H";
+
+    buildGrid("setup-grid-frame", false);
+    renderShipTray();
+    updateSetupStatus();
+  }
+
+  function renderShipTray() {
+    const list = document.getElementById("ship-list");
+    list.innerHTML = "";
+    SHIPS.forEach((ship, i) => {
+      const div = document.createElement("div");
+      div.className = "ship-item";
+      if (shipsPlaced.includes(i)) div.classList.add("placed");
+      if (selectedShipIdx === i) div.classList.add("selected");
+      const bits = document.createElement("div");
+      bits.className = "ship-bits";
+      for (let b = 0; b < ship.size; b++) {
+        const bit = document.createElement("span");
+        bit.className = "bit";
+        bits.appendChild(bit);
+      }
+      const name = document.createElement("span");
+      name.className = "ship-name";
+      name.textContent = ship.name;
+      div.appendChild(bits);
+      div.appendChild(name);
+      div.addEventListener("click", () => selectShip(i));
+      list.appendChild(div);
+    });
+    document.getElementById("rotate-btn").disabled = (selectedShipIdx === -1);
+    document.getElementById("start-btn").disabled = (shipsPlaced.length < SHIPS.length);
+  }
+
+  function selectShip(idx) {
+    if (shipsPlaced.includes(idx)) return;
+    selectedShipIdx = idx;
+    renderShipTray();
+  }
+
+  function toggleOrientation() {
+    if (selectedShipIdx === -1) return;
+    shipOrientation = shipOrientation === "H" ? "V" : "H";
+    document.getElementById("rotate-btn").textContent =
+      shipOrientation === "H" ? "↻ Rotate (V)" : "↻ Rotate (H)";
+  }
+
+  function getPlacementCells(r, c) {
+    if (selectedShipIdx === -1) return [];
+    const size = SHIPS[selectedShipIdx].size;
+    const cells = [];
+    for (let i = 0; i < size; i++) {
+      if (shipOrientation === "H") cells.push({ r: r, c: c + i });
+      else cells.push({ r: r + i, c: c });
+    }
+    return cells;
+  }
+
+  function canPlace(r, c) {
+    const cells = getPlacementCells(r, c);
+    for (const cell of cells) {
+      if (cell.r < 0 || cell.r >= N || cell.c < 0 || cell.c >= N) return false;
+      if (playerBoard[cell.r][cell.c] !== null) return false;
+    }
+    return true;
+  }
+
+  function clearHover() {
+    hoverCells.forEach(({r, c}) => {
+      const el = getCell("setup-grid-frame", r, c);
+      if (el) el.classList.remove("placement-hover", "placement-invalid");
+    });
+    hoverCells = [];
+  }
+
+  function onCellHover(e) {
+    if (phase !== "SETUP" || selectedShipIdx === -1) return;
+    clearHover();
+    const r = parseInt(e.currentTarget.dataset.r);
+    const c = parseInt(e.currentTarget.dataset.c);
+    const cells = getPlacementCells(r, c);
+    const valid = canPlace(r, c);
+    cells.forEach(cell => {
+      if (cell.r < 0 || cell.r >= N || cell.c < 0 || cell.c >= N) return;
+      const el = getCell("setup-grid-frame", cell.r, cell.c);
+      if (el) el.classList.add(valid ? "placement-hover" : "placement-invalid");
+      hoverCells.push(cell);
+    });
+  }
+
+  function onCellLeave() {
+    clearHover();
+  }
+
+  function onCellClick(e) {
+    if (phase !== "SETUP" || selectedShipIdx === -1) return;
+    const r = parseInt(e.currentTarget.dataset.r);
+    const c = parseInt(e.currentTarget.dataset.c);
+    if (!canPlace(r, c)) return;
+
+    const shipId = `p${shipsPlaced.length}`;
+    const ship = SHIPS[selectedShipIdx];
+    getPlacementCells(r, c).forEach(cell => {
+      playerBoard[cell.r][cell.c] = { shipId, name: ship.name };
+      const el = getCell("setup-grid-frame", cell.r, cell.c);
+      if (el) {
+        el.classList.add("ship");
+        el.classList.remove("placement-hover", "placement-invalid");
+      }
+    });
+    shipsPlaced.push(selectedShipIdx);
+    selectedShipIdx = -1;
+    clearHover();
+    renderShipTray();
+    updateSetupStatus();
+  }
+
+  function resetPlacement() {
+    playerBoard = Array.from({length: N}, () => Array(N).fill(null));
+    shipsPlaced = [];
+    selectedShipIdx = -1;
+    clearHover();
+    // Re-render cells
+    getCells("setup-grid-frame").forEach(cell => {
+      cell.classList.remove("ship", "placement-hover", "placement-invalid");
+    });
+    renderShipTray();
+    updateSetupStatus();
+  }
+
+  function updateSetupStatus() {
+    const el = document.getElementById("turn-indicator");
+    const remaining = SHIPS.length - shipsPlaced.length;
+    if (remaining === 0) {
+      el.textContent = "All ships placed! Ready to launch.";
+    } else if (selectedShipIdx !== -1) {
+      el.textContent = `Placing: ${SHIPS[selectedShipIdx].name} (${shipOrientation === "H" ? "Horizontal" : "Vertical"})`;
+    } else {
+      el.textContent = `Select a ship from the tray. ${remaining} remaining.`;
+    }
+  }
+
+  /* ═══════════════════════════════════════════
+     BATTLE: START & WEBSOCKET
+     ═══════════════════════════════════════════ */
+  function startBattle() {
+    if (shipsPlaced.length < SHIPS.length) return;
+    document.getElementById("setup-area").style.display = "none";
+    document.getElementById("battle-area").style.display = "flex";
+
+    buildGrid("battle-player-frame", false);
+    buildGrid("battle-ai-frame", true);
+
+    // Render player ships on battle grid
+    for (let r = 0; r < N; r++) {
+      for (let c = 0; c < N; c++) {
+        if (playerBoard[r][c]) {
+          getCell("battle-player-frame", r, c).classList.add("ship");
+        }
+      }
+    }
+
+    connectWS();
+    setPhase("PLAYER_TURN");
+  }
+
+  function connectWS() {
+    console.log("[battleship] connecting to", AI_WS_URL);
+    ws = new WebSocket(AI_WS_URL);
+    ws.onopen = () => {
+      console.log("[battleship] WS open");
+    };
+    ws.onmessage = (e) => handleWSMessage(e.data);
+    ws.onclose = () => {
+      console.warn("[battleship] WS closed");
+    };
+    ws.onerror = (e) => {
+      console.error("[battleship] WS error", e);
+    };
+  }
+
+  function sendToAI(msg) {
+    const json = JSON.stringify(msg);
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(json);
+      console.log("[battleship] sent:", json);
+    } else {
+      console.warn("[battleship] WS not open");
+    }
+  }
+
+  function handleWSMessage(raw) {
+    console.log("[battleship] received:", raw);
+    let msg;
+    try {
+      msg = JSON.parse(raw);
+    } catch {
+      return;
+    }
+
+    if (msg.type === "shot") {
+      handleAiShot(msg);
+    } else if (msg.type === "game_over") {
+      handleGameOver(msg);
+    }
+  }
+
+  function handleAiShot(msg) {
+    const r = msg.row;
+    const c = msg.col;
+    const result = msg.result;
+
+    playerShots[r][c] = result;
+
+    // Update player grid cell
+    const cellEl = getCell("battle-player-frame", r, c);
+    if (cellEl) {
+      cellEl.classList.remove("valid-shoot");
+      cellEl.classList.add(result === "hit" ? "hit" : "miss");
+    }
+
+    // Check if all player ships destroyed
+    if (result === "hit") {
+      // Check if this completes a ship
+      const shipId = playerBoard[r][c] ? playerBoard[r][c].shipId : null;
+      if (shipId) {
+        let destroyed = true;
+        for (let rr = 0; rr < N; rr++) {
+          for (let cc = 0; cc < N; cc++) {
+            if (playerBoard[rr][cc] && playerBoard[rr][cc].shipId === shipId && !playerShots[rr][cc]) {
+              destroyed = false;
+              break;
+            }
+          }
+          if (!destroyed) break;
+        }
+        if (destroyed) {
+          // Remove ship visuals
+          for (let rr = 0; rr < N; rr++) {
+            for (let cc = 0; cc < N; cc++) {
+              if (playerBoard[rr][cc] && playerBoard[rr][cc].shipId === shipId) {
+                playerBoard[rr][cc] = null;
+                const el = getCell("battle-player-frame", rr, cc);
+                if (el) el.classList.remove("ship");
+              }
+            }
+          }
+          // Check total destruction
+          let anyShipsLeft = false;
+          for (let rr = 0; rr < N; rr++) {
+            for (let cc = 0; cc < N; cc++) {
+              if (playerBoard[rr][cc]) { anyShipsLeft = true; break; }
+            }
+            if (anyShipsLeft) break;
+          }
+          if (!anyShipsLeft) {
+            handleGameOver({ type: "game_over", result: "ai_win", message: "Your fleet has been destroyed!" });
+            return;
+          }
+        }
+      }
+    }
+
+    appendLog("AI", COLS[c] + (r + 1), result);
+    setPhase("PLAYER_TURN");
+  }
+
+  function onAiCellClick(e) {
+    if (phase !== "PLAYER_TURN") return;
+    const r = parseInt(e.currentTarget.dataset.r);
+    const c = parseInt(e.currentTarget.dataset.c);
+
+    // Can't shoot already-shot cells
+    if (aiShots[r][c] !== null) return;
+
+    // We don't know if it's a hit or miss (AI will tell us)
+    // For now, mark as "pending" visually
+    e.currentTarget.style.boxShadow = "inset 0 0 0 2px #fff";
+
+    setPhase("AI_THINKING");
+
+    // We send our shot; the "result" field tells the AI how our shot went
+    // But we don't know the result yet — the stub uses it for its own strategy.
+    // For the stub, we send "miss" as default since it's a mock.
+    // Actually, looking at the stub protocol: the client sends the result of ITS OWN shot.
+    // But we don't know if we hit the AI's ship... The AI stub doesn't validate.
+    // For the stub, we just send the shot coordinates. The stub doesn't actually check hits on the player board.
+    // Let's just send the shot and the stub will handle it.
+    sendToAI({ type: "shot", row: r, col: c, result: "miss" });
+    // Note: for a real AI, we'd need to send the actual hit/miss.
+    // For the stub, it just uses this for its own targeting strategy.
+  }
+
+  function setPhase(p) {
+    phase = p;
+    updateBattleStatus();
+  }
+
+  function updateBattleStatus() {
+    const el = document.getElementById("turn-indicator");
+    el.classList.remove("ai-turn", "player-turn", "setup");
+    switch (phase) {
+      case "PLAYER_TURN":
+        el.textContent = "Your turn — click a square to fire!";
+        el.classList.add("player-turn");
+        break;
+      case "AI_THINKING":
+        el.textContent = "AI is firing\u2026";
+        el.classList.add("ai-turn");
+        break;
+      case "GAME_OVER":
+        el.textContent = "Battle complete";
+        break;
+    }
+    document.getElementById("resign-btn").disabled = (phase !== "PLAYER_TURN");
+  }
+
+  /* ── Enable/disable shooting targets ── */
+  function refreshShootTargets() {
+    if (phase !== "PLAYER_TURN") return;
+    getCells("battle-ai-frame").forEach(cell => {
+      const r = parseInt(cell.dataset.r);
+      const c = parseInt(cell.dataset.c);
+      cell.classList.remove("valid-shoot", "shot-disabled");
+      if (aiShots[r][c] !== null) {
+        cell.classList.add("shot-disabled");
+      } else {
+        cell.classList.add("valid-shoot");
+      }
+    });
+  }
+
+  /* ═══════════════════════════════════════════
+     GAME OVER & RESIGN
+     ═══════════════════════════════════════════ */
+  function handleGameOver(msg) {
+    setPhase("GAME_OVER");
+    document.getElementById("gameover-title").textContent =
+      msg.result === "player_win" ? "Victory!" : "Defeat";
+    document.getElementById("gameover-msg").textContent = msg.message || "Battle complete.";
+    document.getElementById("gameover-overlay").classList.remove("hidden");
+    refreshShootTargets();
+  }
+
+  function resign() {
+    if (phase !== "PLAYER_TURN") return;
+    sendToAI({ type: "resign" });
+    handleGameOver({ result: "ai_win", message: "You have surrendered." });
+  }
+
+  /* ═══════════════════════════════════════════
+     SHOT LOG
+     ═══════════════════════════════════════════ */
+  function appendLog(who, coord, result) {
+    const list = document.getElementById("shot-list");
+    const div = document.createElement("div");
+    div.className = "log-row";
+    div.innerHTML =
+      `<span class="who">${who}:</span> ${coord} → <span class="${result === "hit" ? "res-hit" : "res-miss"}">${result.toUpperCase()}</span>`;
+    list.appendChild(div);
+    list.parentElement.scrollTop = list.parentElement.scrollHeight;
+  }
+
+  /* ═══════════════════════════════════════════
+     INIT
+     ═══════════════════════════════════════════ */
+  document.addEventListener("DOMContentLoaded", () => {
+    document.getElementById("setup-area").classList.add("visible");
+    initSetup();
+
+    // After battle starts, refresh shoot targets on player turn
+    const observer = new MutationObserver(() => {
+      if (phase === "PLAYER_TURN") refreshShootTargets();
+    });
+    observer.observe(document.getElementById("battle-ai-frame"), { attributes: true, subtree: true });
+  });
+
+  // Override setPhase to also refresh targets
+  const _origSetPhase = setPhase;
+  setPhase = function(p) {
+    _origSetPhase(p);
+    if (p === "PLAYER_TURN") refreshShootTargets();
+  };
+  </script>
+</body>
+</html>
