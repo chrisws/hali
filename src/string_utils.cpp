@@ -50,6 +50,7 @@ std::vector<std::string> split_utf8_string(const std::string &input, size_t max_
 
   unsigned current_count = 0;
   unsigned pending_count = 0;
+  unsigned back_count = 0;
   auto it = input.begin();
   const auto end = input.end();
 
@@ -63,10 +64,15 @@ std::vector<std::string> split_utf8_string(const std::string &input, size_t max_
     current_count = 0;
   };
 
+  auto append_result = [&](const std::string &str, int count) -> void {
+    result.push_back(str);
+    back_count = count;
+  };
+
   auto push_text = [&]() -> void {
     current.append(pending);
     if (!is_blank(current)) {
-      result.push_back(current);
+      append_result(current, current_count + pending_count);
     }
     clear_pending();
     clear_current();
@@ -81,6 +87,7 @@ std::vector<std::string> split_utf8_string(const std::string &input, size_t max_
     }
     if (code_point == '\n' || code_point == '\r') {
       push_text();
+      back_count = max_chars_per_segment;
       continue;
     }
     utf8::append(code_point, pending);
@@ -89,17 +96,17 @@ std::vector<std::string> split_utf8_string(const std::string &input, size_t max_
       if (is_space(code_point)) {
         push_text();
       } else if (is_blank(current)) {
-        result.push_back(pending);
+        append_result(pending, pending_count);
         clear_pending();
-      } else if (is_space(utf8::peek_next(it, end))) {
+      } else if (it != end && is_space(utf8::peek_next(it, end))) {
         // both current and pending fit inside the row
         push_text();
       } else {
         // wrap pending onto the next line
-        result.push_back(current);
+        append_result(current, current_count);
         clear_current();
       }
-      if (is_space(utf8::peek_next(it, end))) {
+      if (it != end && is_space(utf8::peek_next(it, end))) {
         // discard leading whitespace on next line
         utf8::next(it, end);
       }
@@ -114,7 +121,11 @@ std::vector<std::string> split_utf8_string(const std::string &input, size_t max_
   } else {
     current.append(pending);
     if (!is_blank(current)) {
-      result.back() += " " + current;
+      if (back_count + pending_count + current_count >= max_chars_per_segment) {
+        append_result(current, pending_count + current_count);
+      } else {
+        result.back() += " " + current;
+      }
     }
   }
   return result;

@@ -166,9 +166,10 @@ TEST(test_split_utf8_string_multibyte) {
   auto segments = split_utf8_string(input, 3);
 
   // Each Cyrillic character is 2 bytes in UTF-8
-  assert(segments.size() == 2);
-  assert(segments[0] == "Прив");
-  assert(segments[1] == "ет мир");
+  assert(segments.size() == 3);
+  assert(segments[0] == "При");
+  assert(segments[1] == "вет");
+  assert(segments[2] == "мир");
 }
 
 TEST(test_split_utf8_string_unicode) {
@@ -262,6 +263,17 @@ TEST(test_split_utf8_string_crlf) {
   assert(segments[2] == "Line3");
 }
 
+TEST(test_split_utf8_string_wrap) {
+  std::string input = " 🤔 ▏this is a long line of text that should only wrap to at most 3 segments given the input length";
+  for (int i = 100; i > 10; i-= 1) {
+    auto segments = split_utf8_string(input, i);
+    fprintf(stderr, "at %d have %lu segments\n", i, segments.size());
+    for (int j = 0; j < segments.size(); j++) {
+      fprintf(stderr, "   %d %s\n", j, segments[j].c_str());
+    }
+  }
+}
+
 void run_split_tests() {
   std::cout << "=== Running string_utils_2 Unit Tests ===\n\n";
 
@@ -277,6 +289,7 @@ void run_split_tests() {
   RUN_TEST(test_split_utf8_string_preserves_content);
   RUN_TEST(test_split_utf8_string_edge_cases);
   RUN_TEST(test_split_utf8_string_crlf);
+  RUN_TEST(test_split_utf8_string_wrap);
 
   std::cout << "\n=== All tests completed ===\n";
 }
