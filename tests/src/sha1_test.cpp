@@ -1,15 +1,12 @@
-#include <array>
 #include <cassert>
-#include <cstddef>
-#include <cstdint>
 #include <iostream>
 #include <string>
-#include <vector>
 
 #include <openssl/sha.h>
+#include "sha1.h"
 
 using namespace std;
-static constexpr char  WS_GUID[] = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
+static constexpr char WS_GUID[] = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 
 static std::string base64_encode(const uint8_t *data, size_t len) {
   static constexpr char TABLE[] =
@@ -29,13 +26,20 @@ static std::string base64_encode(const uint8_t *data, size_t len) {
   return out;
 }
 
-static std::string ws_accept_key(const std::string &client_key) {
+static std::string ws_accept_key_openssl(const std::string &client_key) {
   const std::string input = client_key + WS_GUID;
   unsigned char digest[SHA_DIGEST_LENGTH];
   SHA1(reinterpret_cast<const unsigned char*>(input.data()),  input.size(), digest);
   return base64_encode(digest, SHA_DIGEST_LENGTH);
 }
 
+static std::string ws_accept_key(const std::string &client_key) {
+  std::string concat = client_key + WS_GUID;
+  auto digest = sha1::hash(concat);
+  return base64_encode(digest.data(), digest.size());
+}
+
 void sha1_test() {
-  std::cout << "\nAll sha1 tests passed!" << std::endl;
+  const std::string client_key = "12345";
+  assert(ws_accept_key_openssl(client_key) == ws_accept_key(client_key));
 }
