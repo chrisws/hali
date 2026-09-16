@@ -79,12 +79,7 @@ std::vector<std::string> split_utf8_string(const std::string &input, size_t max_
   };
 
   while (it != end) {
-    char32_t code_point;
-    try {
-      code_point = utf8::next(it, end);
-    } catch(const utf8::exception& utfcpp_ex) {
-      break;
-    }
+    char32_t code_point = utf8::next(it, end);
     if (code_point == '\n' || code_point == '\r') {
       push_text();
       back_count = max_chars_per_segment;

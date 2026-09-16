@@ -41,7 +41,7 @@ struct NitroConfig {
   int   n_ctx_          = 65536;
   int   n_batch_        = 512;
   int   n_gpu_layers_   = 32;
-  bool  offload_kqv_    = false;
+  bool  offload_kqv_    = true;
   int   log_level_      = GGML_LOG_LEVEL_CONT;
   float temperature_    = 0.6f;
   float top_p_          = 0.95f;

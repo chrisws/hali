@@ -7,6 +7,8 @@
 cmake_minimum_required(VERSION 3.15)
 project(nitro_tests C CXX)
 
+find_package(OpenSSL REQUIRED)
+
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -18,10 +20,12 @@ add_executable(nitro_tests
   ../src/logging.cpp
   ../src/string_utils.cpp
   ../src/mcp_format.cpp
+  ../src/sha1.cpp
   src/file_test.cpp
   src/graph_test.cpp
   src/string_utils_test.cpp
   src/mcp_format_test.cpp
+  src/sha1_test.cpp
   src/main.cpp
 )
 
@@ -31,6 +35,10 @@ target_include_directories(nitro_tests PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/../yyjson/src
   ${CMAKE_CURRENT_SOURCE_DIR}/../src
   ${CMAKE_CURRENT_SOURCE_DIR}/../lib/utfcpp/source
+)
+
+target_link_libraries(nitro_tests PRIVATE
+  OpenSSL::Crypto
 )
 
 set_target_properties(nitro_tests PROPERTIES

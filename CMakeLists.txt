@@ -231,7 +231,6 @@ target_include_directories(nitro PRIVATE
   ${LLAMA_DIR}/include
   ${LLAMA_DIR}/ggml/include
   ${CMAKE_CURRENT_SOURCE_DIR}/src
-  ${CMAKE_CURRENT_SOURCE_DIR}/lib/utfcpp/source
   ${JSON_INCLUDE}
 )
 
