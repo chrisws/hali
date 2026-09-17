@@ -139,7 +139,7 @@ JsonDoc JsonDoc::parse(const std::string &json_str) {
     doc = yyjson_read_opts(const_cast<char*>(json_fix.data()), json_fix.size(), 0, nullptr, &err);
   }
   if (!doc) {
-    log_write(INFO_LEVEL, "json error: [%d] [%s]", err.code, err.msg);
+    log_write(LEVEL_INFO, "json error: [%d] [%s]", err.code, err.msg);
   }
   return JsonDoc(doc);
 }
@@ -232,7 +232,7 @@ JsonMutDoc JsonMutDoc::parse(const std::string &json_str) {
     yyjson_read_err err;
     if (yyjson_doc *parsed = yyjson_read_opts(const_cast<char*>(json_str.data()), json_str.size(), 0, nullptr, &err)) {
       if (!parsed) {
-        log_write(INFO_LEVEL, "json error: [%d] [%s]", err.code, err.msg);
+        log_write(LEVEL_INFO, "json error: [%d] [%s]", err.code, err.msg);
       } else {
         const yyjson_val *parsed_root = yyjson_doc_get_root(parsed);
         yyjson_mut_val *root_copy = yyjson_val_mut_copy(doc, parsed_root);

@@ -268,7 +268,7 @@ bool Llama::add_message(LlamaIter &iter, const string &role, const string &conte
     bool add_ass = (role == "user" || role == "tool" || role == "tool_result");
     n = llama_chat_apply_template(_template.c_str(), &message, 1, add_ass, buf.data(), buf_size);
     if (n < 0) {
-      log_write(INFO_LEVEL, "unsupported template: %s", _template.c_str());
+      log_write(LEVEL_INFO, "unsupported template: %s", _template.c_str());
       set_last_error("Chat template support test");
       return false;
     } else if (n > (int32_t)buf.size()) {

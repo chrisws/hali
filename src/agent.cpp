@@ -51,7 +51,7 @@ static bool make_dir(const std::string &path) {
     return fs::create_directories(p, ec);
   }
   catch (const std::filesystem::filesystem_error &e) {
-    log_write(DEBUG_LEVEL, "mkdir failed [%s]", e.what());
+    log_write(LEVEL_DEBUG, "mkdir failed [%s]", e.what());
     return false;
   }
 }
@@ -631,7 +631,7 @@ void Agent::invoke_tool(const std::string &buffer, const std::string_view templa
     tool = buffer.substr(0, pos);
     const auto endTool = buffer.substr(pos);
     if (endTool.length() > END_TOOL.length()) {
-      log_write(DEBUG_LEVEL, "ERROR: trailing delimiter: [%s]", endTool.c_str());
+      log_write(LEVEL_DEBUG, "ERROR: trailing delimiter: [%s]", endTool.c_str());
     }
   } else {
     tool = buffer;
@@ -641,17 +641,17 @@ void Agent::invoke_tool(const std::string &buffer, const std::string_view templa
   if (const auto kvEnd = tool.rfind(KV_END); kvEnd == (tool.length() - KV_END.length())) {
     if (const auto kvStart = tool.rfind(KV_START); kvStart != std::string::npos) {
       tool = buffer.substr(0, kvStart);
-      log_write(DEBUG_LEVEL, "stripped KV_INFO details output by agent");
+      log_write(LEVEL_DEBUG, "stripped KV_INFO details output by agent");
     }
   }
 
-  log_write(DEBUG_LEVEL, "tool request: [%s]", tool.c_str());
+  log_write(LEVEL_DEBUG, "tool request: [%s]", tool.c_str());
   std::string result = process_tool(tool);
   if (result.empty()) {
     return;
   }
   const std::string content = TOOL_RESULT + std::vformat(template_str, std::make_format_args(result)) + memory_info_status();
-  log_write(DEBUG_LEVEL, "tool: [%s] result: [%s]", tool.c_str(), result.c_str());
+  log_write(LEVEL_DEBUG, "tool: [%s] result: [%s]", tool.c_str(), result.c_str());
   tui_.update_usage(tokens_per_sec(), llama_->memory_info());
   if (!llama_->add_message(*iter_, "tool_result", content)) {
     tui_.append_line(ICON_ERR + "tool result inject: " + llama_->last_error());
@@ -679,10 +679,10 @@ bool Agent::run_turn(const std::string &user_message) {
   if (embed_llama_ && rag_db_ && rag_session_) {
     std::string context = embed_llama_->rag_retrieve(*rag_db_, user_message, cfg_.rag_top_k_, *rag_session_);
     if (!context.empty()) {
-      log_write(DEBUG_LEVEL, "RAG: %s", context.c_str());
+      log_write(LEVEL_DEBUG, "RAG: %s", context.c_str());
       effective_message = "Context:\n" + context + "\n\nUser: " + user_message;
     } else {
-      log_write(DEBUG_LEVEL, "RAG: no context found [%s]", embed_llama_->last_error());
+      log_write(LEVEL_DEBUG, "RAG: no context found [%s]", embed_llama_->last_error());
     }
   }
   if (!iter_) {

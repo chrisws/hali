@@ -12,10 +12,10 @@
 #include <string>
 
 enum LogLevel {
-  DEBUG_LEVEL = 0,
-  INFO_LEVEL = 1,
-  WARNING_LEVEL = 2,
-  ERROR_LEVEL = 3
+  LEVEL_DEBUG = 0,
+  LEVEL_INFO = 1,
+  LEVEL_WARNING = 2,
+  LEVEL_ERROR = 3
 };
 
 void log_write(LogLevel level, const char* format, ...);

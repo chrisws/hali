@@ -19,20 +19,20 @@
 namespace fs = std::filesystem;
 
 static FILE *g_logfile = nullptr;
-static LogLevel g_level = DEBUG_LEVEL;
+static LogLevel g_level = LEVEL_DEBUG;
 static bool g_log_console = false;
 static std::mutex g_log_mutex;
 
 static LogLevel get_level(const std::string& level) {
   static const std::unordered_map<std::string, LogLevel> loggingMap = {
-    {"0", DEBUG_LEVEL},
-    {"1", DEBUG_LEVEL},
-    {"2", INFO_LEVEL},
-    {"3", WARNING_LEVEL},
-    {"4", ERROR_LEVEL},
-    {"5", ERROR_LEVEL},
+    {"0", LEVEL_DEBUG},
+    {"1", LEVEL_DEBUG},
+    {"2", LEVEL_INFO},
+    {"3", LEVEL_WARNING},
+    {"4", LEVEL_ERROR},
+    {"5", LEVEL_ERROR},
   };
-  LogLevel result = INFO_LEVEL;
+  LogLevel result = LEVEL_INFO;
   if (!level.empty()) {
     if (const auto it = loggingMap.find(level); it != loggingMap.end()) {
       result = it->second;
@@ -57,7 +57,7 @@ void log_open(const std::string& level) {
 void log_open_console() {
   std::lock_guard<std::mutex> lock(g_log_mutex);
   g_logfile = nullptr;
-  g_level = ERROR_LEVEL;
+  g_level = LEVEL_ERROR;
   g_log_console = true;
 }
 
@@ -92,10 +92,10 @@ void log_write(LogLevel level, const char* format, ...) {
 
   const char* level_str;
   switch (level) {
-    case DEBUG_LEVEL: level_str = "DEBUG"; break;
-    case INFO_LEVEL: level_str = "INFO"; break;
-    case WARNING_LEVEL: level_str = "WARNING"; break;
-    case ERROR_LEVEL: level_str = "ERROR"; break;
+    case LEVEL_DEBUG: level_str = "DEBUG"; break;
+    case LEVEL_INFO: level_str = "INFO"; break;
+    case LEVEL_WARNING: level_str = "WARNING"; break;
+    case LEVEL_ERROR: level_str = "ERROR"; break;
     default: level_str = "UNKNOWN"; break;
   }
 

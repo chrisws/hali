@@ -33,7 +33,7 @@ static size_t header_callback(const char *buffer, size_t size, const size_t nIte
   const std::string line(buffer, total);
   const std::string prefix = "Mcp-Session-Id:";
 
-  log_write(INFO_LEVEL, "HTTP headers [%s]", utils::trim(line).c_str());
+  log_write(LEVEL_INFO, "HTTP headers [%s]", utils::trim(line).c_str());
 
   // case-sensitive check is risky — HTTP headers are case-insensitive.
   // Do a case-insensitive compare instead:
@@ -131,7 +131,7 @@ static Settings load_settings() {
       return result;
     }
   } catch (...) {
-    log_write(ERROR_LEVEL, "JSON parsing failed");
+    log_write(LEVEL_ERROR, "JSON parsing failed");
   }
 
   return result;
@@ -150,15 +150,15 @@ Client::~Client() {
 }
 
 void Client::disconnect() {
-  log_write(DEBUG_LEVEL, "disconnect entered");
+  log_write(LEVEL_DEBUG, "disconnect entered");
   sse_stop_.store(true);
 
   if (sse_thread_.joinable()) {
     sse_thread_.join();
-    log_write(DEBUG_LEVEL, "thread join completed");
+    log_write(LEVEL_DEBUG, "thread join completed");
   }
   if (curl_) {
-    log_write(DEBUG_LEVEL, "cleanup curl");
+    log_write(LEVEL_DEBUG, "cleanup curl");
     curl_easy_cleanup(curl_);
     curl_ = nullptr;
   }
@@ -172,7 +172,7 @@ bool Client::notify_initialized() const {
   root.set_str("method", "notifications/initialized");
   const auto response = send_request(doc.to_string());
 
-  log_write(LogLevel::INFO_LEVEL, "notifications/initialized response: [%s]", response.c_str());
+  log_write(LogLevel::LEVEL_INFO, "notifications/initialized response: [%s]", response.c_str());
   return true;
 }
 
@@ -186,7 +186,7 @@ void Client::start_sse_stream() {
   sse_stop_.store(false);
   sse_curl_ = curl_easy_init();
   if (!sse_curl_) {
-    log_write(ERROR_LEVEL, "failed to init curl for SSE stream");
+    log_write(LEVEL_ERROR, "failed to init curl for SSE stream");
     return;
   }
 
@@ -207,25 +207,25 @@ void Client::start_sse_stream() {
     curl_easy_setopt(sse_curl_, CURLOPT_XFERINFOFUNCTION, sse_progress_callback);
     curl_easy_setopt(sse_curl_, CURLOPT_XFERINFODATA, &sse_stop_);
 
-    log_write(INFO_LEVEL, "SSE stream: opening for sessionId [%s]", session_id_.c_str());
+    log_write(LEVEL_INFO, "SSE stream: opening for sessionId [%s]", session_id_.c_str());
     const CURLcode res = curl_easy_perform(sse_curl_);
     if (res != CURLE_OK && res != CURLE_ABORTED_BY_CALLBACK) {
-      log_write(ERROR_LEVEL, "SSE stream: ended with error [%s]", curl_easy_strerror(res));
+      log_write(LEVEL_ERROR, "SSE stream: ended with error [%s]", curl_easy_strerror(res));
     } else {
-      log_write(INFO_LEVEL, "SSE stream: closed for sessionId [%s]", session_id_.c_str());
+      log_write(LEVEL_INFO, "SSE stream: closed for sessionId [%s]", session_id_.c_str());
     }
 
     curl_slist_free_all(headers);
     curl_easy_cleanup(sse_curl_);
     sse_curl_ = nullptr;
-    log_write(INFO_LEVEL, "leaving SSE stream thread");
+    log_write(LEVEL_INFO, "leaving SSE stream thread");
   });
 }
 
 std::string Client::get_system_context(const std::vector<std::string> &filter) {
   std::string p;
   if (connect()) {
-    log_write(INFO_LEVEL, "Appending MCP tools");
+    log_write(LEVEL_INFO, "Appending MCP tools");
     p += "## MCP tool\n";
     p += "TOOL:MCP <tool-name> <json-request> Invoke the named MCP tool along with with JSON request\n";
     p += "## Rules\n";
@@ -244,7 +244,7 @@ std::string Client::get_system_context(const std::vector<std::string> &filter) {
       }
     }
   } else {
-    log_write(INFO_LEVEL, "Failed to connect");
+    log_write(LEVEL_INFO, "Failed to connect");
   }
   return p;
 }
@@ -256,7 +256,7 @@ bool Client::connect() {
 
   // Initialize curl
   if (!curl_) {
-    log_write(ERROR_LEVEL, "failed to init curl");
+    log_write(LEVEL_ERROR, "failed to init curl");
     return false;
   }
 
@@ -265,13 +265,13 @@ bool Client::connect() {
   // Initialize handshake using mutable API
   const auto doc = json::parse_mutable("");
   if (!doc.is_valid()) {
-    log_write(ERROR_LEVEL, "failed to build json doc");
+    log_write(LEVEL_ERROR, "failed to build json doc");
     return false;
   }
 
   auto root = doc.get_root();
   if (!root.is_valid()) {
-    log_write(ERROR_LEVEL, "failed to build json root");
+    log_write(LEVEL_ERROR, "failed to build json root");
     return false;
   }
 
@@ -295,7 +295,7 @@ bool Client::connect() {
   // Convert to string
   const std::string params_str = doc.to_string();
   if (params_str.empty()) {
-    log_write(ERROR_LEVEL, "failed to build json string");
+    log_write(LEVEL_ERROR, "failed to build json string");
     return false;
   }
 
@@ -303,16 +303,16 @@ bool Client::connect() {
   const auto response = send_request(params_str);
 
   if (response.empty()) {
-    log_write(LogLevel::ERROR_LEVEL, "mcp request failed");
+    log_write(LogLevel::LEVEL_ERROR, "mcp request failed");
     return false;
   }
 
   if (auto resp_doc = json::parse(response); resp_doc.is_valid()) {
     const auto resp_root = resp_doc.get_root();
     if (int id; !resp_root.get_int("id", id)) {
-      log_write(INFO_LEVEL, "failed to read id field");
+      log_write(LEVEL_INFO, "failed to read id field");
     } else {
-      log_write(INFO_LEVEL, "id=[%d]", id);
+      log_write(LEVEL_INFO, "id=[%d]", id);
       if (!notify_initialized()) {
         return false;
       }
@@ -322,7 +322,7 @@ bool Client::connect() {
       return true;
     }
   } else {
-    log_write(ERROR_LEVEL, "failed to parse response");
+    log_write(LEVEL_ERROR, "failed to parse response");
   }
 
   return false;
@@ -332,20 +332,20 @@ std::vector<Tool> Client::list_tools() const {
   std::vector<Tool> tools;
 
   if (!curl_) {
-    log_write(ERROR_LEVEL, "list_tools failed - curl not initialised");
+    log_write(LEVEL_ERROR, "list_tools failed - curl not initialised");
     return tools;
   }
 
   // Request tools/list using mutable API
   const auto doc = json::parse_mutable("");
   if (!doc.is_valid()) {
-    log_write(ERROR_LEVEL, "failed to build json doc");
+    log_write(LEVEL_ERROR, "failed to build json doc");
     return tools;
   }
 
   auto root = doc.get_root();
   if (!root.is_valid()) {
-    log_write(ERROR_LEVEL, "failed to build json root");
+    log_write(LEVEL_ERROR, "failed to build json root");
     return tools;
   }
 
@@ -362,7 +362,7 @@ std::vector<Tool> Client::list_tools() const {
 
   const std::string params_str = doc.to_string();
   if (params_str.empty()) {
-    log_write(ERROR_LEVEL, "failed to build json string");
+    log_write(LEVEL_ERROR, "failed to build json string");
     return tools;
   }
 
@@ -370,50 +370,50 @@ std::vector<Tool> Client::list_tools() const {
   const std::string response = send_request(params_str);
 
   if (response.empty()) {
-    log_write(ERROR_LEVEL, "list tools failed");
+    log_write(LEVEL_ERROR, "list tools failed");
     return tools;
   }
 
   // Parse response using immutable API
   const auto resp_doc = json::parse(response);
   if (!resp_doc.is_valid()) {
-    log_write(ERROR_LEVEL, "failed to parse [%s]", response.c_str());
+    log_write(LEVEL_ERROR, "failed to parse [%s]", response.c_str());
     return tools;
   }
 
   const auto resp_root = resp_doc.get_root();
 
   if (!resp_root.is_object() || resp_root.has_string_key("result")) {
-    log_write(ERROR_LEVEL, "result is not an object");
+    log_write(LEVEL_ERROR, "result is not an object");
     return tools;
   }
 
   std::vector<json::JsonValue> vec;
   const auto result_node = resp_root.get_child("result");
   if (!result_node.is_object()) {
-    log_write(ERROR_LEVEL, "result is not an object");
+    log_write(LEVEL_ERROR, "result is not an object");
     return tools;
   }
 
   if (!result_node.get_array("tools", vec)) {
-    log_write(ERROR_LEVEL, "tools is not an object os result");
+    log_write(LEVEL_ERROR, "tools is not an object os result");
     return tools;
   }
 
   for (const auto &tool: vec) {
     if (!tool.is_object()) {
-      log_write(ERROR_LEVEL, "tools is not an object os result");
+      log_write(LEVEL_ERROR, "tools is not an object os result");
     } else {
       Tool mcp_tool;
       tool.get_str("name", mcp_tool.name_);
       tool.get_str("description", mcp_tool.description_);
       mcp_tool.spec_ = formatSpec(tool);
       tools.push_back(mcp_tool);
-      log_write(INFO_LEVEL, "Found tool: [%s]", mcp_tool.name_.c_str());
+      log_write(LEVEL_INFO, "Found tool: [%s]", mcp_tool.name_.c_str());
     }
   }
 
-  log_write(INFO_LEVEL, "list tools success - found [%d] tools", tools.size());
+  log_write(LEVEL_INFO, "list tools success - found [%d] tools", tools.size());
   return tools;
 }
 
@@ -438,7 +438,7 @@ std::string Client::send_request(const std::string &request_body) const {
   curl_easy_setopt(curl_, CURLOPT_HEADERFUNCTION, header_callback);
   curl_easy_setopt(curl_, CURLOPT_HEADERDATA, &session_id_);
 
-  log_write(INFO_LEVEL, "POST: sessionId:[%s] body:[%s]", session_id_.c_str(), request_body.c_str());
+  log_write(LEVEL_INFO, "POST: sessionId:[%s] body:[%s]", session_id_.c_str(), request_body.c_str());
 
   const CURLcode res = curl_easy_perform(curl_);
   long http_code = 0;
@@ -449,16 +449,16 @@ std::string Client::send_request(const std::string &request_body) const {
   }
 
   if (res != CURLE_OK) {
-    log_write(ERROR_LEVEL, "ERROR: curl: %s [%s]", curl_easy_strerror(res), base_url.c_str());
+    log_write(LEVEL_ERROR, "ERROR: curl: %s [%s]", curl_easy_strerror(res), base_url.c_str());
     return std::format("ERROR: curl: {}", curl_easy_strerror(res));
   }
   if (http_code >= 400) {
-    log_write(ERROR_LEVEL, "ERROR: HTTP %s %s", std::to_string(http_code).c_str(), body.c_str());
+    log_write(LEVEL_ERROR, "ERROR: HTTP %s %s", std::to_string(http_code).c_str(), body.c_str());
     return std::format("ERROR: HTTP {} {}", std::to_string(http_code), body);
   }
 
-  log_write(DEBUG_LEVEL, "received [%s]", body.c_str());
-  log_write(DEBUG_LEVEL, "sessionId [%s]", session_id_.c_str());
+  log_write(LEVEL_DEBUG, "received [%s]", body.c_str());
+  log_write(LEVEL_DEBUG, "sessionId [%s]", session_id_.c_str());
 
   return body;
 }
@@ -496,7 +496,7 @@ std::string Client::call_tool(const std::string &name, const std::string &args_s
     return "Failed to communicate with MCP server";
   }
 
-  log_write(DEBUG_LEVEL, "result: [%s]", response.c_str());
+  log_write(LEVEL_DEBUG, "result: [%s]", response.c_str());
   return response;
 }
 

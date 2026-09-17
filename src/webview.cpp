@@ -444,7 +444,7 @@ struct WebServer {
 
   // Per-connection handler: WebSocket upgrade or static file.
   void handle_client(int fd) {
-    log_write(INFO_LEVEL, "handle request entered");
+    log_write(LEVEL_INFO, "handle request entered");
 
     std::string head;
     if (!read_request_head(fd, head)) {
@@ -458,7 +458,7 @@ struct WebServer {
     if (req.path == std::string(WS_PATH)) {
       std::string key = req.header("sec-websocket-key");
       if (key.empty()) {
-        log_write(INFO_LEVEL, "ws-upgrade bad request");
+        log_write(LEVEL_INFO, "ws-upgrade bad request");
         send_http_response(fd, 400, "Bad Request", "text/plain", "Expected WebSocket upgrade request");
         ::close(fd);
         return;
@@ -466,7 +466,7 @@ struct WebServer {
 
       std::string accept = ws_accept_key(key);
       std::ostringstream resp;
-      log_write(INFO_LEVEL, "ws-upgrade [%s] key[%s] accept[%s]", req.path.c_str(), key.c_str(), accept.c_str());
+      log_write(LEVEL_INFO, "ws-upgrade [%s] key[%s] accept[%s]", req.path.c_str(), key.c_str(), accept.c_str());
       resp << "HTTP/1.1 101 Switching Protocols\r\n";
       resp << "Upgrade: websocket\r\n";
       resp << "Connection: Upgrade\r\n";
@@ -480,7 +480,7 @@ struct WebServer {
         sent += static_cast<size_t>(n);
       }
 
-      log_write(INFO_LEVEL, "sent [%d] of [%d] bytes", sent, out.length());
+      log_write(LEVEL_INFO, "sent [%d] of [%d] bytes", sent, out.length());
       {
         std::lock_guard<std::mutex> lock(ws_mutex_);
         ws_clients_.push_back(fd);
@@ -511,7 +511,7 @@ struct WebServer {
         }
         rx.erase(0, pos);
       }
-      log_write(INFO_LEVEL, "ws connection released");
+      log_write(LEVEL_INFO, "ws connection released");
       {
         std::lock_guard<std::mutex> lock(ws_mutex_);
         auto it = std::ranges::find(ws_clients_, fd);
@@ -529,7 +529,7 @@ struct WebServer {
       rel_path = rel_path.substr(1);
     }
 
-    log_write(INFO_LEVEL, "serve %s", rel_path.c_str());
+    log_write(LEVEL_INFO, "serve %s", rel_path.c_str());
     serve_file(fd, rel_path);
     ::close(fd);
   }

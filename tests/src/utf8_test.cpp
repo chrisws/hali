@@ -2,7 +2,7 @@
 #include <cstdio>
 #include "utf8.h"
 
-int main() {
+void utf8_test() {
   // Test ASCII
   {
     std::string input = "Hello";
@@ -83,5 +83,4 @@ int main() {
   }
 
   std::puts("all tests passed");
-  return 0;
 }
