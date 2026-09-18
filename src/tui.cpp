@@ -270,6 +270,7 @@ void Tui::redraw_chat() {
     ncplane_set_channels(chatpl_, visual[i].ch);
     const int result = ncplane_puttext(chatpl_, row, NCALIGN_LEFT, visual[i].text.c_str(), nullptr);
     if (result > 0 && result > cols) {
+      log_write(LEVEL_INFO, "ncplane_puttext wrapped text row:%d cols:%d result:%d", row, cols, result);
       const int extra = (result / cols);
       row += extra;
     }
