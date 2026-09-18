@@ -101,7 +101,6 @@ add_subdirectory(${LLAMA_DIR})
 # Dependency discovery
 # -----------------------------
 find_package(PkgConfig QUIET)
-find_package(OpenSSL REQUIRED)
 
 # ── notcurses (required) ───────────────────────────────────────────────────
 set(NC_FOUND FALSE)
@@ -210,6 +209,7 @@ add_executable(nitro
   src/string_utils.cpp
   yyjson/src/yyjson.c
   src/config.cpp
+  src/sha1.cpp
   src/mcp_format.cpp
   src/mcp_client.cpp
   src/json.cpp
@@ -237,7 +237,6 @@ target_include_directories(nitro PRIVATE
 target_link_libraries(nitro PRIVATE
   llama
   ggml
-  OpenSSL::Crypto
   ${NC_TARGET}
 )
 
