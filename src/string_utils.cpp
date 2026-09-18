@@ -8,12 +8,48 @@
 
 #include <cctype>
 #include <cstdint>
+#include <string>
 
 #include "utf8.h"
 #include "string_utils.h"
+#include <notcurses/notcurses.h>
 
 static bool is_space(const char32_t cp) {
   return std::isspace(static_cast<unsigned char>(cp));
+}
+
+static char *codepoint_to_utf8_string(char32_t cp) {
+  static char buf[5] = {};
+  int len = 0;
+
+  if (cp <= 0x7F) {
+    buf[len++] = static_cast<char>(cp);
+  } else if (cp <= 0x7FF) {
+    buf[len++] = static_cast<char>(0xC0 | (cp >> 6));
+    buf[len++] = static_cast<char>(0x80 | (cp & 0x3F));
+  } else if (cp <= 0xFFFF) {
+    buf[len++] = static_cast<char>(0xE0 | (cp >> 12));
+    buf[len++] = static_cast<char>(0x80 | ((cp >> 6) & 0x3F));
+    buf[len++] = static_cast<char>(0x80 | (cp & 0x3F));
+  } else if (cp <= 0x10FFFF) {
+    buf[len++] = static_cast<char>(0xF0 | (cp >> 18));
+    buf[len++] = static_cast<char>(0x80 | ((cp >> 12) & 0x3F));
+    buf[len++] = static_cast<char>(0x80 | ((cp >> 6) & 0x3F));
+    buf[len++] = static_cast<char>(0x80 | (cp & 0x3F));
+  }
+
+  return buf;
+}
+
+static int column_width(char32_t cp) {
+  int result;
+  if (cp < 0x7F) {
+    result = 1;
+  } else {
+    int width = ncstrwidth(codepoint_to_utf8_string(cp), nullptr, nullptr);
+    result = width < 1 ? 1: width;
+  }
+  return result;
 }
 
 namespace utils {
@@ -86,7 +122,7 @@ std::vector<std::string> split_utf8_string(const std::string &input, size_t max_
       continue;
     }
     utf8::append(code_point, pending);
-    ++pending_count;
+    pending_count += column_width(code_point);
     if (pending_count + current_count >= max_chars_per_segment) {
       if (is_space(code_point)) {
         push_text();

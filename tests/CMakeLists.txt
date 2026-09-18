@@ -30,6 +30,11 @@ add_executable(nitro_tests
   src/main.cpp
 )
 
+pkg_check_modules(NC QUIET IMPORTED_TARGET notcurses)
+if(NC_FOUND)
+  set(NC_TARGET PkgConfig::NC)
+endif()
+
 # Basic test includes (no llama, no curl dependencies)
 target_include_directories(nitro_tests PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}
@@ -40,6 +45,7 @@ target_include_directories(nitro_tests PRIVATE
 
 target_link_libraries(nitro_tests PRIVATE
   OpenSSL::Crypto
+  ${NC_TARGET}
 )
 
 set_target_properties(nitro_tests PROPERTIES
