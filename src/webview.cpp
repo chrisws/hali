@@ -35,9 +35,9 @@
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <unistd.h>
-#include <openssl/sha.h>
 
 #include "webview.h"
+#include "sha1.h"
 #include "logging.h"
 
 namespace fs = std::filesystem;
@@ -282,11 +282,11 @@ struct WebServer {
 
     return pos + p_len;
   }
+
   static std::string ws_accept_key(const std::string &client_key) {
-    const std::string input = client_key + WS_GUID;
-    unsigned char digest[SHA_DIGEST_LENGTH];
-    SHA1(reinterpret_cast<const unsigned char*>(input.data()),  input.size(), digest);
-    return base64_encode(digest, SHA_DIGEST_LENGTH);
+    std::string concat = client_key + WS_GUID;
+    auto digest = sha1::hash(concat);
+    return base64_encode(digest.data(), digest.size());
   }
 
   void accept_loop() {
