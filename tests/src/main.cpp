@@ -3,6 +3,7 @@ void graph_test();
 void string_utils_test();
 void mcp_format_test();
 void sha1_test();
+void utf8_test();
 
 #include "logging.h"
 
@@ -13,5 +14,6 @@ int main() {
   string_utils_test();
   mcp_format_test();
   sha1_test();
+  utf8_test();
   return 0;
 }

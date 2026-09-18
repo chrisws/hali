@@ -21,6 +21,7 @@ add_executable(nitro_tests
   ../src/string_utils.cpp
   ../src/mcp_format.cpp
   ../src/sha1.cpp
+  src/utf8_test.cpp
   src/file_test.cpp
   src/graph_test.cpp
   src/string_utils_test.cpp
