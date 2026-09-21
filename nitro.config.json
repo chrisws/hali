@@ -1,8 +1,9 @@
 {
   "model_path":     "/home/chrisws/models/qwen/Qwen3.5-9B-Q6_K.gguf",
+  "embed_path":     "",
   "sandbox":        "/home/chrisws/src/nitro",
   "n_ctx":          40960,
-  "n_batch":        512,
+  "n_batch":        128,
   "n_gpu_layers":   32,
   "temperature":    0.2,
   "top_p":          0.2,
@@ -10,5 +11,6 @@
   "top_k":          60,
   "penalty_repeat": 1,
   "penalty_last_n": 256,
+  "offload_kqv":   false,
   "rag_top_k":      5
 }

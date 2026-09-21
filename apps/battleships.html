@@ -855,11 +855,7 @@
     document.getElementById("setup-area").classList.add("visible");
     initSetup();
 
-    // After battle starts, refresh shoot targets on player turn
-    const observer = new MutationObserver(() => {
-      if (phase === "PLAYER_TURN") refreshShootTargets();
-    });
-    observer.observe(document.getElementById("battle-ai-frame"), { attributes: true, subtree: true });
+
   });
 
   // Override setPhase to also refresh targets

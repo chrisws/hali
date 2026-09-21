@@ -545,6 +545,7 @@ std::string Agent::process_tool(const std::string &cmd) {
     if (!utils::is_blank(cfg_.backup_path_)) {
       const auto confirm = tool_write_backup(cfg_.backup_path_, path);
       if (!utils::starts_with(confirm, "OK")) {
+        tui_.append_token(ICON_ERR + confirm + "\n");
         return confirm;
       }
       tui_.show_tool("backup: " + confirm);
@@ -557,19 +558,31 @@ std::string Agent::process_tool(const std::string &cmd) {
       }
     }
     const auto result = tool_write(path, data);
-    broadcast_reload(cfg_, tui_);
+    if (!utils::starts_with(result, "OK")) {
+      tui_.append_token(ICON_ERR + result + "\n");
+    } else {
+      broadcast_reload(cfg_, tui_);
+    }
     return result;
   }
   if (op == "TOOL:PATCH") {
     tui_.show_tool("patch: " + arg1);
     const auto result = tool_patch(arg1, arg2);
-    broadcast_reload(cfg_, tui_);
+    if (!utils::starts_with(result, "OK")) {
+      tui_.append_token(ICON_ERR + result + "\n");
+    } else {
+      broadcast_reload(cfg_, tui_);
+    }
     return result;
   }
   if (op == "TOOL:APPEND") {
     tui_.show_tool("append: " + arg1);
     const auto result = tool_append(arg1, arg2);
-    broadcast_reload(cfg_, tui_);
+    if (!utils::starts_with(result, "OK")) {
+      tui_.append_token(ICON_ERR + result + "\n");
+    } else {
+      broadcast_reload(cfg_, tui_);
+    }
     return result;
   }
   if (op == "TOOL:MKDIR") {

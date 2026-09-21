@@ -284,7 +284,7 @@ std::string tool_patch(const std::string& filename, const std::string& patch_str
   out_file << patched_content;
   out_file.close();
 
-  return "SUCCESS: Patch applied to " + filename;
+  return "OK: Patch applied to " + filename;
 }
 
 //
