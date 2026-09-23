@@ -545,7 +545,7 @@ std::string Agent::process_tool(const std::string &cmd) {
     if (!utils::is_blank(cfg_.backup_path_)) {
       const auto confirm = tool_write_backup(cfg_.backup_path_, path);
       if (!utils::starts_with(confirm, "OK")) {
-        tui_.append_token(ICON_ERR + confirm + "\n");
+        tui_.append_token(ICON_ERR + confirm);
         return confirm;
       }
       tui_.show_tool("backup: " + confirm);
@@ -559,7 +559,8 @@ std::string Agent::process_tool(const std::string &cmd) {
     }
     const auto result = tool_write(path, data);
     if (!utils::starts_with(result, "OK")) {
-      tui_.append_token(ICON_ERR + result + "\n");
+      tui_.append_token(ICON_ERR + data);
+      tui_.append_token(ICON_ERR + result);
     } else {
       broadcast_reload(cfg_, tui_);
     }
@@ -569,7 +570,8 @@ std::string Agent::process_tool(const std::string &cmd) {
     tui_.show_tool("patch: " + arg1);
     const auto result = tool_patch(arg1, arg2);
     if (!utils::starts_with(result, "OK")) {
-      tui_.append_token(ICON_ERR + result + "\n");
+      tui_.append_token(ICON_ERR + arg2);
+      tui_.append_token(ICON_ERR + result);
     } else {
       broadcast_reload(cfg_, tui_);
     }
@@ -579,7 +581,7 @@ std::string Agent::process_tool(const std::string &cmd) {
     tui_.show_tool("append: " + arg1);
     const auto result = tool_append(arg1, arg2);
     if (!utils::starts_with(result, "OK")) {
-      tui_.append_token(ICON_ERR + result + "\n");
+      tui_.append_token(ICON_ERR + result);
     } else {
       broadcast_reload(cfg_, tui_);
     }
@@ -744,7 +746,7 @@ bool Agent::run_turn(const std::string &user_message) {
           // tag is either at the start or end of the line
           if (pos > 0) {
             if (auto thought = buffer.substr(0, pos); !utils::is_blank(thought)) {
-              tui_.append_token(ICON_THINK + thought + "\n");
+              tui_.append_token(ICON_THINK + thought);
             }
           }
           // add a new line here to handle: <channel|>TOOL:LIST
@@ -824,7 +826,7 @@ bool Agent::run_turn(const std::string &user_message) {
   }
 
   if (!buffer.empty()) {
-    tui_.append_token(buffer + "\n");
+    tui_.append_token(buffer);
     broadcast_message(cfg_, tui_, buffer);
   }
 
