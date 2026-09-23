@@ -1,4 +1,4 @@
-# Haliastur 
+# Haliastur | Hardware-Aware Local Inference
 
 _project rename in progress - 'nitro' was used in too many other projects_
 
