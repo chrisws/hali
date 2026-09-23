@@ -98,6 +98,8 @@ void NitroConfig::load_settings() {
   root.get_int("top_k", top_k_);
   root.get_int("penalty_last_n", penalty_last_n_);
   root.get_int("rag_top_k", rag_top_k_);
+  root.get_int("n_threads", n_threads_);
+  root.get_int("n_threads_batch", n_threads_batch_);
 
   // Float fields
   root.get_float("temperature", temperature_);
@@ -308,6 +310,8 @@ std::string NitroConfig::introspect() const {
     "  \"n_ctx\":          {},\n"
     "  \"n_batch\":        {},\n"
     "  \"n_gpu_layers\":   {},\n"
+    "  \"n_threads\":      {},\n"
+    "  \"n_threads_batch\":{},\n"
     "  \"temperature\":    {},\n"
     "  \"top_p\":          {},\n"
     "  \"min_p\":          {},\n"
@@ -327,6 +331,8 @@ std::string NitroConfig::introspect() const {
                      n_ctx_,
                      n_batch_,
                      n_gpu_layers_,
+                     n_threads_,
+                     n_threads_batch_,
                      temperature_,
                      top_p_,
                      min_p_,

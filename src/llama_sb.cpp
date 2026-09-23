@@ -194,6 +194,15 @@ bool Llama::load_model(LlamaLoad &load) {
     // keep KV cache on GPU
     cparams.offload_kqv = load.offload_kqv;
 
+    // CPU thread control (big perf impact when layers are on CPU)
+    if (load.n_threads > 0) {
+      cparams.n_threads = load.n_threads;
+    }
+
+    if (load.n_threads_batch > 0) {
+      cparams.n_threads_batch = load.n_threads_batch;
+    }
+
     _ctx = llama_init_from_model(_model, cparams);
     if (!_ctx) {
       set_last_error("Create context");

@@ -13,7 +13,6 @@
 #include <filesystem>
 #include "llama.h"
 #include "llama_sb.h"
-#include "config.h"
 
 namespace fs = std::filesystem;
 
@@ -38,24 +37,32 @@ struct NitroConfig {
   std::string sandbox_;
   std::string config_ = "nitro.config.json";
 
-  int   n_ctx_          = 65536;
-  int   n_batch_        = 512;
-  int   n_gpu_layers_   = 32;
-  bool  offload_kqv_    = true;
-  int   log_level_      = GGML_LOG_LEVEL_CONT;
-  float temperature_    = 0.6f;
-  float top_p_          = 0.95f;
   float min_p_          = 0.0f;
-  int   top_k_          = 20;
-  int   penalty_last_n_ = 256;
-  float penalty_repeat_ = 1.0f;
   float penalty_freq_   = 0.0f;
   float penalty_present_= 0.0f;
-  int   rag_top_k_      = 5;
-  bool  thinking_       = true;
+  float penalty_repeat_ = 1.0f;
+  float rope_freq_scale_= 0.0f;
+  float temperature_    = 0.6f;
+  float top_p_          = 0.95f;
+  bool  offload_kqv_    = true;
   bool  permission_prompt_ = false;
+  bool  thinking_       = true;
+  int   log_level_      = GGML_LOG_LEVEL_CONT;
+  int   n_batch_        = 512;
+  int   n_ctx_          = 65536;
+  int   n_gpu_layers_   = 32;
+  int   n_threads_      = -1;
+  int   n_threads_batch_= -1;
+  int   penalty_last_n_ = 256;
+  int   rag_top_k_      = 5;
+  int   top_k_          = 20;
   int   web_port_       = -1;
+  
   KVCachePreset kv_preset_ = KVCachePreset::Compact;
+
+  // Context extension (relevant when VRAM caps n_ctx)
+  // NONE / LINEAR / YARN / LONGROPE
+  enum llama_rope_scaling_type rope_scaling_type_ = LLAMA_ROPE_SCALING_TYPE_UNSPECIFIED;
 
   // TOOL:RUN allowlist - if non-empty, only these program base names may run.
   // Empty means "allow anything inside the sandbox" (original behaviour).
