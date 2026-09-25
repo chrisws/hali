@@ -4,7 +4,7 @@
 
 Hali is a local-first agentic coding/chat shell built on [llama.cpp](https://github.com/ggml-org/llama.cpp), rendered with [notcurses](https://github.com/dankamongmen/notcurses). No server, no browser tab, no cloud dependency — just a fast terminal UI driving a local model with tool use, RAG, MCP, Web development server and careful context management.
 
-<img width="1007" height="898" alt="Screenshot From 2026-08-29 21-57-44" src="https://github.com/user-attachments/assets/6012a9c4-7f32-4dda-93e1-54a4f1d57d0c" />
+<img width="831" height="771" alt="Screenshot From 2026-09-26 07-42-59" src="https://github.com/user-attachments/assets/105b2376-d5c0-48b9-b0d6-6922a758e6cc" />
 
 ## Why
 
