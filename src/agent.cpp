@@ -288,6 +288,8 @@ bool Agent::setup_model() {
   load.n_ctx = cfg_.n_ctx_;
   load.n_batch = cfg_.n_batch_;
   load.n_gpu_layers = cfg_.n_gpu_layers_;
+  load.n_threads = cfg_.n_threads_;
+  load.n_threads_batch = cfg_.n_threads_batch_;
   load.log_level = cfg_.log_level_;
   load.offload_kqv = cfg_.offload_kqv_;
   load.kv_cache_preset = cfg_.kv_preset_;

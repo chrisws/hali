@@ -72,13 +72,12 @@ struct LlamaLoad {
   int n_gpu_layers;
   int log_level;
   bool offload_kqv;
-  KVCachePreset kv_cache_preset;
-  // CPU thread control (big perf impact when layers are on CPU)
-  int32_t n_threads;        // threads for single-token generation
-  int32_t n_threads_batch;  // threads for prompt / batch processing
+  int n_threads;        // threads for single-token generation
+  int n_threads_batch;  // threads for prompt / batch processing
   // Context extension (relevant when VRAM caps n_ctx)
   enum llama_rope_scaling_type rope_scaling_type;  // NONE / LINEAR / YARN / LONGROPE
   float rope_freq_scale;    // 0 = use model default
+  KVCachePreset kv_cache_preset;
 };
 
 struct Llama {

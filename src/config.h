@@ -51,8 +51,8 @@ struct NitroConfig {
   int   n_batch_        = 512;
   int   n_ctx_          = 65536;
   int   n_gpu_layers_   = 32;
-  int   n_threads_      = -1;
-  int   n_threads_batch_= -1;
+  int   n_threads_      = 0;
+  int   n_threads_batch_= 0;
   int   penalty_last_n_ = 256;
   int   rag_top_k_      = 5;
   int   top_k_          = 20;
