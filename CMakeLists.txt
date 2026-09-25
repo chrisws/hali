@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.15)
-project(nitro C CXX)
+project(hali C CXX)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_CXX_STANDARD 20)
@@ -61,13 +61,13 @@ set(GGML_ACCELERATE OFF CACHE BOOL "" FORCE)
 
 include(CheckLanguage)
 if(LLAMA_BACKEND STREQUAL "CPU")
-  message(STATUS "nitro backend: CPU-only")
+  message(STATUS "hali backend: CPU-only")
   set(GGML_NATIVE ON CACHE BOOL "" FORCE)
 elseif(LLAMA_BACKEND STREQUAL "GPU")
-  message(STATUS "nitro backend: GPU (non-CUDA)")
+  message(STATUS "hali backend: GPU (non-CUDA)")
   set(GGML_OPENMP ON CACHE BOOL "" FORCE)
 elseif(LLAMA_BACKEND STREQUAL "CUDA")
-  message(STATUS "nitro backend: CUDA")
+  message(STATUS "hali backend: CUDA")
   check_language(CUDA)
   if(CMAKE_CUDA_COMPILER)
     enable_language(CUDA)
@@ -76,7 +76,7 @@ elseif(LLAMA_BACKEND STREQUAL "CUDA")
     message(FATAL_ERROR "CUDA backend requested but nvcc not found")
   endif()
 elseif(LLAMA_BACKEND STREQUAL "AUTO")
-  message(STATUS "nitro backend: AUTO")
+  message(STATUS "hali backend: AUTO")
   check_language(CUDA)
   if(CMAKE_CUDA_COMPILER)
     enable_language(CUDA)
@@ -203,9 +203,9 @@ if(NOT JSON_FOUND)
 endif()
 
 # -----------------------------
-# nitro executable
+# hali executable
 # -----------------------------
-add_executable(nitro
+add_executable(hali
   src/string_utils.cpp
   yyjson/src/yyjson.c
   src/config.cpp
@@ -227,26 +227,26 @@ add_executable(nitro
   src/main.cpp
 )
 
-target_include_directories(nitro PRIVATE
+target_include_directories(hali PRIVATE
   ${LLAMA_DIR}/include
   ${LLAMA_DIR}/ggml/include
   ${CMAKE_CURRENT_SOURCE_DIR}/src
   ${JSON_INCLUDE}
 )
 
-target_link_libraries(nitro PRIVATE
+target_link_libraries(hali PRIVATE
   llama
   ggml
   ${NC_TARGET}
 )
 
 if(CURL_FOUND_INTERNAL)
-  target_link_libraries(nitro PRIVATE ${CURL_TARGET})
-  target_compile_definitions(nitro PRIVATE NITRO_HAVE_CURL=1)
+  target_link_libraries(hali PRIVATE ${CURL_TARGET})
+  target_compile_definitions(hali PRIVATE HALI_HAVE_CURL=1)
 else()
-  target_compile_definitions(nitro PRIVATE NITRO_HAVE_CURL=0)
+  target_compile_definitions(hali PRIVATE HALI_HAVE_CURL=0)
 endif()
 
-set_target_properties(nitro PROPERTIES
+set_target_properties(hali PROPERTIES
   RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin
 )

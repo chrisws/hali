@@ -1,4 +1,4 @@
-// This file is part of Nitro
+// This file is part of Hali
 //
 // Copyright(C) 2026 Chris Warren-Smith.
 //

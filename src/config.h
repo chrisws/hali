@@ -1,4 +1,4 @@
-// This file is part of Nitro
+// This file is part of Hali
 //
 // Copyright(C) 2026 Chris Warren-Smith.
 //
@@ -17,11 +17,11 @@
 namespace fs = std::filesystem;
 
 //
-// NitroConfig
+// HaliConfig
 //
-struct NitroConfig {
-  explicit NitroConfig();
-  ~NitroConfig() = default;
+struct HaliConfig {
+  explicit HaliConfig();
+  ~HaliConfig() = default;
 
   std::string build_system_prompt() const;
   std::string introspect() const;
@@ -35,7 +35,7 @@ struct NitroConfig {
   std::string embed_path_;
   std::string backup_path_;
   std::string sandbox_;
-  std::string config_ = "nitro.config.json";
+  std::string config_ = "hali.config.json";
 
   float min_p_          = 0.0f;
   float penalty_freq_   = 0.0f;

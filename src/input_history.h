@@ -1,4 +1,4 @@
-// This file is part of Nitro
+// This file is part of Hali
 //
 // Copyright(C) 2026 Chris Warren-Smith.
 //
@@ -76,7 +76,7 @@ class InputHistory {
   }
 
   /**
-   * @brief Load history from ~/.config/nitro/nitro.history (one entry per line).
+   * @brief Load history from ~/.config/hali/hali.history (one entry per line).
    * Silently succeeds if the file doesn't exist.
    */
   void load(const std::string &path) {

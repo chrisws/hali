@@ -1,4 +1,4 @@
-// This file is part of Nitro
+// This file is part of Hali
 //
 // Copyright(C) 2026 Chris Warren-Smith.
 //
@@ -68,7 +68,7 @@ static std::string base64_encode(const uint8_t *data, size_t len) {
 // WebSocket constants
 // ────────────────────────────────────────────────────────────────────────────
 
-static constexpr std::string_view WS_PATH = "/__nitro_ws__";
+static constexpr std::string_view WS_PATH = "/__hali_ws__";
 static constexpr char  WS_GUID[] = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -536,7 +536,7 @@ struct WebServer {
 }; // struct WebServer
 
 // ────────────────────────────────────────────────────────────────────────────
-// Global instance + public API for Nitro agent integration
+// Global instance + public API for Hali agent integration
 // ────────────────────────────────────────────────────────────────────────────
 static WebServer g_webserver;
 

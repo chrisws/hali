@@ -1,4 +1,4 @@
-// This file is part of Nitro
+// This file is part of Hali
 //
 // Copyright(C) 2026 Chris Warren-Smith.
 //
@@ -216,7 +216,7 @@ void curl_set_opts(CURL *curl) {
   curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
   curl_easy_setopt(curl, CURLOPT_MAXREDIRS,      5L);
   curl_easy_setopt(curl, CURLOPT_TIMEOUT,        15L);
-  curl_easy_setopt(curl, CURLOPT_USERAGENT,      "nitro/1.0");
+  curl_easy_setopt(curl, CURLOPT_USERAGENT,      "hali/1.0");
   // Accept compressed responses; curl will decompress automatically.
   curl_easy_setopt(curl, CURLOPT_ACCEPT_ENCODING, "");
 }

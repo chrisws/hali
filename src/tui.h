@@ -1,4 +1,4 @@
-// This file is part of Nitro
+// This file is part of Hali
 //
 // Copyright(C) 2026 Chris Warren-Smith.
 //
@@ -31,7 +31,7 @@ constexpr std::string ICON_SYS   = " ✨ ▏";
 enum class ThemeMode {
   DARK = 0,
   LIGHT = 1,
-  NAVY = 2  // Original Nitro color scheme
+  NAVY = 2  // Original Hali color scheme
 };
 
 //
@@ -59,7 +59,7 @@ namespace Color {
     POPUP_TEXT,
     COLOR_CHAT_LOGO_GRADIENT,
     COLOR_CHAT_USER,
-    COLOR_CHAT_NITRO,
+    COLOR_CHAT_HALI,
     COLOR_CHAT_SYSTEM,
     COLOR_CHAT_TOOL,
     COLOR_CHAT_ERROR,
@@ -81,7 +81,7 @@ class ColorTheme {
 // Solarized Dark theme
 namespace Color {
   namespace Chat {
-    constexpr RGB COLOR_CHAT_NITRO = {180, 255, 180};
+    constexpr RGB COLOR_CHAT_HALI = {180, 255, 180};
     constexpr RGB COLOR_CHAT_SYSTEM = {160,  82,  45};
     constexpr RGB COLOR_CHAT_TOOL = {255, 180,  80};
     constexpr RGB COLOR_CHAT_ERROR = {255,  80,  80};
@@ -131,8 +131,8 @@ namespace Color {
             return CHAT_BACKGROUND;
           case Color::ColorElement::COLOR_CHAT_USER:
             return INPUT_PROMPT;
-          case Color::ColorElement::COLOR_CHAT_NITRO:
-            return Color::Chat::COLOR_CHAT_NITRO;
+          case Color::ColorElement::COLOR_CHAT_HALI:
+            return Color::Chat::COLOR_CHAT_HALI;
           case Color::ColorElement::COLOR_CHAT_SYSTEM:
             return Color::Chat::COLOR_CHAT_SYSTEM;
           case Color::ColorElement::COLOR_CHAT_TOOL:
@@ -197,8 +197,8 @@ namespace Color {
             return CHAT_BACKGROUND;
           case Color::ColorElement::COLOR_CHAT_USER:
             return INPUT_PROMPT;
-          case Color::ColorElement::COLOR_CHAT_NITRO:
-            return Color::Chat::COLOR_CHAT_NITRO;
+          case Color::ColorElement::COLOR_CHAT_HALI:
+            return Color::Chat::COLOR_CHAT_HALI;
           case Color::ColorElement::COLOR_CHAT_SYSTEM:
             return Color::Chat::COLOR_CHAT_SYSTEM;
           case Color::ColorElement::COLOR_CHAT_TOOL:
@@ -220,7 +220,7 @@ namespace Color {
     };
   }
 
-  // Navy theme - the original Nitro color scheme
+  // Navy theme - the original Hali color scheme
   namespace NavyTheme {
     constexpr RGB INPUT_BORDER              = {80, 120, 160};
     constexpr RGB INPUT_PROMPT              = {100, 210, 255};
@@ -263,8 +263,8 @@ namespace Color {
             return CHAT_BACKGROUND;
           case Color::ColorElement::COLOR_CHAT_USER:
             return INPUT_PROMPT;
-          case Color::ColorElement::COLOR_CHAT_NITRO:
-            return Color::Chat::COLOR_CHAT_NITRO;
+          case Color::ColorElement::COLOR_CHAT_HALI:
+            return Color::Chat::COLOR_CHAT_HALI;
           case Color::ColorElement::COLOR_CHAT_SYSTEM:
             return Color::Chat::COLOR_CHAT_SYSTEM;
           case Color::ColorElement::COLOR_CHAT_TOOL:
@@ -348,6 +348,16 @@ class Tui final: TuiContext {
   void history_load(const std::string &path) { input_.load(path); }
   void history_save(const std::string &path) const { input_.save(path); }
 
+  // ── search ────────────────────────────────────────────────────────
+  void start_search(const std::string &term);
+  void find_next();
+  void find_previous();
+  void clear_search();
+  bool is_searching() const { return search_active_; }
+  std::string get_search_term() const { return search_term_; }
+  int get_match_index() const { return match_index_; }
+  int get_total_matches() const { return total_matches_; }
+
   // ── theme management ───────────────────────────────────────────────
   void toggle_theme() override;
 
@@ -400,7 +410,15 @@ class Tui final: TuiContext {
   // ── input ─────────────────────────────────────────────────────────
   Input input_;
 
+  // ── search ────────────────────────────────────────────────────────
+  bool search_active_ = false;
+  std::string search_term_;
+  int match_index_ = 0;
+  int total_matches_ = 0;
+  std::vector<std::pair<int, int>> match_positions_;
+
   // ── theme ─────────────────────────────────────────────────────────
   ThemeMode current_theme_;
   std::unique_ptr<ColorTheme> theme_;
 };
+

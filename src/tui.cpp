@@ -1,4 +1,4 @@
-// This file is part of Nitro
+// This file is part of Hali
 //
 // Copyright(C) 2026 Chris Warren-Smith.
 //
@@ -197,7 +197,7 @@ void Tui::redraw_header() const {
   const char *spin_str = thinking_ ? SPIN[spinner_frame_ % 8] : " ";
   char buf[512];
   int n = std::snprintf(buf, sizeof(buf),
-                        " ✦ NITRO  │ %-32s │ %5.1f tok/s │ KV %4.1f%%  VRAM %4.1f%%  %s",
+                        " ✦ HALI  │ %-32s │ %5.1f tok/s │ KV %4.1f%%  VRAM %4.1f%%  %s",
                         current_model_.c_str(), static_cast<double>(tokens_per_sec_),
                         static_cast<double>(kv_pct), static_cast<double>(vram_pct), spin_str);
   if (n > term_cols_) buf[term_cols_] = '\0';
@@ -219,8 +219,8 @@ uint64_t Tui::get_line_color(const std::string &line) const {
     result = chat_ch(GRAD_R[gi], GRAD_G[gi], GRAD_B[gi]);
   } else if (line.rfind("You: ",    0) == 0) {
     result = chat_ch(Color::ColorElement::COLOR_CHAT_USER);
-  } else if (line.rfind("Nitro: ",  0) == 0) {
-    result = chat_ch(Color::ColorElement::COLOR_CHAT_NITRO);
+  } else if (line.rfind("Hali: ",  0) == 0) {
+    result = chat_ch(Color::ColorElement::COLOR_CHAT_HALI);
   } else if (line.rfind(ICON_SYS,   0) == 0) {
     result = chat_ch(Color::ColorElement::COLOR_CHAT_SYSTEM);
   } else if (line.rfind(ICON_TOOL,  0) == 0) {

@@ -1,4 +1,4 @@
-// This file is part of Nitro
+// This file is part of Hali
 //
 // Copyright(C) 2026 Chris Warren-Smith.
 //
@@ -277,7 +277,7 @@ bool Client::connect() {
 
   // '{"jsonrpc":"2.0","id":1,"method":"initialize",
   //      "params":{"protocolVersion":"2025-06-18","capabilities":{},
-  //                "clientInfo":{"name":"nitro","version":"0.1"}}}'
+  //                "clientInfo":{"name":"hali","version":"0.1"}}}'
 
   // Add jsonrpc and id fields
   root.set_str("jsonrpc", "2.0");
@@ -289,7 +289,7 @@ bool Client::connect() {
   params.set_empty_obj("capabilities");
 
   auto clientInfo = params.get_child("clientInfo");
-  clientInfo.set_str("name", "nitro");
+  clientInfo.set_str("name", "hali");
   clientInfo.set_str("version", "1.0.0");
 
   // Convert to string

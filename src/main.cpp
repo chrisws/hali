@@ -1,4 +1,4 @@
-// This file is part of Nitro
+// This file is part of Hali
 //
 // Copyright(C) 2026 Chris Warren-Smith.
 //
@@ -10,7 +10,7 @@
 // Uses llama-sb.h as the sole llama.cpp integration layer.
 //
 // Usage:
-//   ./nitro [options] [project_dir]
+//   ./hali [options] [project_dir]
 //
 // Options:
 //   -m, --model  <path>       GGUF model to load on startup
@@ -35,17 +35,17 @@
 #include "ui_text.h"
 #include "webview.h"
 
-// Returns the history file path: ~/.config/nitro/history.txt
+// Returns the history file path: ~/.config/hali/history.txt
 static std::string history_path() {
   const char *home = getenv("HOME");
   std::string base = home ? std::string(home) : ".";
-  return base + "/.config/nitro/history.txt";
+  return base + "/.config/hali/history.txt";
 }
 
 //
 // Slash command handler
 //
-static void handle_slash(const std::string &input, NitroConfig &cfg, Agent &agent, Tui &tui) {
+static void handle_slash(const std::string &input, HaliConfig &cfg, Agent &agent, Tui &tui) {
   auto sp = input.find(' ');
   std::string verb = (sp == std::string::npos) ? input : input.substr(0, sp);
   std::string rest;
@@ -238,7 +238,7 @@ static void handle_slash(const std::string &input, NitroConfig &cfg, Agent &agen
 // main()
 //
 int main(int argc, char **argv) {
-  NitroConfig cfg;
+  HaliConfig cfg;
 
   // ── Parse arguments (command-line overrides saved settings) ──────
   auto resolve_path = [](const std::string &arg) -> std::string {
@@ -259,7 +259,7 @@ int main(int argc, char **argv) {
   for (int i = 1; i < argc; ++i) {
     auto take_next = [&](const char *flag) -> std::string {
       if (i + 1 >= argc) {
-        std::fprintf(stderr, "nitro: %s requires an argument\n", flag);
+        std::fprintf(stderr, "hali: %s requires an argument\n", flag);
         std::exit(1);
       }
       return argv[++i];
@@ -295,7 +295,7 @@ int main(int argc, char **argv) {
       ui::usage();
       return 0;
     } else if (!a.empty() && a[0] == '-') {
-      std::fprintf(stderr, "nitro: unknown option '%s'  (try --help)\n", a.c_str());
+      std::fprintf(stderr, "hali: unknown option '%s'  (try --help)\n", a.c_str());
       std::exit(1);
     } else {
       cfg.sandbox_ = resolve_path(a);
@@ -332,7 +332,7 @@ int main(int argc, char **argv) {
   }
 
   // ── Auto-discover knowledge files ─────────────────────────────────
-  for (const char *kf : {"nitro.md", "persona.md", "AGENTS.md"}) {
+  for (const char *kf : {"hali.md", "persona.md", "AGENTS.md"}) {
     if (fs::exists(kf)) {
       cfg.knowledge_files_.emplace_back(kf);
     }
@@ -388,7 +388,7 @@ int main(int argc, char **argv) {
   }
 
   // ── Main loop ─────────────────────────────────────────────────────
-  log_write(LEVEL_INFO, "nitro starting");
+  log_write(LEVEL_INFO, "hali starting");
   for (;;) {
     if (cfg.web_port_ != -1) {
       if (webview::has_message()) {
@@ -427,7 +427,7 @@ int main(int argc, char **argv) {
     webview::stop();
   }
 
-  log_write(LEVEL_INFO, "nitro exiting");
+  log_write(LEVEL_INFO, "hali exiting");
   log_close();
 
   // Persist input history for the next session.

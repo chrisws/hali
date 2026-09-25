@@ -1,4 +1,4 @@
-// This file is part of Nitro
+// This file is part of Hali
 //
 // Copyright(C) 2026 Chris Warren-Smith.
 //
@@ -21,7 +21,7 @@ void help(Tui &tui) {
   tui.append_line(ICON_SYS + "  /theme                   toggle the theme (F12)");
   tui.append_line(ICON_SYS + "  /set    <key> <value>    change a setting live");
   tui.append_line(ICON_SYS + "  /help                    this message");
-  tui.append_line(ICON_SYS + "  exit / quit              exit Nitro");
+  tui.append_line(ICON_SYS + "  exit / quit              exit Hali");
   tui.append_line(ICON_SYS + "Settable keys (via /set):");
   tui.append_line(ICON_SYS + "  temperature  top_p  top_k  min_p  penalty_repeat");
   tui.append_line(ICON_SYS + "  penalty_last_n  rag_top_k  n_gpu_layers");
@@ -29,7 +29,7 @@ void help(Tui &tui) {
   tui.redraw_all();
 }
 
-void settings(Tui &tui, NitroConfig &cfg) {
+void settings(Tui &tui, HaliConfig &cfg) {
   tui.append_line(ICON_SYS + "Current settings:");
   tui.append_line(ICON_SYS + "  model_path      : " + cfg.model_path_);
   tui.append_line(ICON_SYS + "  embed_path      : " + cfg.embed_path_);
@@ -61,7 +61,7 @@ void no_model(Tui &tui) {
 // print command line usage
 //
 void usage() {
-  std::puts("Usage: nitro [options] [project_dir]\n"
+  std::puts("Usage: hali [options] [project_dir]\n"
             "\n"
             "Options:\n"
             "  -m, --model  <path>      GGUF model to load on startup\n"
@@ -71,9 +71,9 @@ void usage() {
             "  -h, --help               show this help\n"
             "\n"
             "project_dir defaults to the current working directory.\n"
-            "Settings are persisted to ~/.config/nitro/settings.json.\n"
+            "Settings are persisted to ~/.config/hali/settings.json.\n"
             "\n"
-            "Slash commands inside nitro:\n"
+            "Slash commands inside hali:\n"
             "  /model  [path]           load / hot-reload a GGUF (picker if no path)\n"
             "  /embed  [path]           load an embedding model  (picker if no path)\n"
             "  /rag    [path]           index file or directory  (picker if no path)\n"
@@ -88,14 +88,14 @@ void usage() {
 // Welcome banner  — colourful multi-line ASCII logo
 //
 void welcome(Tui &tui, const std::string &sandbox) {
-  tui.append_line("[logo_5]  ────────W E L C O M E  T O  N I T R O────────────");  
+  tui.append_line("[logo_5]  ───── W E L C O M E  T O  H · A · L · I ────────");  
   tui.append_line("[logo_0]     ▄▅▆░██▄▅   ▄▅▆░██▄▅   ▄▅▆█░█░█▆▅▄   ▅▆░██▄▅  ");
   tui.append_line("[logo_1]        ▄▅█ ◉ █▄ ▄▅█ ◉ █▄  ▄▅█ ◕ ◕ █▄   ▄▅█ ◉ █▄  ");
   tui.append_line("[logo_2]      ▄▅░██░██▄▅ ▄▅░██░██▄▅ ▄▅░██░██▄▅ ▄▅░██░██▄▅ ");
   tui.append_line("[logo_3]      ▀▄█░█▓▄   ▀▄█░█▓▄      ▀▄█ ░█▓▄    ▓▓▓      ");
   tui.append_line("[logo_5]  ─────────── agentic LLM shell v1.0 ──────────────");
   tui.append_line(ICON_SYS + " Sandbox : " + sandbox);
-  tui.append_line(ICON_SYS + " /help for commands  ·  exit to quit");
+  tui.append_line(ICON_SYS + " /help for commands, exit to quit");
   tui.append_line("");
   tui.redraw_all();
 }

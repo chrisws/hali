@@ -1,4 +1,4 @@
-// This file is part of Nitro
+// This file is part of Hali
 //
 // Copyright(C) 2026 Chris Warren-Smith.
 //
@@ -15,7 +15,7 @@
 
 namespace ui {
   void help(Tui &tui);
-  void settings(Tui &tui, NitroConfig &cfg);
+  void settings(Tui &tui, HaliConfig &cfg);
   void usage();
   void no_model(Tui &tui);
   void welcome(Tui &tui, const std::string &sandbox);

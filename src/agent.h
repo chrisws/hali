@@ -1,4 +1,4 @@
-// This file is part of Nitro
+// This file is part of Hali
 //
 // Copyright(C) 2026 Chris Warren-Smith.
 //
@@ -20,7 +20,7 @@
 // Agent
 //
 struct Agent {
-  Agent(NitroConfig &cfg, Tui &tui, mcp::Client &mcp_client)
+  Agent(HaliConfig &cfg, Tui &tui, mcp::Client &mcp_client)
     : cfg_(cfg)
     , tui_(tui)
     , mcp_client_(mcp_client) {
@@ -38,7 +38,7 @@ struct Agent {
   bool model_loaded() const { return model_loaded_;}
 
   private:
-  NitroConfig &cfg_;
+  HaliConfig &cfg_;
   Tui &tui_;
   mcp::Client &mcp_client_;
 

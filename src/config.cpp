@@ -1,4 +1,4 @@
-// This file is part of Nitro
+// This file is part of Hali
 //
 // Copyright(C) 2026 Chris Warren-Smith.
 //
@@ -29,13 +29,13 @@ static const KVCachePreset to_kv_preset(const std::string &str) {
   return KVCachePreset::Compact;
 }
 
-NitroConfig::NitroConfig() {
+HaliConfig::HaliConfig() {
   for (const auto &tool : ALLOWED_TOOLS) {
     run_allowed_.emplace_back(tool);
   }
 }
 
-std::string NitroConfig::kv_preset_to_string() const {
+std::string HaliConfig::kv_preset_to_string() const {
   switch (kv_preset_) {
     case KVCachePreset::F16:      return "f16";
     case KVCachePreset::Balanced: return "balanced";
@@ -45,20 +45,20 @@ std::string NitroConfig::kv_preset_to_string() const {
 }
 
 //
-// Settings persistence  (~/.config/nitro/nitro.settings.json)
-// Returns the canonical settings path: ~/.config/nitro/settings.json
+// Settings persistence  (~/.config/hali/hali.settings.json)
+// Returns the canonical settings path: ~/.config/hali/settings.json
 //
-std::string NitroConfig::settings_path() const {
+std::string HaliConfig::settings_path() const {
   // Attempt to read settings from the current working directory first
   if (fs::exists(config_)) {
     return config_;
   }
   const char *home = getenv("HOME");
   std::string base = home ? std::string(home) : ".";
-  return base + "/.config/nitro/settings.json";
+  return base + "/.config/hali/settings.json";
 }
 
-void NitroConfig::set_config(std::string config) {
+void HaliConfig::set_config(std::string config) {
   if (fs::exists(config)) {
     config_ = config;
   }
@@ -67,7 +67,7 @@ void NitroConfig::set_config(std::string config) {
 // Load settings from disk into cfg.  Fields present in the file overwrite
 // the defaults already in cfg; fields absent are left at their defaults.
 // Silently succeeds if the file doesn't exist yet.
-void NitroConfig::load_settings() {
+void HaliConfig::load_settings() {
   std::string path = settings_path();
   std::ifstream f(path);
   if (!f) return;                  // no file → use defaults
@@ -113,8 +113,8 @@ void NitroConfig::load_settings() {
   root.get_bool("offload_kqv", offload_kqv_);
 }
 
-// Persist the current cfg to ~/.config/nitro/settings.json.
-bool NitroConfig::save_settings() const {
+// Persist the current cfg to ~/.config/hali/settings.json.
+bool HaliConfig::save_settings() const {
   std::string path = settings_path();
   fs::path dir = fs::path(path).parent_path();
   std::error_code ec;
@@ -133,10 +133,10 @@ bool NitroConfig::save_settings() const {
 //
 // System prompt
 //
-std::string NitroConfig::build_system_prompt() const {
+std::string HaliConfig::build_system_prompt() const {
   std::string p;
   p +=
-    "You are Nitro, an agentic AI assistant for software development. "
+    "You are Hali, an agentic AI assistant for software development. "
     "Proceed with caution, guided by logic and the pursuit of knowledge.\n\n"
 
     "Your sandbox (project directory) is: " + sandbox_ + "\n\n"
@@ -163,24 +163,24 @@ std::string NitroConfig::build_system_prompt() const {
 
     "## Execution Model\n"
     "- Single-threaded: Only ONE tool call can be active at a time\n"
-    "- Sequential execution: Wait for NITRO_TOOL_RESULT before issuing next tool\n"
+    "- Sequential execution: Wait for HALI_TOOL_RESULT before issuing next tool\n"
     "- No parallel tool calls or batched requests\n\n"
 
     "## Tool Protocol\n"
-    "Emit ONE tool call at a time, immediately followed by NITRO_END_TOOL.\n"
-    "Do NOT add any commentary, explanation, or text between the tool call and NITRO_END_TOOL.\n"
-    "The host executes the tool and returns NITRO_TOOL_RESULT: <value>.\n"
+    "Emit ONE tool call at a time, immediately followed by HALI_END_TOOL.\n"
+    "Do NOT add any commentary, explanation, or text between the tool call and HALI_END_TOOL.\n"
+    "The host executes the tool and returns HALI_TOOL_RESULT: <value>.\n"
     "Wait for the result before continuing.\n"
-    "After receiving NITRO_TOOL_RESULT you may explain what you did.\n\n"
+    "After receiving HALI_TOOL_RESULT you may explain what you did.\n\n"
     "Examples:\n\n"
     "TOOL:LIST\n"
-    "NITRO_END_TOOL\n\n"
+    "HALI_END_TOOL\n\n"
     "TOOL:READ readme.txt\n"
-    "NITRO_END_TOOL\n\n"
+    "HALI_END_TOOL\n\n"
     "TOOL:WRITE index.html <!DOCTYPE html><html>...</html>\n"
-    "NITRO_END_TOOL\n\n"
+    "HALI_END_TOOL\n\n"
     "TOOL:RUN ./build.sh\n"
-    "NITRO_END_TOOL\n\n"
+    "HALI_END_TOOL\n\n"
 
     "## Available Tools\n"
     "  TOOL:LIST   [dir]          list files (default: sandbox root)\n"
@@ -210,8 +210,8 @@ std::string NitroConfig::build_system_prompt() const {
     "Otherwise answer directly using internal knowledge.\n\n"
 
     "## Tool Rules\n"
-    "- NITRO_END_TOOL must immediately follow the tool call — no exceptions\n"
-    "- Never add commentary before NITRO_END_TOOL\n"
+    "- HALI_END_TOOL must immediately follow the tool call — no exceptions\n"
+    "- Never add commentary before HALI_END_TOOL\n"
     "- Only use one tool at a time, step by step\n"
     "- Never access files outside the sandbox\n"
     "- Use TOOL:PERMISSION before destructive or irreversible operations\n"
@@ -261,7 +261,7 @@ std::string NitroConfig::build_system_prompt() const {
     " =======\n"
     " [complete new function]\n"
     " >>>>>>> NEW\n"
-    " NITRO_END_TOOL\n\n"
+    " HALI_END_TOOL\n\n"
 
     "## Interaction Guidelines\n"
     "- Be precise and efficient\n"
@@ -301,7 +301,7 @@ std::string NitroConfig::build_system_prompt() const {
   return p;
 }
 
-std::string NitroConfig::introspect() const {
+std::string HaliConfig::introspect() const {
   static constexpr std::string_view tmpl =
     "{{\n"
     "  \"model_path\":     \"{}\",\n"

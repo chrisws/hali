@@ -1,4 +1,4 @@
-// This file is part of Nitro
+// This file is part of Hali
 //
 // Copyright(C) 2026 Chris Warren-Smith.
 //
@@ -205,7 +205,7 @@ static bool hasDangerousPatterns(const std::string &command) {
           (command.find("rm ") != std::string::npos));
 }
 
-static std::string tool_run(const NitroConfig &cfg, Tui &tui, const std::string &arg1, const std::string &arg2) {
+static std::string tool_run(const HaliConfig &cfg, Tui &tui, const std::string &arg1, const std::string &arg2) {
   const std::string args = arg1 + " " + arg2;
   if (cfg.permission_prompt_ && !tui.confirm_dialog(std::format("Allow {} {} to run?", arg1, arg2))) {
     return "ERROR: prevented by user";
@@ -233,14 +233,14 @@ static std::string tool_run(const NitroConfig &cfg, Tui &tui, const std::string 
   return out;
 }
 
-static void broadcast_reload(const NitroConfig &cfg, Tui &tui) {
+static void broadcast_reload(const HaliConfig &cfg, Tui &tui) {
   if (cfg.web_port_ != -1) {
     tui.show_tool("reload browser");
     webview::broadcast_reload();
   }
 }
 
-static void broadcast_message(const NitroConfig &cfg, Tui &tui, const std::string &message) {
+static void broadcast_message(const HaliConfig &cfg, Tui &tui, const std::string &message) {
   if (cfg.web_port_ != -1 && !utils::is_blank(message)) {
     tui.show_tool("send to browser");
     webview::broadcast_message(message);
@@ -640,8 +640,8 @@ std::string Agent::process_tool(const std::string &cmd) {
 void Agent::invoke_tool(const std::string &buffer, const std::string_view template_str) {
   static constexpr std::string KV_START = "[KV-INFO]";
   static constexpr std::string KV_END = "[/KV-INFO]";
-  static const std::string_view END_TOOL = "\nNITRO_END_TOOL";
-  static const std::string TOOL_RESULT = "NITRO_TOOL_RESULT: ";
+  static const std::string_view END_TOOL = "\nHALI_END_TOOL";
+  static const std::string TOOL_RESULT = "HALI_TOOL_RESULT: ";
 
   std::string tool;
   if (const auto pos = buffer.rfind(END_TOOL); pos != std::string::npos) {
@@ -712,7 +712,7 @@ bool Agent::run_turn(const std::string &user_message) {
     tui_.redraw_all();
     return false;
   }
-  tui_.append_line("Nitro: ");
+  tui_.append_line("Hali: ");
 
   // in_think starts false — models that don't use <think> blocks emit
   // visible text immediately.  The spinner activates only while thinking.

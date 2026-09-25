@@ -46,7 +46,7 @@ void log_open(const std::string& level) {
   g_level = get_level(level);
   if (g_logfile == nullptr) {
     const char *home = getenv("HOME");
-    const auto path = std::string(home ? home : ".") + "/.config/nitro/nitro.log";
+    const auto path = std::string(home ? home : ".") + "/.config/hali/hali.log";
     std::error_code ec;
     fs::path dir = fs::path(path).parent_path();
     fs::create_directories(dir, ec);

@@ -1,4 +1,4 @@
-// This file is part of Nitro
+// This file is part of Hali
 //
 // Copyright(C) 2026 Chris Warren-Smith.
 //
@@ -45,7 +45,7 @@ static bool isCurlyBraceLanguage(const fs::path &path) {
 }
 
 static std::string cLangCheckSyntax(const std::string &source_code) {
-  char tmpl[] = "/tmp/nitro_syntax_XXXXXX.cpp";
+  char tmpl[] = "/tmp/hali_syntax_XXXXXX.cpp";
   // 4 = length of ".cpp" suffix
   const int fd = mkstemps(tmpl, 4);
   if (fd == -1) {

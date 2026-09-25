@@ -35,7 +35,7 @@ this endpoint actually returns.
 - Use `-s` (silent) and check the actual HTTP status/response body for an error shape — most of
   these APIs return 200 with an error field, or a non-200 with a plain-text body, rather than a
   consistent error contract. Check both.
-- Send a real `User-Agent` (e.g. `User-Agent: nitro-dashboard/1.0 (contact info)`) for any API
+- Send a real `User-Agent` (e.g. `User-Agent: hali-dashboard/1.0 (contact info)`) for any API
   that requests one — Wikipedia and Reddit will throttle or reject generic/missing user agents.
 - Don't hammer an endpoint in a tight loop. If you need several related calls (e.g. weather for
   five cities), space them or batch where the API supports it, and cache the result for the rest

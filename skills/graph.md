@@ -2,7 +2,7 @@
 
 # Graph Tree View JSON Format
 
-This document describes the JSON format for creating tree-view graphs with nested children in Nitro.
+This document describes the JSON format for creating tree-view graphs with nested children in Hali.
 
 ## Overview
 
@@ -87,7 +87,7 @@ Each node in the `data` array must have:
 ## Usage
 
 TOOL:GRAPH `json_string`
-NITRO_END_TOOL
+HALI_END_TOOL
 
 The `json_string` should be a valid JSON string matching the format above.
 

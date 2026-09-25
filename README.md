@@ -1,6 +1,4 @@
-# Haliastur | Hardware-Aware Local Inference
-
-_project rename in progress - 'nitro' was used in too many other projects_
+# H · A · L · I | Haliastur | Hardware-Aware Local Inference
 
 **A standalone, agentic LLM shell for your terminal.**
 
@@ -10,15 +8,15 @@ Hali is a local-first agentic coding/chat shell built on [llama.cpp](https://git
 
 ## Why
 
-Most agentic shells assume a hosted API and treat context as free. Nitro assumes neither: it's built for consumer GPUs (developed against an 8GB RTX 5060) where the KV cache is a scarce resource and every tool call has to earn its place in the context window.
+Most agentic shells assume a hosted API and treat context as free. Hali assumes neither: it's built for consumer GPUs (developed against an 8GB RTX 5060) where the KV cache is a scarce resource and every tool call has to earn its place in the context window.
 
 ## Features
 
 - **notcurses TUI** — plane-based rendering, modal popups, persistent input history (Up/Down navigation), live `/set` commands for generation parameters, and Kitty keyboard protocol support for reliable input in modern terminals.
 - **Fragmentation-aware KV cache management** — `full_flush_except_system()` as a graceful recovery path when sequence removal fragments the cache instead of compacting it; a `KVCachePreset` enum (`F16` / `Balanced` / `Compact`) coupled to flash-attention settings.
 - **Dynamic tool-result budgeting** — `max_tool_result_size()` targets ~75% of remaining context so a single large tool result can't blow the budget.
-- **Unambiguous tool-call protocol** — an explicit `NITRO_END_TOOL` terminator so tool boundaries never get confused with model chatter.
-- **A full sandboxed tool suite** — every file operation is scoped to a sandbox root (the directory Nitro is launched in, or an explicit path argument):
+- **Unambiguous tool-call protocol** — an explicit `HALI_END_TOOL` terminator so tool boundaries never get confused with model chatter.
+- **A full sandboxed tool suite** — every file operation is scoped to a sandbox root (the directory Hali is launched in, or an explicit path argument):
 
   | Tool | Purpose |
   | --- | --- |
@@ -35,21 +33,21 @@ Most agentic shells assume a hosted API and treat context as free. Nitro assumes
   | `TOOL:DATE`, `TOOL:TIME`, `TOOL:RND`, `TOOL:INTROSPECT` | Small utility/introspection tools |
 
 - **MCP client** — connect to external Model Context Protocol servers (e.g. JetBrains IDE built-in MCP servers) with `--mcp`, filter which tools get exposed with `--mcp-filter`, and dry-run the resulting system context with `--mcp-test`. Server connection details live in `mcp.json`.
-- **Skills system** — load one or more markdown skill files into the static system-prompt prefix at session start with `--skill <name>` (no per-turn routing, so it doesn't disrupt the KV cache). `nitro.md`, `persona.md`, `AGENTS.md`, and `README.md` are auto-discovered from the current directory if present. The [`skills/`](skills/) folder ships a starter set covering debugging, TDD, code review, CMake/build troubleshooting, memory-safety review, dependency-free frontend work, SmallBASIC's raylib plugin, free JSON API sourcing, a local-info feed pattern, and a few just-for-fun ones (chess, an ELIZA-style roleplay, generative interactive fiction, a self-scoring introspection game).
+- **Skills system** — load one or more markdown skill files into the static system-prompt prefix at session start with `--skill <name>` (no per-turn routing, so it doesn't disrupt the KV cache). `hali.md`, `persona.md`, `AGENTS.md`, and `README.md` are auto-discovered from the current directory if present. The [`skills/`](skills/) folder ships a starter set covering debugging, TDD, code review, CMake/build troubleshooting, memory-safety review, dependency-free frontend work, SmallBASIC's raylib plugin, free JSON API sourcing, a local-info feed pattern, and a few just-for-fun ones (chess, an ELIZA-style roleplay, generative interactive fiction, a self-scoring introspection game).
 - **Pure C++ RAG pipeline** — semantic chunker, binary `.db` index, deduplicating `RagSession`, with a folder picker for building indexes on the fly.
-- **Persistent settings** — configuration lives in `~/.config/nitro.settings.json`, or point at a specific file with `-c`/`--config` (defaults to `nitro.config.json`).
+- **Persistent settings** — configuration lives in `~/.config/hali.settings.json`, or point at a specific file with `-c`/`--config` (defaults to `hali.config.json`).
 - **Test suite** — unit tests under `tests/` (file operations, string/Unicode utilities, MCP message formatting, the graph renderer), runnable via CTest.
 
 ## Building
 
-Nitro vendors llama.cpp as a submodule and links everything statically.
+Hali vendors llama.cpp as a submodule and links everything statically.
 
 ```
-git clone --recurse-submodules https://github.com/chrisws/nitro.git
-cd nitro
+git clone --recurse-submodules https://github.com/chrisws/hali.git
+cd hali
 cmake -B build -DLLAMA_BACKEND=AUTO
 cmake --build build -j
-./build/bin/nitro
+./build/bin/hali
 ```
 
 ### Running tests
@@ -82,7 +80,7 @@ ctest --test-dir build-tests
 ## Usage
 
 ```
-nitro [sandbox-dir] [options]
+hali [sandbox-dir] [options]
 
   -m, --model <path>        path to a GGUF model
   -e, --embed <path>        path to an embedding model (for RAG)
@@ -105,10 +103,10 @@ A positional argument sets the sandbox root — the directory all file tools (`T
 ## Project layout
 
 ```
-nitro/
+hali/
 ├── CMakeLists.txt
 ├── mcp.json                # MCP server connection config
-├── nitro.config.json       # example runtime settings
+├── hali.config.json       # example runtime settings
 ├── skills/                 # markdown skill files, loaded via --skill
 ├── src/
 │   ├── main.cpp             # entry point, CLI parsing
