@@ -95,7 +95,7 @@ static void test_tool_patch_valid() {
   string patch = "<<<<<<< OLD\nint foo() { return 1; }\n=======\nint foo() { return 42; }\n>>>>>>> NEW";
 
   string result = tool_patch(test_file, patch);
-  assert(result == "SUCCESS: Patch applied to " + test_file);
+  assert(result == "OK: Patch applied to " + test_file);
 
   // Verify the file was updated
   ifstream in(test_file);
