@@ -15,6 +15,7 @@
 
 #include "llama_sb.h"
 #include "logging.h"
+#include "string_utils.h"
 
 constexpr int MAX_REPEAT = 50;
 
@@ -64,6 +65,7 @@ Llama::Llama() :
   _log_level(GGML_LOG_LEVEL_CONT),
   _n_gpu_layers(0),
   _n_system_tokens(0),
+  _tokens_physically_used(0),
   _is_gemma4(false),
   _sampler_dirty(false),
   _can_shift(false),
@@ -76,7 +78,8 @@ Llama::Llama() :
       llama->_last_error = text;
     }
     if (level > llama->_log_level) {
-      fprintf(stderr, "LLAMA: %s", text);
+      std::string log_text(text);
+      log_write(LEVEL_INFO, "LLAMA: %s", utils::trim(text).c_str());
     }
   }, this);
   reset();
@@ -105,6 +108,7 @@ Llama::Llama(Llama &&other) noexcept
   , _log_level(other._log_level)
   , _n_gpu_layers(other._n_gpu_layers)
   , _n_system_tokens(other._n_system_tokens)
+  , _tokens_physically_used(other._tokens_physically_used)
   , _is_gemma4(other._is_gemma4)
   , _sampler_dirty(other._sampler_dirty)
   , _can_shift(other._can_shift)
@@ -138,6 +142,7 @@ void Llama::reset() {
   _min_p = 0.0f;
   _max_tokens = 150;
   _n_system_tokens = 0;
+  _tokens_physically_used = 0;
   _seed = LLAMA_DEFAULT_SEED;
   _sampler_dirty = true;
   if (_ctx) {
@@ -178,14 +183,17 @@ bool Llama::load_model(LlamaLoad &load) {
 
     switch (load.kv_cache_preset) {
       case KVCachePreset::F16:
+        log_write(LEVEL_INFO, "HALI: kv_cache_preset=f16");
         cparams.type_k = GGML_TYPE_F16;
         cparams.type_v = GGML_TYPE_F16;
         break;
       case KVCachePreset::Balanced:
+        log_write(LEVEL_INFO, "HALI: kv_cache_preset=balanced");
         cparams.type_k = GGML_TYPE_Q8_0;
         cparams.type_v = GGML_TYPE_Q8_0;
         break;
       case KVCachePreset::Compact:
+        log_write(LEVEL_INFO, "HALI: kv_cache_preset=compact");
         cparams.type_k = GGML_TYPE_Q4_0;
         cparams.type_v = GGML_TYPE_Q4_0;
         break;
@@ -194,13 +202,16 @@ bool Llama::load_model(LlamaLoad &load) {
     // keep KV cache on GPU
     cparams.offload_kqv = load.offload_kqv;
 
+    // use full-size SWA cache
+    cparams.swa_full = true;
+
     if (load.n_threads > 0) {
-      log_write(LEVEL_INFO, "n_threads: %d", load.n_threads);
+      log_write(LEVEL_INFO, "HALI: n_threads: %d", load.n_threads);
       cparams.n_threads = load.n_threads;
     }
 
     if (load.n_threads_batch > 0) {
-      log_write(LEVEL_INFO, "n_threads_batch: %d", load.n_threads_batch);
+      log_write(LEVEL_INFO, "HALI: n_threads_batch: %d", load.n_threads_batch);
       cparams.n_threads_batch = load.n_threads_batch;
     }
 
@@ -212,6 +223,7 @@ bool Llama::load_model(LlamaLoad &load) {
       _template = llama_model_chat_template(_model, nullptr);
       _is_gemma4 = (_template.find("<|turn>model") != string::npos);
       _can_shift = llama_memory_can_shift(llama_get_memory(_ctx));
+      log_write(LEVEL_INFO, "HALI: can_shift=%d, is_gemma4=%d n_swa=%d", _can_shift, _is_gemma4, llama_model_n_swa(_model));
     }
   }
 
@@ -258,6 +270,7 @@ bool Llama::add_message(LlamaIter &iter, const string &role, const string &conte
   vector<char> buf(buf_size);
   int32_t n = 0;
 
+  _last_error.clear();
   if (_template.empty()) {
     set_last_error("Chat template availability test");
     return false;
@@ -278,7 +291,7 @@ bool Llama::add_message(LlamaIter &iter, const string &role, const string &conte
     bool add_ass = (role == "user" || role == "tool" || role == "tool_result");
     n = llama_chat_apply_template(_template.c_str(), &message, 1, add_ass, buf.data(), buf_size);
     if (n < 0) {
-      log_write(LEVEL_INFO, "unsupported template: %s", _template.c_str());
+      log_write(LEVEL_INFO, "HALI: unsupported template: %s", _template.c_str());
       set_last_error("Chat template support test");
       return false;
     } else if (n > (int32_t)buf.size()) {
@@ -306,7 +319,7 @@ bool Llama::add_message(LlamaIter &iter, const string &role, const string &conte
     _n_system_tokens = prompt_tokens.size();
   }
 
-  if (!make_space_for_tokens((prompt_tokens.size() * 3) / 2)) {
+  if (!make_space_for_tokens(prompt_tokens.size())) {
     return false;
   }
 
@@ -329,6 +342,7 @@ bool Llama::add_message(LlamaIter &iter, const string &role, const string &conte
       set_last_error("Failed to evaluate decoder start token");
       return false;
     }
+    _tokens_physically_used += 1;
   }
 
   iter._tokens_generated = 0;
@@ -339,6 +353,7 @@ bool Llama::add_message(LlamaIter &iter, const string &role, const string &conte
 }
 
 string Llama::next(LlamaIter &iter) {
+  _last_error.clear();
   if (!iter._has_next) {
     set_last_error("Iteration beyond end of stream");
     return "";
@@ -358,10 +373,12 @@ string Llama::next(LlamaIter &iter) {
   // prepare the next batch with the sampled token
   llama_batch batch = llama_batch_get_one(&tok, 1);
   if (llama_decode(_ctx, batch)) {
+    iter._has_next = false;
     set_last_error("Failed to evaluate token during generation");
     return "";
   }
 
+  _tokens_physically_used += 1;
   return result;
 }
 
@@ -373,6 +390,7 @@ string Llama::all(LlamaIter &iter) {
 
   int generated = 0;
 
+  _last_error.clear();
   while (generated < _max_tokens) {
     // sample the next token from the current logits
     llama_token tok = llama_sampler_sample(_sampler, _ctx, -1);
@@ -392,6 +410,8 @@ string Llama::all(LlamaIter &iter) {
       set_last_error("Failed to evaluate token during generation");
       break;
     }
+
+    _tokens_physically_used += 1;
   }
 
   // tokens exhausted - call add_message to continue
@@ -505,7 +525,7 @@ bool Llama::embed_text(const std::string &text, std::vector<float> &out, int emb
 
   out.assign(emb, emb + embed_dim);
 
-  /* L2 normalize */
+  // L2 normalize
   float norm = 0.0f;
   for (float v : out) {
     norm += v * v;
@@ -527,29 +547,23 @@ bool Llama::batch_decode_tokens(vector<llama_token> &tokens) {
     llama_batch batch = llama_batch_get_one(tokens.data() + i, batch_size);
     int result = llama_decode(_ctx, batch);
     if (result == 1) {
-      // KV full or fragmented mid-batch - evict oldest tokens and retry
-      if (!make_space_for_tokens(n_batch)) {
-        set_decode_error(result, i, tokens.size());
+      // KV full - make_space_for_tokens will either confirm there's room,
+      // or force a full reset (clearing system tokens too) and signal
+      // _memory_flush so the caller knows to replay the system prompt.
+      if (!make_space_for_tokens((int)batch_size)) {
+        set_decode_error(result, (int)i, (int)tokens.size());
         return false;
       }
       result = llama_decode(_ctx, batch);
-      if (result == 1) {
-        // Eviction reported enough logical space but decode still failed -
-        // this is fragmentation, not a real space shortage. No defrag API
-        // is available, so fall back to a full non-system flush, which
-        // guarantees one contiguous block.
-        if (!full_flush_except_system()) {
-          set_decode_error(result, i, tokens.size());
-          return false;
-        }
-        _memory_flush = true;
-        result = llama_decode(_ctx, batch);
-      }
     }
     if (result != 0) {
-      set_decode_error(result, i, tokens.size());
+      // No more fallback: if this still fails after a confirmed-clear or
+      // confirmed-room retry, it's a genuine, unexpected failure, not
+      // something a second flush would fix.
+      set_decode_error(result, (int)i, (int)tokens.size());
       return false;
     }
+    _tokens_physically_used += batch_size;
   }
   return true;
 }
@@ -609,17 +623,6 @@ bool Llama::full_flush_except_system() {
   return true;
 }
 
-// Makes space in the context for n_tokens by removing old tokens if necessary
-// Returns true if successful, false if impossible to make space
-//
-// Strategies:
-// - If enough space exists, does nothing
-// - If n_tokens > n_ctx, fails (impossible to fit)
-// - Otherwise, removes oldest tokens to make room
-//
-// Parameters:
-//   n_tokens  - Number of tokens we need space for
-//
 bool Llama::make_space_for_tokens(int n_tokens) {
   int n_ctx = llama_n_ctx(_ctx);
   if (n_tokens > n_ctx) {
@@ -627,50 +630,20 @@ bool Llama::make_space_for_tokens(int n_tokens) {
     return false;
   }
 
-  llama_memory_t mem = llama_get_memory(_ctx);
-
-  // Get current position range
-  llama_pos pos_min = llama_memory_seq_pos_min(mem, 0);
-  llama_pos pos_max = llama_memory_seq_pos_max(mem, 0);
-
-  // Empty memory - nothing to do
-  if (pos_max < 0) {
+  if (_tokens_physically_used + (size_t)n_tokens <= (size_t)n_ctx) {
     return true;
   }
 
-  int current_used = pos_max - pos_min + 1;
-  int space_needed = n_tokens;
-  int space_available = n_ctx - current_used;
+  log_write(LEVEL_DEBUG,
+            "HALI: capacity exhausted, forcing full reset: "
+            "used=%zu requested=%d n_ctx=%d can_shift=%d",
+            _tokens_physically_used, n_tokens, n_ctx, _can_shift ? 1 : 0);
 
-  // Already have enough space
-  if (space_available >= space_needed) {
-    return true;
-  }
-
-  // Calculate how many tokens to remove
-  int tokens_to_remove = space_needed - space_available;
-
-  // Can't remove more than we have (minus _n_system_tokens)
-  int removable = current_used - _n_system_tokens;
-  if (tokens_to_remove > removable) {
-    set_last_error("Can't make enough space while keeping num_system_tokens tokens");
-    return false;
-  }
-  if (!_can_shift) {
-    set_last_error("Memory type doesn't support shifting, can't evict mid-sequence");
-    return false;
-  }
-
-  llama_pos remove_start = pos_min + _n_system_tokens;
-
-  // Remove oldest tokens (from pos_min to pos_min + tokens_to_remove)
-  llama_memory_seq_rm(mem, 0, remove_start, remove_start + tokens_to_remove);
-
-  // Shift remaining tokens down
-  llama_memory_seq_add(mem, 0, remove_start + tokens_to_remove, -1, -tokens_to_remove);
-
-  set_last_error(std::format("made space for {} tokens", n_tokens));
-  return true;
+  llama_memory_clear(llama_get_memory(_ctx), true);
+  _tokens_physically_used = 0;
+  _n_system_tokens = 0;
+  _memory_flush = true;
+  return false;
 }
 
 vector<llama_token> Llama::tokenize(const string &prompt) {

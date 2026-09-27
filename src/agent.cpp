@@ -668,7 +668,7 @@ void Agent::invoke_tool(const std::string &buffer, const std::string_view templa
     return;
   }
   const std::string content = TOOL_RESULT + std::vformat(template_str, std::make_format_args(result)) + memory_info_status();
-  log_write(LEVEL_DEBUG, "tool: [%s] result: [%s]", tool.c_str(), result.c_str());
+  // log_write(LEVEL_DEBUG, "tool: [%s] result: [%s]", tool.c_str(), result.c_str());
   tui_.update_usage(tokens_per_sec(), llama_->memory_info());
   if (!llama_->add_message(*iter_, "tool_result", content)) {
     tui_.append_line(ICON_ERR + "tool result inject: " + llama_->last_error());
@@ -678,6 +678,7 @@ void Agent::invoke_tool(const std::string &buffer, const std::string_view templa
   }
   if (llama_->is_memory_flush()) {
     tui_.append_line(ICON_ERR + "Warning! - memory has been flushed!");
+    reset_conversation(cfg_.build_system_prompt());
   }
   tui_.redraw_all();
 };
@@ -708,7 +709,12 @@ bool Agent::run_turn(const std::string &user_message) {
     return false;
   }
   if (!llama_->add_message(*iter_, "user", effective_message)) {
-    tui_.append_line(ICON_ERR + "add_message: " + llama_->last_error());
+    if (llama_->is_memory_flush()) {
+      tui_.append_line(ICON_ERR + "Warning! - memory has been flushed!");
+      reset_conversation(cfg_.build_system_prompt());
+    } else {
+      tui_.append_line(ICON_ERR + "add_message: " + llama_->last_error());
+    }
     tui_.redraw_all();
     return false;
   }

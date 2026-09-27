@@ -121,6 +121,7 @@ struct Llama {
   void set_log_level(int level) { _log_level = level; }
   void reset();
   bool is_memory_flush();
+  bool is_can_shift() const { return _can_shift; }
   bool is_gemma_4() const { return _is_gemma4; }
 
   // memory info
@@ -171,6 +172,7 @@ private:
   int _log_level;
   int _n_gpu_layers;
   int _n_system_tokens;
+  int _tokens_physically_used;
   bool _is_gemma4;
   bool _sampler_dirty;
   bool _can_shift;
