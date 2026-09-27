@@ -12,7 +12,8 @@ Most agentic shells assume a hosted API and treat context as free. Hali assumes 
 
 ## Features
 
-- **notcurses TUI** — plane-based rendering, modal popups, persistent input history (Up/Down navigation), live `/set` commands for generation parameters, and Kitty keyboard protocol support for reliable input in modern terminals.
+- **notcurses TUI** — plane-based rendering, modal popups, persistent input history (Up/Down navigation), live `/set` commands for generation parameters, in-chat search, and Kitty keyboard protocol support for reliable input in modern terminals.
+- **Theme system** — three built-in themes (Dark, Light, Navy) switchable at runtime with `/theme` or F12.
 - **Fragmentation-aware KV cache management** — `full_flush_except_system()` as a graceful recovery path when sequence removal fragments the cache instead of compacting it; a `KVCachePreset` enum (`F16` / `Balanced` / `Compact`) coupled to flash-attention settings.
 - **Dynamic tool-result budgeting** — `max_tool_result_size()` targets ~75% of remaining context so a single large tool result can't blow the budget.
 - **Unambiguous tool-call protocol** — an explicit `HALI_END_TOOL` terminator so tool boundaries never get confused with model chatter.
@@ -33,10 +34,31 @@ Most agentic shells assume a hosted API and treat context as free. Hali assumes 
   | `TOOL:DATE`, `TOOL:TIME`, `TOOL:RND`, `TOOL:INTROSPECT` | Small utility/introspection tools |
 
 - **MCP client** — connect to external Model Context Protocol servers (e.g. JetBrains IDE built-in MCP servers) with `--mcp`, filter which tools get exposed with `--mcp-filter`, and dry-run the resulting system context with `--mcp-test`. Server connection details live in `mcp.json`.
-- **Skills system** — load one or more markdown skill files into the static system-prompt prefix at session start with `--skill <name>` (no per-turn routing, so it doesn't disrupt the KV cache). `hali.md`, `persona.md`, `AGENTS.md`, and `README.md` are auto-discovered from the current directory if present. The [`skills/`](skills/) folder ships a starter set covering debugging, TDD, code review, CMake/build troubleshooting, memory-safety review, dependency-free frontend work, SmallBASIC's raylib plugin, free JSON API sourcing, a local-info feed pattern, and a few just-for-fun ones (chess, an ELIZA-style roleplay, generative interactive fiction, a self-scoring introspection game).
+- **Skills system** — load one or more markdown skill files into the static system-prompt prefix at session start with `--skill <name>` (no per-turn routing, so it doesn't disrupt the KV cache). `hali.md`, `persona.md`, and `AGENTS.md` are auto-discovered from the current directory if present. The [`skills/`](skills/) folder ships a starter set covering debugging, TDD, code review, CMake/build troubleshooting, memory-safety review, dependency-free frontend work, SmallBASIC's raylib plugin, free JSON API sourcing, a local-info feed pattern, planning, spiking, code simplification, house style, skill import, and a few just-for-fun ones (chess, an ELIZA-style roleplay, generative interactive fiction, a self-scoring introspection game).
 - **Pure C++ RAG pipeline** — semantic chunker, binary `.db` index, deduplicating `RagSession`, with a folder picker for building indexes on the fly.
+- **Web development mode** — a local HTTP server with live-reload that watches the sandbox for HTML changes. The model can push messages to the browser and trigger reloads, enabling a tight edit-preview loop. Enabled with `-p, --web-port <port>`.
 - **Persistent settings** — configuration lives in `~/.config/hali.settings.json`, or point at a specific file with `-c`/`--config` (defaults to `hali.config.json`).
-- **Test suite** — unit tests under `tests/` (file operations, string/Unicode utilities, MCP message formatting, the graph renderer), runnable via CTest.
+- **Test suite** — unit tests under `tests/` (file operations, string/Unicode utilities, SHA-1, MCP message formatting, the graph renderer), runnable via CTest.
+
+## Slash commands
+
+Inside the TUI, type a leading `/` to run a built-in command:
+
+| Command | Description |
+| --- | --- |
+| `/model [path]` | Load or hot-reload a GGUF model (opens a file picker if no path given) |
+| `/embed [path]` | Load an embedding model for RAG (file picker if no path) |
+| `/rag [path]` | Index a file or directory for RAG, or load an existing `.bin` index (picker if no path) |
+| `/memory` | Show KV cache, VRAM, and layer offload stats |
+| `/clear` | Reset the conversation (rebuilds the system prompt) |
+| `/theme` | Cycle through the Dark / Light / Navy themes (F12 also works) |
+| `/save [file]` | Save the current chat transcript to a file |
+| `/settings` | Display the current runtime settings |
+| `/set <key> <value>` | Change a setting live (e.g. `/set temperature 0.7`) |
+| `/help` | Show this command list |
+| `exit` / `quit` | Leave Hali |
+
+Settable keys via `/set`: `temperature`, `top_p`, `top_k`, `min_p`, `penalty_repeat`, `penalty_last_n`, `rag_top_k`, `n_gpu_layers`, `offload_kqv`, `run_allowed` (comma-separated list of allowed program basenames, or `none` to clear).
 
 ## Building
 
@@ -75,7 +97,6 @@ ctest --test-dir build-tests
 | libcurl | No | Enables `TOOL:CURL`; `apt install libcurl4-openssl-dev`, or `-DCURL_DIR=<prefix>` |
 | CUDA toolkit | No | Only for `-DLLAMA_BACKEND=CUDA`/`AUTO` with an NVIDIA GPU: `apt install nvidia-open cuda-toolkit` |
 | yyjson | Vendored | JSON parsing for MCP and tool payloads; bundled under `yyjson/`, no system package needed |
-| utfcpp | Vendored | Unicode-aware string handling for chat display; bundled under `lib/utfcpp/`, no system package needed |
 
 ## Usage
 
@@ -85,16 +106,16 @@ hali [sandbox-dir] [options]
   -m, --model <path>        path to a GGUF model
   -e, --embed <path>        path to an embedding model (for RAG)
   -g, --gpu-layers <n>      number of layers to offload to GPU
-  --skill <name>            load a skill file into the system prompt (repeatable)
+  -s, --skill <name>        load a skill file into the system prompt (repeatable)
   --mcp                     enable the MCP client
   --mcp-filter <name>       only expose this MCP tool (repeatable)
   --mcp-test                print the resolved MCP system context and exit
   -c, --config <path>       load settings from a specific JSON file
   -l, --log <path>          write logs to a file
   -t, --think               disable model "thinking" output
-  -p, --prompt-permission   require explicit confirmation before destructive tool calls
-  -w, --web-dev-port        enables web development mode, web server with reload when the model changes a html file
-  -b, --backup-path         create file backups prior to invoking TOOL::WRITE
+  -n, --prompt-permission   require explicit confirmation before destructive tool calls
+  -p, --web-port <port>     enable web development mode with live-reload on the given port
+  -b, --backup-path <path>  create file backups prior to invoking TOOL:WRITE
   -h, --help                show this help
 ```
 
@@ -106,28 +127,32 @@ A positional argument sets the sandbox root — the directory all file tools (`T
 hali/
 ├── CMakeLists.txt
 ├── mcp.json                # MCP server connection config
-├── hali.config.json       # example runtime settings
+├── hali.config.json        # example runtime settings
 ├── skills/                 # markdown skill files, loaded via --skill
 ├── src/
-│   ├── main.cpp             # entry point, CLI parsing
-│   ├── agent.cpp/.h          # tool dispatch, system prompt assembly
-│   ├── tui.cpp/.h            # notcurses UI, input, rendering
-│   ├── config.cpp/.h         # settings, persistence, help text
-│   ├── llama_sb.cpp/.h       # llama.cpp wrapper
-│   ├── llama_sb_rag.cpp/.h   # RAG session, chunker, indexer
-│   ├── mcp_client.cpp/.h     # MCP protocol client
-│   ├── mcp_format.cpp/.h     # MCP message formatting
-│   ├── graph.cpp/.h          # TOOL:GRAPH ASCII chart/tree renderer
-│   ├── curl.cpp/.h           # TOOL:CURL via libcurl
-│   ├── file.cpp/.h           # sandboxed file tool implementations
-│   ├── json.cpp/.h           # yyjson wrapper
-│   ├── string_utils.cpp/.h   # Unicode-aware string helpers
-│   ├── input.cpp, input_event.h, input_history.h   # keyboard input handling
-│   └── logging.cpp/.h        # log file handling
-├── tests/                   # unit tests, CTest-driven
-├── lib/utfcpp/               # vendored Unicode library
-├── yyjson/                   # vendored JSON library
-└── llama.cpp/                # submodule
+│   ├── main.cpp            # entry point, CLI parsing, slash commands
+│   ├── agent.cpp/.h        # tool dispatch, system prompt assembly
+│   ├── tui.cpp/.h          # notcurses UI, input, rendering, themes, search
+│   ├── tui_context.h       # TUI context interface (events, rendering)
+│   ├── config.cpp/.h       # settings, persistence, help text
+│   ├── llama_sb.cpp/.h     # llama.cpp wrapper
+│   ├── llama_sb_rag.cpp/.h # RAG session, chunker, indexer
+│   ├── mcp_client.cpp/.h   # MCP protocol client
+│   ├── mcp_format.cpp/.h   # MCP message formatting
+│   ├── graph.cpp/.h        # TOOL:GRAPH ASCII chart/tree renderer
+│   ├── curl.cpp/.h         # TOOL:CURL via libcurl
+│   ├── file.cpp/.h         # sandboxed file tool implementations
+│   ├── json.cpp/.h         # yyjson wrapper
+│   ├── string_utils.cpp/.h # Unicode-aware string helpers
+│   ├── utf8.h              # UTF-8 utilities
+│   ├── sha1.cpp/.h         # SHA-1 hashing (RAG dedup)
+│   ├── webview.cpp/.h      # web development mode (HTTP server, live-reload)
+│   ├── ui_text.cpp/.h      # in-app help, settings display, welcome banner
+│   ├── input.cpp, input_event.h, input_history.h  # keyboard input handling
+│   └── logging.cpp/.h      # log file handling
+├── tests/                  # unit tests, CTest-driven
+├── yyjson/                 # vendored JSON library
+└── llama.cpp/              # submodule
 ```
 
 ## License
