@@ -1,0 +1,1002 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Space Quest: The Lost Episode</title>
+  <style>
+    :root {
+      --bg: #0a0a0a;
+      --surface: #111;
+      --text: #33ff33;
+      --text-dim: #1a991a;
+      --text-muted: #0d660d;
+      --accent: #33ff33;
+      --accent-2: #00ff88;
+      --danger: #ff3333;
+      --warning: #ffaa00;
+      --scanline: rgba(0, 0, 0, 0.15);
+      --glow: 0 0 10px rgba(51, 255, 51, 0.3);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: "Courier New", "Consolas", monospace;
+      margin: 0;
+      padding: 0;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      overflow-x: hidden;
+    }
+
+    /* CRT scanline effect */
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      background: repeating-linear-gradient(
+        0deg,
+        var(--scanline) 0px,
+        var(--scanline) 1px,
+        transparent 1px,
+        transparent 3px
+      );
+      pointer-events: none;
+      z-index: 1000;
+    }
+
+    /* CRT flicker */
+    body::after {
+      content: "";
+      position: fixed;
+      inset: 0;
+      background: radial-gradient(ellipse at center, transparent 50%, rgba(0,0,0,0.4) 100%);
+      pointer-events: none;
+      z-index: 999;
+    }
+
+    #game-container {
+      max-width: 800px;
+      width: 100%;
+      padding: 1rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+      position: relative;
+      z-index: 1;
+    }
+
+    /* Title screen */
+    #title-screen {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 80vh;
+      text-align: center;
+      gap: 1.5rem;
+    }
+
+    #title-screen h1 {
+      font-size: 2.5rem;
+      color: var(--accent);
+      text-shadow: var(--glow);
+      margin: 0;
+      letter-spacing: 0.1em;
+    }
+
+    #title-screen h2 {
+      font-size: 1.2rem;
+      color: var(--accent-2);
+      margin: 0;
+      font-weight: normal;
+    }
+
+    #title-screen .subtitle {
+      color: var(--text-muted);
+      font-size: 0.9rem;
+      margin: 0;
+    }
+
+    #title-screen .ascii-art {
+      font-size: 0.6rem;
+      line-height: 1.2;
+      color: var(--text-dim);
+      white-space: pre;
+      margin: 1rem 0;
+    }
+
+    #start-btn {
+      font-family: "Courier New", "Consolas", monospace;
+      font-size: 1.2rem;
+      padding: 0.8rem 2rem;
+      border: 2px solid var(--accent);
+      border-radius: 4px;
+      background: transparent;
+      color: var(--accent);
+      cursor: pointer;
+      transition: all 0.2s;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+    }
+
+    #start-btn:hover {
+      background: var(--accent);
+      color: var(--bg);
+      box-shadow: var(--glow);
+    }
+
+    /* Game screen */
+    #game-screen {
+      display: none;
+      flex-direction: column;
+      gap: 1rem;
+    }
+
+    /* Status bar */
+    #status-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0.5rem 1rem;
+      background: var(--surface);
+      border: 1px solid var(--text-muted);
+      border-radius: 4px;
+      font-size: 0.85rem;
+    }
+
+    #location-name {
+      color: var(--accent-2);
+      font-weight: bold;
+    }
+
+    #inventory-display {
+      color: var(--text-muted);
+    }
+
+    #ws-status {
+      color: var(--text-muted);
+      font-size: 0.75rem;
+    }
+
+    #ws-status.connected {
+      color: var(--accent-2);
+    }
+
+    #ws-status.error {
+      color: var(--danger);
+    }
+
+    /* ═══════════════════════════════════════
+       CHARACTER VIEWPORT
+       ═══════════════════════════════════════ */
+    #character-viewport {
+      width: 100%;
+      height: 180px;
+      background: linear-gradient(180deg, #0a0a1a 0%, #111122 100%);
+      border: 1px solid var(--text-muted);
+      border-radius: 4px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    #character-viewport .stars {
+      position: absolute;
+      inset: 0;
+      background-image:
+        radial-gradient(1px 1px at 10% 20%, #fff 50%, transparent 50%),
+        radial-gradient(1px 1px at 30% 60%, #aaf 50%, transparent 50%),
+        radial-gradient(1px 1px at 50% 10%, #ffa 50%, transparent 50%),
+        radial-gradient(1px 1px at 70% 40%, #fff 50%, transparent 50%),
+        radial-gradient(1px 1px at 90% 70%, #aaf 50%, transparent 50%),
+        radial-gradient(1px 1px at 20% 80%, #fff 50%, transparent 50%),
+        radial-gradient(1px 1px at 60% 90%, #ffa 50%, transparent 50%),
+        radial-gradient(1px 1px at 80% 15%, #fff 50%, transparent 50%);
+      animation: starDrift 20s linear infinite;
+    }
+
+    @keyframes starDrift {
+      from { transform: translateX(0); }
+      to { transform: translateX(-20px); }
+    }
+
+    /* Character sprites */
+    .character {
+      position: absolute;
+      bottom: 20px;
+      width: 48px;
+      height: 64px;
+      transition: left 0.6s ease;
+    }
+
+    .character .body {
+      width: 100%;
+      height: 100%;
+      position: relative;
+    }
+
+    /* Player astronaut */
+    #player-char {
+      left: 40%;
+    }
+
+    #player-char .helmet {
+      position: absolute;
+      top: 0;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 28px;
+      height: 28px;
+      background: #ddd;
+      border-radius: 50%;
+      border: 2px solid #999;
+    }
+
+    #player-char .helmet::after {
+      content: "";
+      position: absolute;
+      top: 6px;
+      left: 4px;
+      width: 16px;
+      height: 10px;
+      background: #3399ff;
+      border-radius: 3px;
+      opacity: 0.8;
+    }
+
+    #player-char .torso {
+      position: absolute;
+      top: 24px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 24px;
+      height: 24px;
+      background: #eee;
+      border-radius: 4px;
+      border: 1px solid #999;
+    }
+
+    #player-char .torso::before {
+      content: "";
+      position: absolute;
+      top: 4px;
+      left: 6px;
+      width: 12px;
+      height: 8px;
+      background: #ff6633;
+      border-radius: 2px;
+    }
+
+    #player-char .legs {
+      position: absolute;
+      top: 46px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 24px;
+      height: 18px;
+      display: flex;
+      gap: 4px;
+    }
+
+    #player-char .legs .leg {
+      flex: 1;
+      background: #ccc;
+      border-radius: 0 0 3px 3px;
+      border: 1px solid #999;
+    }
+
+    #player-char .jetpack {
+      position: absolute;
+      top: 28px;
+      left: 2px;
+      width: 8px;
+      height: 16px;
+      background: #888;
+      border-radius: 2px;
+    }
+
+    #player-char .jetpack::after {
+      content: "";
+      position: absolute;
+      bottom: -6px;
+      left: 1px;
+      width: 6px;
+      height: 6px;
+      background: #ff6600;
+      border-radius: 50%;
+      animation: jetFlame 0.3s infinite alternate;
+    }
+
+    @keyframes jetFlame {
+      from { transform: scaleY(1); opacity: 0.8; }
+      to { transform: scaleY(1.4); opacity: 1; }
+    }
+
+    /* Player idle bob */
+    #player-char.idle .body {
+      animation: playerIdle 2s ease-in-out infinite;
+    }
+
+    @keyframes playerIdle {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-4px); }
+    }
+
+    /* Player walking */
+    #player-char.walking .body {
+      animation: playerWalk 0.4s ease-in-out infinite;
+    }
+
+    @keyframes playerWalk {
+      0%, 100% { transform: translateY(0) rotate(0deg); }
+      25% { transform: translateY(-3px) rotate(-2deg); }
+      75% { transform: translateY(-3px) rotate(2deg); }
+    }
+
+    /* Robot character */
+    #robot-char {
+      left: 65%;
+      display: none;
+    }
+
+    #robot-char.visible {
+      display: block;
+    }
+
+    #robot-char .body {
+      animation: robotIdle 1.5s ease-in-out infinite;
+    }
+
+    @keyframes robotIdle {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-3px); }
+    }
+
+    #robot-char .head {
+      position: absolute;
+      top: 0;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 32px;
+      height: 20px;
+      background: #667;
+      border-radius: 4px;
+      border: 2px solid #889;
+    }
+
+    #robot-char .head .eye {
+      position: absolute;
+      top: 5px;
+      left: 6px;
+      width: 8px;
+      height: 8px;
+      background: #0ff;
+      border-radius: 50%;
+      animation: robotBlink 3s infinite;
+    }
+
+    @keyframes robotBlink {
+      0%, 90%, 100% { opacity: 1; }
+      95% { opacity: 0.2; }
+    }
+
+    #robot-char .head .antenna {
+      position: absolute;
+      top: -8px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 2px;
+      height: 8px;
+      background: #889;
+    }
+
+    #robot-char .head .antenna::after {
+      content: "";
+      position: absolute;
+      top: -4px;
+      left: -2px;
+      width: 6px;
+      height: 4px;
+      background: #f00;
+      border-radius: 50%;
+      animation: antennaBlink 1s infinite alternate;
+    }
+
+    @keyframes antennaBlink {
+      from { opacity: 0.4; }
+      to { opacity: 1; }
+    }
+
+    #robot-char .torso {
+      position: absolute;
+      top: 18px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 36px;
+      height: 28px;
+      background: #556;
+      border-radius: 4px;
+      border: 2px solid #778;
+    }
+
+    #robot-char .torso .panel {
+      position: absolute;
+      top: 6px;
+      left: 6px;
+      width: 24px;
+      height: 16px;
+      background: #334;
+      border-radius: 2px;
+    }
+
+    #robot-char .torso .panel .light {
+      position: absolute;
+      top: 3px;
+      left: 3px;
+      width: 6px;
+      height: 6px;
+      background: #0f0;
+      border-radius: 50%;
+      animation: panelLight 0.8s infinite alternate;
+    }
+
+    @keyframes panelLight {
+      from { background: #0f0; }
+      to { background: #0ff; }
+    }
+
+    #robot-char .wheels {
+      position: absolute;
+      top: 44px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 36px;
+      height: 12px;
+      display: flex;
+      justify-content: space-between;
+    }
+
+    #robot-char .wheels .wheel {
+      width: 12px;
+      height: 12px;
+      background: #445;
+      border-radius: 50%;
+      border: 2px solid #667;
+    }
+
+    /* Robot walking */
+    #robot-char.walking .body {
+      animation: robotWalk 0.3s ease-in-out infinite;
+    }
+
+    @keyframes robotWalk {
+      0%, 100% { transform: translateY(0) rotate(0deg); }
+      50% { transform: translateY(-2px) rotate(1deg); }
+    }
+
+    /* Room label in viewport */
+    #viewport-room-label {
+      position: absolute;
+      top: 8px;
+      left: 12px;
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+    }
+
+    /* Main display */
+    #main-display {
+      background: var(--surface);
+      border: 1px solid var(--text-muted);
+      border-radius: 4px;
+      padding: 1rem;
+      min-height: 200px;
+      max-height: 40vh;
+      overflow-y: auto;
+      font-size: 0.95rem;
+      line-height: 1.6;
+    }
+
+    #main-display::-webkit-scrollbar {
+      width: 8px;
+    }
+
+    #main-display::-webkit-scrollbar-track {
+      background: var(--surface);
+    }
+
+    #main-display::-webkit-scrollbar-thumb {
+      background: var(--text-muted);
+      border-radius: 4px;
+    }
+
+    .output-line {
+      margin: 0.3rem 0;
+      animation: fadeIn 0.3s ease-in;
+    }
+
+    .output-line.system {
+      color: var(--text-muted);
+      font-style: italic;
+    }
+
+    .output-line.success {
+      color: var(--accent-2);
+    }
+
+    .output-line.error {
+      color: var(--danger);
+    }
+
+    .output-line.warning {
+      color: var(--warning);
+    }
+
+    .output-line.narrative {
+      color: var(--text);
+    }
+
+    .output-line.ai {
+      color: var(--accent);
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(5px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Input area */
+    #input-area {
+      display: flex;
+      gap: 0.5rem;
+      align-items: center;
+    }
+
+    #prompt {
+      color: var(--accent);
+      font-size: 1.1rem;
+      font-weight: bold;
+    }
+
+    #command-input {
+      flex: 1;
+      font-family: "Courier New", "Consolas", monospace;
+      font-size: 1rem;
+      padding: 0.6rem 1rem;
+      background: var(--surface);
+      border: 1px solid var(--text-muted);
+      border-radius: 4px;
+      color: var(--text);
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    #command-input:focus {
+      border-color: var(--accent);
+      box-shadow: var(--glow);
+    }
+
+    #command-input::placeholder {
+      color: var(--text-muted);
+    }
+
+    #command-input:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    #submit-btn {
+      font-family: "Courier New", "Consolas", monospace;
+      font-size: 1rem;
+      padding: 0.6rem 1.2rem;
+      border: 1px solid var(--accent);
+      border-radius: 4px;
+      background: transparent;
+      color: var(--accent);
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    #submit-btn:hover {
+      background: var(--accent);
+      color: var(--bg);
+    }
+
+    #submit-btn:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+
+    /* Help panel */
+    #help-panel {
+      display: none;
+      background: var(--surface);
+      border: 1px solid var(--text-muted);
+      border-radius: 4px;
+      padding: 1rem;
+      font-size: 0.85rem;
+      line-height: 1.6;
+    }
+
+    #help-panel h3 {
+      color: var(--accent-2);
+      margin: 0 0 0.5rem;
+    }
+
+    #help-panel ul {
+      margin: 0;
+      padding-left: 1.5rem;
+    }
+
+    #help-panel li {
+      margin: 0.2rem 0;
+    }
+
+    #help-panel .command {
+      color: var(--accent);
+      font-weight: bold;
+    }
+
+    /* Responsive */
+    @media (max-width: 600px) {
+      #title-screen h1 {
+        font-size: 1.8rem;
+      }
+
+      #title-screen .ascii-art {
+        font-size: 0.45rem;
+      }
+
+      #main-display {
+        font-size: 0.85rem;
+      }
+
+      #command-input {
+        font-size: 0.9rem;
+      }
+
+      #character-viewport {
+        height: 140px;
+      }
+    }
+
+    /* Blinking cursor */
+    .cursor {
+      display: inline-block;
+      width: 10px;
+      height: 1.2em;
+      background: var(--accent);
+      animation: blink 1s infinite;
+      vertical-align: text-bottom;
+    }
+
+    @keyframes blink {
+      0%, 50% { opacity: 1; }
+      51%, 100% { opacity: 0; }
+    }
+  </style>
+</head>
+<body>
+  <div id="game-container">
+    <!-- Title Screen -->
+    <div id="title-screen">
+      <div class="ascii-art">
+    ██████╗ ██╗   ██╗███╗   ██╗ ██████╗██╗  ██╗
+    ██╔══██╗██║   ██║████╗  ██║██╔════╝██║  ██║
+    ██████╔╝██║   ██║██╔██╗ ██║██║     ███████║
+    ██╔═══╝ ██║   ██║██║╚██╗██║██║     ██╔══██║
+    ██║     ╚██████╔╝██║ ╚████║╚██████╗██║  ██║
+    ╚═╝      ╚═════╝ ╚═╝  ╚═══╝ ╚═════╝╚═╝  ╚═╝
+      </div>
+      <h1>SPACE QUEST</h1>
+      <h2>The Lost Episode</h2>
+      <p class="subtitle">A text adventure in the tradition of the classics</p>
+      <button id="start-btn">[ START GAME ]</button>
+    </div>
+
+    <!-- Game Screen -->
+    <div id="game-screen">
+      <div id="status-bar">
+        <span>📍 <span id="location-name">Unknown</span></span>
+        <span>🎒 <span id="inventory-display">Empty</span></span>
+        <span id="ws-status">WS: connecting...</span>
+      </div>
+
+      <!-- Character Viewport -->
+      <div id="character-viewport">
+        <div class="stars"></div>
+        <span id="viewport-room-label">BRIDGE</span>
+
+        <!-- Player astronaut -->
+        <div class="character idle" id="player-char">
+          <div class="body">
+            <div class="helmet"></div>
+            <div class="torso"></div>
+            <div class="legs">
+              <div class="leg"></div>
+              <div class="leg"></div>
+            </div>
+            <div class="jetpack"></div>
+          </div>
+        </div>
+
+        <!-- Robot NPC -->
+        <div class="character idle" id="robot-char">
+          <div class="body">
+            <div class="head">
+              <div class="antenna"></div>
+              <div class="eye"></div>
+            </div>
+            <div class="torso">
+              <div class="panel">
+                <div class="light"></div>
+              </div>
+            </div>
+            <div class="wheels">
+              <div class="wheel"></div>
+              <div class="wheel"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div id="main-display"></div>
+
+      <div id="input-area">
+        <span id="prompt">&gt;</span>
+        <input type="text" id="command-input" placeholder="Type a command..." autocomplete="off">
+        <button id="submit-btn">SEND</button>
+      </div>
+
+      <div id="help-panel">
+        <h3>Available Commands</h3>
+        <ul>
+          <li><span class="command">go [direction]</span> — Move north, south, east, west, up, down</li>
+          <li><span class="command">take [item]</span> — Pick up an item</li>
+          <li><span class="command">use [item]</span> — Use an item</li>
+          <li><span class="command">use [item] on [target]</span> — Use item on target</li>
+          <li><span class="command">look</span> — Look around</li>
+          <li><span class="command">look at [thing]</span> — Examine something closely</li>
+          <li><span class="command">inventory</span> — Check your inventory</li>
+          <li><span class="command">help</span> — Show this help</li>
+          <li><span class="command">talk to [person]</span> — Talk to someone</li>
+          <li><span class="command">kick [thing]</span> — Sometimes violence is the answer</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <script>
+  // ═══════════════════════════════════════════
+  // WEBSOCKET (same pattern as chess.html)
+  // ═══════════════════════════════════════════
+  const WS_PORT = 8002;
+  let ws = null;
+  let wsConnected = false;
+  let aiThinking = false;
+
+  function connectWS() {
+    const url = `ws://localhost:${WS_PORT}`;
+    console.log("[space] connecting to", url);
+    ws = new WebSocket(url);
+
+    ws.onopen = () => {
+      wsConnected = true;
+      console.warn("[space] WS open");
+      updateWSStatus("connected");
+      output("Connected to AI server.", "system");
+      // Send initial context
+      sendToAI({ type: "init", text: "start" });
+    };
+
+    ws.onmessage = (e) => {
+      handleWSMessage(e.data);
+    };
+
+    ws.onclose = () => {
+      wsConnected = false;
+      console.warn("[space] WS closed");
+      updateWSStatus("disconnected");
+      output("Connection to AI lost.", "error");
+    };
+
+    ws.onerror = (e) => {
+      console.error("[space] WS error", e);
+      updateWSStatus("error");
+      output("WebSocket error. Is the AI server running?", "error");
+    };
+  }
+
+  function sendToAI(msg) {
+    const json = JSON.stringify(msg);
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(json);
+      console.log("[space] sent:", json);
+    } else {
+      console.warn("[space] WS not open, cannot send");
+    }
+  }
+
+  function handleWSMessage(raw) {
+    console.log("[space] received:", raw);
+    let msg;
+    try {
+      msg = JSON.parse(raw);
+    } catch {
+      // Plain text response
+      if (raw) {
+        output(raw, "ai");
+      }
+      aiThinking = false;
+      setInputEnabled(true);
+      return;
+    }
+
+    if (msg.type === "response") {
+      output(msg.text, "ai");
+      // Check if this is the last response (heuristic: if it's a full sentence ending with . or !)
+      aiThinking = false;
+      setInputEnabled(true);
+      updateCharacters(msg.text);
+    } else if (msg.type === "game_over") {
+      output(msg.text || "Game over.", "success");
+      aiThinking = false;
+      setInputEnabled(false);
+    } else if (msg.type === "thinking") {
+      aiThinking = true;
+      setInputEnabled(false);
+      output("...", "system");
+    }
+  }
+
+  function updateWSStatus(status) {
+    const el = document.getElementById("ws-status");
+    el.textContent = `WS: ${status}`;
+    el.className = status === "connected" ? "connected" : status === "error" ? "error" : "";
+  }
+
+  function setInputEnabled(enabled) {
+    document.getElementById("command-input").disabled = !enabled;
+    document.getElementById("submit-btn").disabled = !enabled;
+  }
+
+  // ═══════════════════════════════════════════
+  // CHARACTER ANIMATION
+  // ═══════════════════════════════════════════
+  const playerChar = document.getElementById("player-char");
+  const robotChar = document.getElementById("robot-char");
+  const viewportLabel = document.getElementById("viewport-room-label");
+
+  function updateCharacters(responseText) {
+    const text = responseText.toLowerCase();
+
+    // Detect room changes
+    const roomNames = {
+      "bridge": "BRIDGE",
+      "cargo bay": "CARGO BAY",
+      "maintenance": "MAINTENANCE",
+      "engine room": "ENGINE ROOM",
+      "airlock": "AIRLOCK",
+      "escape pod": "ESCAPE POD"
+    };
+
+    for (const [key, label] of Object.entries(roomNames)) {
+      if (text.includes(key)) {
+        viewportLabel.textContent = label;
+        break;
+      }
+    }
+
+    // Detect movement (player walks)
+    if (text.includes("go ") || text.includes("you go")) {
+      playerChar.classList.remove("idle");
+      playerChar.classList.add("walking");
+      setTimeout(() => {
+        playerChar.classList.remove("walking");
+        playerChar.classList.add("idle");
+      }, 800);
+    }
+
+    // Detect robot presence
+    if (text.includes("robot") || text.includes("r-2p2") || text.includes("beep")) {
+      robotChar.classList.add("visible");
+      robotChar.classList.add("idle");
+    } else if (text.includes("not here") || text.includes("no robot")) {
+      robotChar.classList.remove("visible");
+    }
+
+    // Detect robot interaction
+    if (text.includes("recharge") || text.includes("thank you") || text.includes("glow")) {
+      robotChar.classList.add("visible");
+      robotChar.classList.remove("idle");
+      robotChar.classList.add("walking");
+      setTimeout(() => {
+        robotChar.classList.remove("walking");
+        robotChar.classList.add("idle");
+      }, 600);
+    }
+  }
+
+  // ═══════════════════════════════════════════
+  // UI FUNCTIONS
+  // ═══════════════════════════════════════════
+  const mainDisplay = document.getElementById("main-display");
+  const commandInput = document.getElementById("command-input");
+  const submitBtn = document.getElementById("submit-btn");
+  const locationName = document.getElementById("location-name");
+  const inventoryDisplay = document.getElementById("inventory-display");
+  const helpPanel = document.getElementById("help-panel");
+
+  function output(text, className = "") {
+    const line = document.createElement("div");
+    line.className = `output-line ${className}`;
+    line.textContent = text;
+    mainDisplay.appendChild(line);
+    mainDisplay.scrollTop = mainDisplay.scrollHeight;
+  }
+
+  function showHelp() {
+    helpPanel.style.display = "block";
+  }
+
+  function hideHelp() {
+    helpPanel.style.display = "none";
+  }
+
+  // ═══════════════════════════════════════════
+  // COMMAND HANDLING (sends to AI via WS)
+  // ═══════════════════════════════════════════
+  function sendCommand(text) {
+    if (!wsConnected || aiThinking) {
+      return;
+    }
+
+    output(`> ${text}`, "system");
+    aiThinking = true;
+    setInputEnabled(false);
+
+    sendToAI({ type: "command", text: text });
+  }
+
+  // ═══════════════════════════════════════════
+  // EVENT HANDLERS
+  // ═══════════════════════════════════════════
+  submitBtn.addEventListener("click", () => {
+    const input = commandInput.value.trim();
+    if (input) {
+      sendCommand(input);
+      commandInput.value = "";
+    }
+  });
+
+  commandInput.addEventListener("keypress", (e) => {
+    if (e.key === "Enter") {
+      submitBtn.click();
+    }
+  });
+
+  document.getElementById("start-btn").addEventListener("click", () => {
+    document.getElementById("title-screen").style.display = "none";
+    document.getElementById("game-screen").style.display = "flex";
+    output("Welcome to SPACE QUEST: The Lost Episode", "success");
+    output("You wake up on a spaceship. You don't remember how you got here.", "narrative");
+    output("Your mission: Survive. Escape. Maybe find some pizza.", "narrative");
+    output("Type 'help' for commands.", "system");
+    connectWS();
+  });
+
+  // ═══════════════════════════════════════════
+  // INIT
+  // ═══════════════════════════════════════════
+  document.addEventListener("DOMContentLoaded", () => {
+    // Title screen is shown by default
+  });
+  </script>
+</body>
+</html>
