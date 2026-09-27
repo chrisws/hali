@@ -264,7 +264,7 @@ int main(int argc, char **argv) {
       }
       return argv[++i];
     };
-    std:string a = argv[i];
+    std::string a = argv[i];
     if (a == "-m" || a == "--model") {
       cfg.model_path_ = resolve_path(take_next(a.c_str()));
     } else if (a == "-e" || a == "--embed") {
