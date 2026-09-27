@@ -345,9 +345,9 @@ std::string Input::readline(TuiContext &tui) {
       redraw_input();
       continue;
     } else if (ev.is(Key::END)) {
+      cursor_pos_ = input_buf_.size();
       redraw_input();
       continue;
-      cursor_pos_ = input_buf_.size();
     }
 
     // Ctrl-A / Ctrl-E: move to start/end (muscle memory)
