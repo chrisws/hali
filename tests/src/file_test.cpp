@@ -5,6 +5,260 @@
 
 using namespace std;
 
+//
+// Helper: check that a string contains a substring
+//
+static bool contains(const string &haystack, const string &needle) {
+  return haystack.find(needle) != string::npos;
+}
+
+//
+// Test: empty input produces a valid SESSION.md skeleton
+//
+static void test_empty_input() {
+  std::vector<std::string> chat;  
+  string result = format_session_md(chat);
+
+  assert(contains(result, "# Session State Snapshot"));
+  assert(contains(result, "**Timestamp:**"));
+  assert(contains(result, "**Current Task:** (unknown)"));
+  assert(contains(result, "**Pending Actions:**"));
+  assert(contains(result, "- (none)"));
+  assert(contains(result, "**Last Output:**"));
+  assert(contains(result, "(none)"));
+
+  cout << "test_empty_input passed" << endl;
+}
+
+//
+// Test: simple You/Hali exchange with no tool actions
+//
+static void test_simple_exchange() {
+  std::vector<std::string> chat;
+  chat.push_back("You: hello");
+  chat.push_back("Hali:");
+  chat.push_back("nHi there! How can I help?");
+  string result = format_session_md(chat);
+
+  assert(contains(result, "**Current Task:** hello"));
+  assert(contains(result, "- (none)"));
+  assert(contains(result, "Hi there! How can I help?"));
+
+  cout << "test_simple_exchange passed" << endl;
+}
+
+//
+// Test: tool actions are collected as pending actions
+//
+static void test_tool_actions() {
+  // 🔧 ▏→ listing: /some/path
+  // 🔧 ▏→ reading: file.cpp
+  std::vector<std::string> chat;
+  chat.push_back("You: check the file\n");
+  chat.push_back("Hali:");
+  chat.push_back(" 🔧 ▏→ listing: /some/path\n");
+  chat.push_back(" 🔧 ▏→ reading: file.cpp\n");
+  chat.push_back("Here is the file content.\n");
+  string result = format_session_md(chat);
+
+  assert(contains(result, "- listing: /some/path"));
+  assert(contains(result, "- reading: file.cpp"));
+  assert(contains(result, "Here is the file content."));
+
+  cout << "test_tool_actions passed" << endl;
+}
+
+//
+// Test: thinking blocks are skipped from output
+//
+static void test_thinking_skipped() {
+  // 🤔 ▏Let me think about this...
+  std::vector<std::string> chat;
+  chat.push_back("You: explain this\n");
+  chat.push_back("Hali:\n");
+  chat.push_back(" 🤔 ▏ Let me think about this...\n");
+  chat.push_back("Here is the explanation.\n");
+
+  string result = format_session_md(chat);
+
+  assert(!contains(result, "Let me think about this..."));
+  assert(contains(result, "Here is the explanation."));
+
+  cout << "test_thinking_skipped passed" << endl;
+}
+
+//
+// Test: error messages are collected
+//
+static void test_error_messages() {
+  // ⚡ ▏add_message: Failed to remove old KV tokens
+  std::vector<std::string> chat;
+  chat.push_back("You: do something\n");
+  chat.push_back("Hali:\n");
+  chat.push_back("Working on it.\n");
+  chat.push_back(" ⚡ ▏add_message: Failed to remove old KV tokens\n");
+
+  string result = format_session_md(chat);
+
+  assert(contains(result, "**Errors:**"));
+  assert(contains(result, "add_message: Failed to remove old KV tokens"));
+
+  cout << "test_error_messages passed" << endl;
+}
+
+//
+// Test: meta-commands like /save are skipped from Current Task
+//
+static void test_meta_command_skipped() {
+  std::vector<std::string> chat;
+  chat.push_back("You: read file.cpp\n");
+  chat.push_back("Hali:\n");
+  chat.push_back("Here is the file.\n");
+  chat.push_back("You: /save error.txt\n");
+
+  string result = format_session_md(chat);
+
+  // Current Task should be "read file.cpp", not "/save error.txt"
+  assert(contains(result, "**Current Task:** read file.cpp"));
+  assert(!contains(result, "/save error.txt"));
+
+  cout << "test_meta_command_skipped passed" << endl;
+}
+
+//
+// Test: only the last Hali block's output is kept
+//
+static void test_last_output_only() {
+  std::vector<std::string> chat;
+  chat.push_back("You: first question\n");
+  chat.push_back("Hali:\n");
+  chat.push_back("First answer here.\n");
+  chat.push_back("You: second question\n");
+  chat.push_back("Hali:\n");
+  chat.push_back("Second answer here.\n");
+
+  string result = format_session_md(chat);
+
+  assert(contains(result, "**Current Task:** second question"));
+  assert(contains(result, "Second answer here."));
+  assert(!contains(result, "First answer here."));
+
+  cout << "test_last_output_only passed" << endl;
+}
+
+//
+// Test: multiple tool actions across Hali blocks are all collected
+//
+static void test_multiple_tool_actions() {
+  std::vector<std::string> chat;
+  chat.push_back("You: build the project\n");
+  chat.push_back("Hali:\n");
+  chat.push_back(" 🔧 ▏→ listing: /src\n");
+  chat.push_back("Let me check the files.\n");
+  chat.push_back(" 🔧 ▏→ reading: main.cpp\n");
+  chat.push_back("Found the issue.\n");
+
+  string result = format_session_md(chat);
+
+  assert(contains(result, "- listing: /src"));
+  assert(contains(result, "- reading: main.cpp"));
+  assert(contains(result, "Found the issue."));
+
+  cout << "test_multiple_tool_actions passed" << endl;
+}
+
+//
+// Test: Hali content on the same line as the prefix
+//
+static void test_hali_inline_content() {
+  std::vector<std::string> chat;
+  chat.push_back("You: hi\n");
+  chat.push_back("Hali: Hello! How can I help?\n");
+
+  string result = format_session_md(chat);
+
+  assert(contains(result, "Hello! How can I help?"));
+
+  cout << "test_hali_inline_content passed" << endl;
+}
+
+//
+// Test: realistic multi-turn conversation (mirrors error.txt structure)
+//
+static void test_realistic_conversation() {
+  std::vector<std::string> chat;
+  chat.push_back("You: understand scan.c\n");
+  chat.push_back("Hali:\n");
+  chat.push_back(" 🤔 ▏Okay, the user wants me to understand scan.c.\n");
+  chat.push_back(" 🔧 ▏→  listing: /home/chrisws/src/SmallBASIC/src/common\n");
+  chat.push_back(" 🤔 ▏Now I should read the contents of scan.c.\n");
+  chat.push_back(" 🔧 ▏→  reading: scan.c\n");
+  chat.push_back(" 🤔 ▏→ The file is part of the compiler.\n");
+  chat.push_back("The `scan.c` file is a core component of the SmallBASIC compiler.\n");
+  chat.push_back("### **1. Compiler Phases**\n");
+  chat.push_back("- **Pass 1**: Parses source code.\n");
+  chat.push_back("You: read blib_graph.c\n");
+  chat.push_back("⚡ ▏add_message: Failed to remove old KV tokens: Failed to evaluate token\n");
+  chat.push_back("You: /save error.txt\n");
+
+  string result = format_session_md(chat);
+
+  // Current task is the last non-meta user message
+  assert(contains(result, "**Current Task:** read blib_graph.c"));
+
+  // Both tool actions collected
+  assert(contains(result, "- listing: /home/chrisws/src/SmallBASIC/src/common"));
+  assert(contains(result, "- reading: scan.c"));
+
+  // Last output is from the first Hali block (the only one with real output)
+  assert(contains(result, "The `scan.c` file is a core component"));
+  assert(contains(result, "### **1. Compiler Phases**"));
+
+  // Thinking blocks excluded
+  assert(!contains(result, "Okay, the user wants me to understand"));
+  assert(!contains(result, "Now I should read the contents"));
+
+  // Meta command excluded
+  assert(!contains(result, "/save error.txt"));
+
+  cout << "test_realistic_conversation passed" << endl;
+}
+
+//
+// Test: no errors section when no errors present
+//
+static void test_no_errors_section() {
+  std::vector<std::string> chat;
+  chat.push_back("You: hello\n");
+  chat.push_back("Hali:\n");
+  chat.push_back("Hi!\n");
+
+  string result = format_session_md(chat);
+
+  assert(!contains(result, "**Errors:**"));
+
+  cout << "test_no_errors_section passed" << endl;
+}
+
+//
+// Test: whitespace-only lines are ignored
+//
+static void test_whitespace_lines() {
+  std::vector<std::string> chat;
+  chat.push_back("You: hello\n");
+  chat.push_back("Hali:\n");
+  chat.push_back("\n");
+  chat.push_back("   \n");
+  chat.push_back("Hi there.\n");
+  chat.push_back("\n");
+
+  string result = format_session_md(chat);
+
+  assert(contains(result, "Hi there."));
+
+  cout << "test_whitespace_lines passed" << endl;
+}
+
 // Test isBalanced function
 static void test_isBalanced() {
   // Valid balanced strings
@@ -40,14 +294,14 @@ static void test_parsePatch() {
   string patch1 = "<<<<<<< OLD\nint foo() { return 1; }\n=======\nint foo() { return 2; }\n>>>>>>> NEW";
 
   auto [old1, new1] = parsePatch(patch1);
-  assert(old1 == "int foo() { return 1; }\n");
-  assert(new1 == "int foo() { return 2; }\n");
+  assert(old1 == "int foo() { return 1; }");
+  assert(new1 == "int foo() { return 2; }");
 
   string patch2 = "<<<<<<< FUNCTION\nvoid bar() {\n  int x = 5;\n  return x;\n}\n=======\nvoid bar() {\n  int y = 10;\n  return y;\n}\n>>>>>>> FUNCTION";
 
   auto [old2, new2] = parsePatch(patch2);
-  assert(old2 == "void bar() {\n  int x = 5;\n  return x;\n}\n");
-  assert(new2 == "void bar() {\n  int y = 10;\n  return y;\n}\n");
+  assert(old2 == "void bar() {\n  int x = 5;\n  return x;\n}");
+  assert(new2 == "void bar() {\n  int y = 10;\n  return y;\n}");
 
   cout << "test_parsePatch passed" << endl;
 }
@@ -751,8 +1005,19 @@ void file_test() {
   test_tool_append_special_chars();
   test_tool_append_multiline();
   test_tool_append_log();
-
   cout << "\nAll tool_append tests passed!\n" << endl;
+  
+  test_empty_input();
+  test_simple_exchange();
+  test_tool_actions();
+  test_thinking_skipped();
+  test_error_messages();
+  test_meta_command_skipped();
+  test_last_output_only();
+  test_multiple_tool_actions();
+  test_hali_inline_content();
+  test_realistic_conversation();
+  test_no_errors_section();
+  test_whitespace_lines();
+  cout << "\nAll format_session tests passed!\n" << endl;
 }
-
-

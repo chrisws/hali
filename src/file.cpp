@@ -17,6 +17,8 @@
 
 #include "file.h"
 #include "string_utils.h"
+#include "patch.h"
+#include "icon.h"
 
 namespace fs = std::filesystem;
 
@@ -127,7 +129,7 @@ static bool isBalanced(const std::string& code) {
 //
 // Parse patch_str to extract OLD and NEW blocks
 //
-static std::pair<std::string, std::string> parsePatch(const std::string& patch_str) {
+static std::pair<std::string, std::string> parsePatch(const std::string &patch_str) {
   std::string old_block;
   std::string new_block;
   bool in_old = false;
@@ -162,6 +164,14 @@ static std::pair<std::string, std::string> parsePatch(const std::string& patch_s
     } else if (in_new) {
       new_block += patch_str[i];
     }
+  }
+
+  // Strip trailing newlines that are artifacts of the line-based marker format
+  while (!old_block.empty() && old_block.back() == '\n') {
+    old_block.pop_back();
+  }
+  while (!new_block.empty() && new_block.back() == '\n') {
+    new_block.pop_back();
   }
 
   return {old_block, new_block};
@@ -318,7 +328,7 @@ std::string tool_write_validate(const std::string &path, const std::string &data
       return "Warning: data contains patch conflict markers.";
     }
   }
- 
+
   return result;
 }
 
@@ -387,4 +397,109 @@ std::string tool_write_backup(const std::string &backup_path, const std::string 
   }
 
   return "OK: backup created at " + final_name;
+}
+
+//
+// Parses raw chat text (as saved by the KV-cache failsafe) and formats
+// it into a SESSION.md document suitable for session restoration.
+//
+// The raw format uses "You:" and "Hali:" prefixes, with emoji markers:
+//   🤔 ▏  - thinking blocks (skipped)
+//   🔧 ▏→ - tool actions (collected as pending actions)
+//   ⚡ ▏  - error messages (collected)
+//
+std::string format_session_md(const std::vector<std::string> lines) {
+  static constexpr std::string ARROW = "→ ";
+  std::string last_user_msg;
+  std::vector<std::string> pending_actions;
+  std::vector<std::string> errors;
+  std::vector<std::string> last_output;
+  std::vector<std::string> current_output;
+  bool in_hali = false;
+
+  for (const auto &line : lines) {
+    if (utils::starts_with(line, "You:")) {
+      if (in_hali && !current_output.empty()) {
+        last_output = current_output;
+        current_output.clear();
+      }
+      in_hali = false;
+
+      std::string msg = utils::trim(line.substr(4));
+      if (!utils::starts_with(msg, "/")) {
+        last_user_msg = msg;
+      }
+    } else if (utils::starts_with(line, "Hali:")) {
+      if (in_hali && !current_output.empty()) {
+        last_output = current_output;
+        current_output.clear();
+      }
+      in_hali = true;
+
+      std::string rest = utils::trim(line.substr(5));
+      if (!rest.empty()) {
+        current_output.push_back(rest);
+      }
+    } else if (in_hali) {
+      if (utils::starts_with(line, ICON_THINK)) {
+        // thinking block - skip
+      } else if (utils::starts_with(line, ICON_TOOL)) {
+        std::string action = line;
+        auto arrow_pos = action.find(ARROW);
+        if (arrow_pos != std::string::npos) {
+          action = utils::trim(action.substr(arrow_pos + ARROW.size()));
+        }
+        pending_actions.push_back(action);
+      } else if (utils::starts_with(line, ICON_ERR)) {
+        errors.push_back(utils::trim(line.substr(ICON_ERR.size())));
+      } else if (!utils::is_blank(line)) {
+        current_output.push_back(line);
+      }
+    }
+  }
+
+  if (in_hali && !current_output.empty()) {
+    last_output = current_output;
+  }
+
+  // Build SESSION.md
+  std::string result;
+  result += "# Session State Snapshot\n";
+
+  auto now = std::chrono::system_clock::now();
+  auto tt = std::chrono::system_clock::to_time_t(now);
+  std::tm tm{};
+  localtime_r(&tt, &tm);
+  char ts[32];
+  std::strftime(ts, sizeof(ts), "%Y-%m-%d %H:%M:%S", &tm);
+  result += "**Timestamp:** " + std::string(ts) + "\n";
+
+  result += "**Current Task:** " + (last_user_msg.empty() ? "(unknown)" : last_user_msg) + "\n";
+
+  result += "**Pending Actions:**\n";
+  if (pending_actions.empty()) {
+    result += "- (none)\n";
+  } else {
+    for (const auto &a : pending_actions) {
+      result += "- " + a + "\n";
+    }
+  }
+
+  if (!errors.empty()) {
+    result += "**Errors:**\n";
+    for (const auto &e : errors) {
+      result += "- " + e + "\n";
+    }
+  }
+
+  result += "**Last Output:**\n";
+  if (last_output.empty()) {
+    result += "(none)\n";
+  } else {
+    for (const auto &o : last_output) {
+      result += o + "\n";
+    }
+  }
+
+  return result;
 }

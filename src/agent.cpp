@@ -23,6 +23,7 @@
 #include "file.h"
 #include "graph.h"
 #include "webview.h"
+#include "icon.h"
 
 //
 // handling for strip_code_fences
@@ -678,7 +679,7 @@ void Agent::invoke_tool(const std::string &buffer, const std::string_view templa
   }
   if (llama_->is_memory_flush()) {
     tui_.append_line(ICON_ERR + "Warning! - memory has been flushed!");
-    reset_conversation(cfg_.build_system_prompt());
+    reset_conversation(cfg_.build_system_prompt() + "\n" + format_session_md(tui_.get_chat()));
   }
   tui_.redraw_all();
 };
@@ -711,7 +712,7 @@ bool Agent::run_turn(const std::string &user_message) {
   if (!llama_->add_message(*iter_, "user", effective_message)) {
     if (llama_->is_memory_flush()) {
       tui_.append_line(ICON_ERR + "Warning! - memory has been flushed!");
-      reset_conversation(cfg_.build_system_prompt());
+      reset_conversation(cfg_.build_system_prompt() + "\n" + format_session_md(tui_.get_chat()));
     } else {
       tui_.append_line(ICON_ERR + "add_message: " + llama_->last_error());
     }

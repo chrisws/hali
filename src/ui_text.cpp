@@ -7,6 +7,7 @@
 //
 
 #include "ui_text.h"
+#include "icon.h"
 
 namespace ui {
 

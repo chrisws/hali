@@ -18,6 +18,7 @@
 #include <random>
 
 #include "tui.h"
+#include "icon.h"
 #include "string_utils.h"
 #include "logging.h"
 
@@ -798,3 +799,22 @@ std::string Tui::save_chat(const std::string &file) const {
   return std::format("Transcript saved to {}", file);
 }
 
+//
+// Returns the raw chat lines
+//
+std::vector<std::string> Tui::get_chat() const {
+  std::vector<std::string> result;
+  result.reserve(chat_lines_.size());
+
+  for (const std::string &line : chat_lines_) {
+    if (line.empty() == false &&
+        line.rfind(ICON_SYS,   0) != 0 &&
+        line.rfind("[logo_",   0) != 0) {
+      if (!utils::is_blank(line)) {
+        result.push_back(line);
+      }
+    }
+  }
+
+  return result;
+}

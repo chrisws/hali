@@ -19,14 +19,6 @@
 #include "tui_context.h"
 #include "input.h"
 
-//
-// icons
-//
-constexpr std::string ICON_ERR   = " ⚡ ▏";
-constexpr std::string ICON_THINK = " 🤔 ▏";
-constexpr std::string ICON_TOOL  = " 🔧 ▏";
-constexpr std::string ICON_SYS   = " ✨ ▏";
-
 // Theme enum for switching
 enum class ThemeMode {
   DARK = 0,
@@ -324,6 +316,7 @@ class Tui final: TuiContext {
   bool confirm_dialog(const std::string &prompt) const;
   std::string readline() { return input_.readline(*this); }
   std::string save_chat(const std::string &file) const;
+  std::vector<std::string> get_chat() const;
 
   // Modal popup overlay while a long operation runs.
   void show_modal_popup(const std::string &message);
