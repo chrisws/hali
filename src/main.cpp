@@ -5,18 +5,6 @@
 // This program is distributed under the terms of the GPL v2.0
 // Download the GNU Public License (GPL) from www.gnu.org
 //
-//
-// A standalone agentic LLM shell with notcurses TUI.
-// Uses llama-sb.h as the sole llama.cpp integration layer.
-//
-// Usage:
-//   ./hali [options] [project_dir]
-//
-// Options:
-//   -m, --model  <path>       GGUF model to load on startup
-//   -e, --embed  <path>       embedding model for RAG
-//   -g, --gpu-layers <n>      layers to offload to GPU (default: 32)
-//
 
 #include <random>
 #include <filesystem>
@@ -34,8 +22,11 @@
 #include "string_utils.h"
 #include "ui_text.h"
 #include "webview.h"
+#include "icon.h"
 
+//
 // Returns the history file path: ~/.config/hali/history.txt
+//
 static std::string history_path() {
   const char *home = getenv("HOME");
   std::string base = home ? std::string(home) : ".";
@@ -297,8 +288,6 @@ int main(int argc, char **argv) {
     } else if (!a.empty() && a[0] == '-') {
       std::fprintf(stderr, "hali: unknown option '%s'  (try --help)\n", a.c_str());
       std::exit(1);
-    } else {
-      cfg.sandbox_ = resolve_path(a);
     }
   }
 
@@ -319,16 +308,6 @@ int main(int argc, char **argv) {
 
   if (mcp_client.enabled()) {
     cfg.mcp_context_ = mcp_client.get_system_context(cfg.mcp_filter_);
-  }
-
-  // ── Resolve sandbox ───────────────────────────────────────────────
-  if (cfg.sandbox_.empty()) {
-    std::error_code ec;
-    cfg.sandbox_ = fs::current_path(ec).string();
-  }
-  {
-    std::error_code ec;
-    fs::create_directories(cfg.sandbox_, ec);
   }
 
   // ── Auto-discover knowledge files ─────────────────────────────────

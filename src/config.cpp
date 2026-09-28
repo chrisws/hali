@@ -30,6 +30,7 @@ static const KVCachePreset to_kv_preset(const std::string &str) {
 }
 
 HaliConfig::HaliConfig() {
+  sandbox_ = fs::current_path().string();
   for (const auto &tool : ALLOWED_TOOLS) {
     run_allowed_.emplace_back(tool);
   }
@@ -85,7 +86,6 @@ void HaliConfig::load_settings() {
   // String fields
   root.get_str("model_path", model_path_);
   root.get_str("embed_path", embed_path_);
-  root.get_str("sandbox", sandbox_);
 
   std::string kv_preset;
   root.get_str("kv_cache_preset", kv_preset);
@@ -306,7 +306,6 @@ std::string HaliConfig::introspect() const {
     "{{\n"
     "  \"model_path\":     \"{}\",\n"
     "  \"embed_path\":     \"{}\",\n"
-    "  \"sandbox\":        \"{}\",\n"
     "  \"n_ctx\":          {},\n"
     "  \"n_batch\":        {},\n"
     "  \"n_gpu_layers\":   {},\n"
@@ -327,7 +326,6 @@ std::string HaliConfig::introspect() const {
   return std::format(tmpl,
                      model_path_,
                      embed_path_,
-                     sandbox_,
                      n_ctx_,
                      n_batch_,
                      n_gpu_layers_,
