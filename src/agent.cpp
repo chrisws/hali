@@ -30,7 +30,7 @@
 //
 static const std::vector<std::string> CODE_EXTENSIONS = {
   ".py",".c",".cpp",".h",".bas",".java",".html",".js",".ts",
-  ".json",".yaml",".toml",".sh",".go",".rs",".jsx",".tsx"
+  ".json",".yaml",".toml",".sh",".go",".rs",".jsx",".tsx",".xml"
 };
 
 static std::string read_file(const std::string &path) {
