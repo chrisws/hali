@@ -260,7 +260,8 @@ bool Client::connect() {
     return false;
   }
 
-  curl_set_opts(curl_);
+  // Longer timeout for running builds etc
+  curl_set_opts(curl_, 120L);
 
   // Initialize handshake using mutable API
   const auto doc = json::parse_mutable("");

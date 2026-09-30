@@ -13,5 +13,5 @@
 
 void curl_init();
 void curl_close();
-void curl_set_opts(CURL *curl);
+void curl_set_opts(CURL *curl, long timeoutSecs);
 std::string tool_curl(const std::string &url);
