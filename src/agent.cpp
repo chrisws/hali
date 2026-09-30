@@ -26,6 +26,11 @@
 #include "icon.h"
 
 //
+// SESSION.md - see config.cpp
+//
+constexpr std::string SESSION_MD = "SESSION.md";
+
+//
 // handling for strip_code_fences
 //
 static const std::vector<std::string> CODE_EXTENSIONS = {
@@ -445,7 +450,7 @@ bool Agent::rag_index(const std::string &path) const {
 }
 
 std::string Agent::restart() {
-  if (fs::exists("SESSION.md")) {
+  if (fs::exists(SESSION_MD)) {
     std::vector<std::string> knowledge_files;
     reset_conversation(cfg_.build_system_prompt());
     tui_.append_line(ICON_ERR + "Session restarted");
@@ -552,6 +557,8 @@ std::string Agent::process_tool(const std::string &cmd) {
         return confirm;
       }
       tui_.show_tool("backup: " + confirm);
+    } else if (utils::ends_with(path, SESSION_MD)) {
+      // always allow overwriting SESSION.md
     } else if (cfg_.permission_prompt_ && !tui_.confirm_dialog(std::format("Allow model to write {}?", path))) {
       return "ERROR: action prevented by user";
     } else {

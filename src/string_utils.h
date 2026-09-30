@@ -13,12 +13,24 @@
 #include <vector>
 
 namespace utils {
+  //
   // Check if string starts with a prefix
+  //
   inline bool starts_with(const std::string &s, const std::string &prefix) {
     return s.size() >= prefix.size() && s.compare(0, prefix.size(), prefix) == 0;
   }
 
+  //
+  // Check if string ends with a suffix
+  //
+  inline bool ends_with(const std::string &s, const std::string& suffix) {
+    if (suffix.size() > s.size()) return false;
+    return s.compare(s.size() - suffix.size(), suffix.size(), suffix) == 0;
+  }
+
+  //
   // Check if string contains only whitespace
+  //
   inline bool is_blank(const std::string &s) {
     for (char c : s) if (!isspace(static_cast<unsigned char>(c))) return false;
     return true;

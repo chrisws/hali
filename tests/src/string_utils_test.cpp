@@ -33,6 +33,32 @@ static void test_starts_with() {
   cout << "test_starts_with passed" << endl;
 }
 
+// Test starts_with function
+static void test_ends_with() {
+  // Basic prefix matches
+  assert(ends_with("hello world", "world") == true);
+  assert(ends_with("hello", "hello") == true);
+  assert(ends_with("123abc", "abc") == true);
+
+  // No prefix match
+  assert(ends_with("hello world", "hello") == false);
+  assert(ends_with("hello", "hello world") == false);
+  assert(ends_with("abc", "abcd") == false);
+
+  // Empty prefix
+  assert(ends_with("hello", "") == true);
+  assert(ends_with("", "") == true);
+
+  // Empty string
+  assert(ends_with("", "hello") == false);
+
+  // Case sensitive
+  assert(ends_with("Hello", "hello") == false);
+  assert(ends_with("HELLO", "hello") == false);
+
+  cout << "test_ends_with passed" << endl;
+}
+
 // Test is_blank function
 static void test_is_blank() {
   // Whitespace only
@@ -296,6 +322,7 @@ void run_split_tests() {
 
 void string_utils_test() {
   test_starts_with();
+  test_ends_with();
   test_is_blank();
   test_is_word_char();
   test_trim();
