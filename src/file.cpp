@@ -364,7 +364,7 @@ std::string tool_write_backup(const std::string &backup_path, const std::string 
 
   // Verify the source file exists
   if (!fs::exists(source)) {
-    return "ERROR: source file not found: " + path;
+    return "new file, nothing to backup: " + path;
   }
 
   // Generate unique suffix: YYYYMMDD_HHMMSS_uuuuuu
@@ -380,7 +380,7 @@ std::string tool_write_backup(const std::string &backup_path, const std::string 
   std::string unique_suffix = std::string(ts) + "_" + std::to_string(micros);
 
   // Build final backup filename by appending the unique suffix
-  std::string final_name = backup_path + "." + unique_suffix;
+  std::string final_name = backup_path + "/" + path + "." + unique_suffix;
 
   // Create parent directories if needed
   fs::path bp(backup_path);
@@ -393,10 +393,10 @@ std::string tool_write_backup(const std::string &backup_path, const std::string 
   std::error_code ec;
   fs::copy_file(source, fs::path(final_name), fs::copy_options::overwrite_existing, ec);
   if (ec) {
-    return "ERROR: backup copy failed: " + ec.message();
+    return "copy failed: " + ec.message();
   }
 
-  return "OK: backup created at " + final_name;
+  return "created at " + final_name;
 }
 
 //

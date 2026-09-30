@@ -211,7 +211,7 @@ static bool hasDangerousPatterns(const std::string &command) {
           (command.find("rm ") != std::string::npos));
 }
 
-static std::string tool_run(const HaliConfig &cfg, Tui &tui, const std::string &arg1, const std::string &arg2) {
+static std::string tool_run(HaliConfig &cfg, Tui &tui, const std::string &arg1, const std::string &arg2) {
   const std::string args = arg1 + " " + arg2;
   if (cfg.permission_prompt_ && !tui.confirm_dialog(std::format("Allow {} {} to run?", arg1, arg2))) {
     return "ERROR: prevented by user";
@@ -219,6 +219,9 @@ static std::string tool_run(const HaliConfig &cfg, Tui &tui, const std::string &
     bool permitted = ranges::any_of(cfg.run_allowed_, [&](const std::string &a) {return a == arg1;});
     if ((!permitted || hasDangerousPatterns(args)) && !tui.confirm_dialog(std::format("Allow {} {} to run?", arg1, arg2))) {
       return "ERROR: '" + arg1 + "' is not in the TOOL:RUN allowlist.";
+    }
+    if (!permitted) {
+      cfg.run_allowed_.emplace_back(arg1);
     }
   }
   const std::string command = args + " 2>&1";
@@ -552,19 +555,17 @@ std::string Agent::process_tool(const std::string &cmd) {
     const auto data = strip_code_fences(arg1, arg2);
     if (!utils::is_blank(cfg_.backup_path_)) {
       const auto confirm = tool_write_backup(cfg_.backup_path_, path);
-      if (!utils::starts_with(confirm, "OK")) {
-        tui_.append_token(ICON_ERR + confirm);
-        return confirm;
-      }
       tui_.show_tool("backup: " + confirm);
-    } else if (utils::ends_with(path, SESSION_MD)) {
+    }
+    if (!utils::ends_with(path, SESSION_MD)) {
       // always allow overwriting SESSION.md
-    } else if (cfg_.permission_prompt_ && !tui_.confirm_dialog(std::format("Allow model to write {}?", path))) {
-      return "ERROR: action prevented by user";
-    } else {
-      const auto validate = tool_write_validate(path, data);
-      if (!validate.empty() && !tui_.confirm_dialog(std::format("[{}] - Allow model to write {}?", validate, path))) {
-        return "ERROR: action prevented by user - " + validate;
+      if (cfg_.permission_prompt_ && !tui_.confirm_dialog(std::format("Allow model to write {}?", path))) {
+        return "ERROR: action prevented by user";
+      } else {
+        const auto validate = tool_write_validate(path, data);
+        if (!validate.empty() && !tui_.confirm_dialog(std::format("[{}] - Allow model to write {}?", validate, path))) {
+          return "ERROR: action prevented by user - " + validate;
+        }
       }
     }
     const auto result = tool_write(path, data);
