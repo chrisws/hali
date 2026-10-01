@@ -243,21 +243,40 @@ std::string tool_append(const std::string &path, const std::string &data) {
 // Main patch validation function
 //
 std::string tool_patch_validate(const std::string& filename, const std::string& patch_str) {
+  std::string result;
+
+  std::ifstream file(filename);
+  if (file) {
+    std::string file_content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+    file.close();
+
+    // Check for conflict markers in the file itself
+    if (file_content.find(PATCH_BEGIN) != std::string::npos ||
+        file_content.find(PATCH_BOUNDARY) != std::string::npos ||
+        file_content.find(PATCH_END) != std::string::npos) {
+      result = "File contains conflict markers.";
+    } else {
+      auto [old_block, new_block] = parsePatch(patch_str);
+      if (!new_block.empty() && !isBalanced(new_block)) {
+        result = "NEW block has unbalanced braces or parentheses.";
+      }
+    }
+  }
+
+  return result;
+}
+
+//
+// Main patch validation function
+//
+std::string tool_patch(const std::string& filename, const std::string& patch_str) {
   // Read the target file
   std::ifstream file(filename);
   if (!file) {
     return "ERROR: Cannot open file " + filename + " for reading.";
   }
-  std::string file_content((std::istreambuf_iterator<char>(file)),
-                           std::istreambuf_iterator<char>());
+  std::string file_content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
   file.close();
-
-  // Check for conflict markers in the file itself
-  if (file_content.find(PATCH_BEGIN) != std::string::npos ||
-      file_content.find(PATCH_BOUNDARY) != std::string::npos ||
-      file_content.find(PATCH_END) != std::string::npos) {
-    return "ERROR: File contains conflict markers (<<<<<<</=======/>>>>>>>). Cannot patch.";
-  }
 
   // Parse the patch
   auto [old_block, new_block] = parsePatch(patch_str);
@@ -272,11 +291,6 @@ std::string tool_patch_validate(const std::string& filename, const std::string& 
     return "ERROR: NEW block is empty. Cannot patch.";
   }
 
-  // Validate NEW block has balanced braces/parentheses
-  if (!isBalanced(new_block)) {
-    return "ERROR: NEW block has unbalanced braces or parentheses. Check syntax before patching.";
-  }
-
   // Search for OLD block as exact, single match
   size_t count = countOccurrences(file_content, old_block);
 
@@ -287,23 +301,6 @@ std::string tool_patch_validate(const std::string& filename, const std::string& 
   if (count > 1) {
     return "ERROR: OLD block found " + std::to_string(count) + " times in " + filename + ". Cannot determine which to replace.";
   }
-
-  return "OK: Patch ready to be applied to " + filename;
-}
-
-//
-// Main patch validation function
-//
-std::string tool_patch(const std::string& filename, const std::string& patch_str) {
-  std::ifstream file(filename);
-  if (!file) {
-    return "ERROR: Cannot open file " + filename + " for reading.";
-  }
-  std::string file_content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
-  file.close();
-
-  // Parse the patch
-  auto [old_block, new_block] = parsePatch(patch_str);
 
   // Apply the patch
   std::string patched_content = replaceAll(file_content, old_block, new_block);

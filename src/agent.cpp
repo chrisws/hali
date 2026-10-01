@@ -64,7 +64,8 @@ static std::string list_dir(const std::string &path) {
     if (name.empty() || name[0] == '.') continue;
     oss << (e.is_directory() ? "[" + name + "]" : name) << "\n";
   }
-  return oss.str();
+  const auto result = oss.str();
+  return utils::is_blank(result) ? "[.]" : result;
 }
 
 static bool path_in_sandbox(const std::string &sandbox, const std::string &path) {
@@ -451,8 +452,11 @@ std::string Agent::process_tool(const std::string &cmd) {
       return "ERROR: path outside sandbox";
     }
     const auto validate = tool_patch_validate(path, arg2);
-    if (!validate.empty() && !tui_.confirm_dialog(std::format("[{}] - Allow model to patch {}?", validate, path))) {
-      return "ERROR: action prevented by user - " + validate;
+    if (!validate.empty()) {
+      tui_.append_token(ICON_ERR + arg2);
+      if (!tui_.confirm_dialog(std::format("[{}] - Allow model to patch {}?", validate, path))) {
+        return "ERROR: action prevented by user - " + validate;
+      }
     }
     backup_file(cfg_, tui_, path);
     const auto result = tool_patch(path, arg2);
