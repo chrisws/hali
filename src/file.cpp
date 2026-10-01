@@ -54,9 +54,14 @@ static std::string cLangCheckSyntax(const std::string &source_code) {
     return "Harness Error: Failed to create temp file for syntax check.";
   }
 
-  ssize_t written = write(fd, source_code.data(), source_code.size());
+  // Prepend kitchen-sink header so common stdlib types resolve
+  // without the snippet needing its own #include lines
+  const std::string preamble = "#include <bits/stdc++.h>\n";
+  const std::string full_source = preamble + source_code;
+
+  ssize_t written = write(fd, full_source.data(), full_source.size());
   close(fd);
-  if (written < 0 || static_cast<size_t>(written) != source_code.size()) {
+  if (written < 0 || static_cast<size_t>(written) != full_source.size()) {
     unlink(tmpl);
     return "Harness Error: Failed to write source to temp file.";
   }
