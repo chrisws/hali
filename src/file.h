@@ -10,9 +10,10 @@
 
 #include <string>
 
+std::string format_session_md(const std::vector<std::string> lines);
 std::string tool_append(const std::string &path, const std::string &data);
 std::string tool_patch(const std::string& filename, const std::string& patch_str);
-std::string tool_write_validate(const std::string &path, const std::string &data);
+std::string tool_patch_validate(const std::string& filename, const std::string& patch_str);
 std::string tool_write(const std::string &path, const std::string &data);
 std::string tool_write_backup(const std::string &backup_path, const std::string &path);
-std::string format_session_md(const std::vector<std::string> lines);
+std::string tool_write_validate(const std::string &path, const std::string &data);

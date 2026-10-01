@@ -235,9 +235,9 @@ std::string tool_append(const std::string &path, const std::string &data) {
 }
 
 //
-// Main patch function
+// Main patch validation function
 //
-std::string tool_patch(const std::string& filename, const std::string& patch_str) {
+std::string tool_patch_validate(const std::string& filename, const std::string& patch_str) {
   // Read the target file
   std::ifstream file(filename);
   if (!file) {
@@ -282,6 +282,23 @@ std::string tool_patch(const std::string& filename, const std::string& patch_str
   if (count > 1) {
     return "ERROR: OLD block found " + std::to_string(count) + " times in " + filename + ". Cannot determine which to replace.";
   }
+
+  return "OK: Patch ready to be applied to " + filename;
+}
+
+//
+// Main patch validation function
+//
+std::string tool_patch(const std::string& filename, const std::string& patch_str) {
+  std::ifstream file(filename);
+  if (!file) {
+    return "ERROR: Cannot open file " + filename + " for reading.";
+  }
+  std::string file_content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+  file.close();
+
+  // Parse the patch
+  auto [old_block, new_block] = parsePatch(patch_str);
 
   // Apply the patch
   std::string patched_content = replaceAll(file_content, old_block, new_block);

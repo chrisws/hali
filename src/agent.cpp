@@ -107,6 +107,13 @@ static std::string tool_run(HaliConfig &cfg, Tui &tui, const std::string &arg1, 
   return out;
 }
 
+static void backup_file(const HaliConfig &cfg, Tui &tui, const std::string &path) {
+  if (!utils::is_blank(cfg.backup_path_)) {
+    const auto confirm = tool_write_backup(cfg.backup_path_, path);
+    tui.show_tool("backup: " + confirm);
+  }
+}
+
 static void broadcast_reload(const HaliConfig &cfg, Tui &tui) {
   if (cfg.web_port_ != -1) {
     tui.show_tool("reload browser");
@@ -120,6 +127,19 @@ static void broadcast_message(const HaliConfig &cfg, Tui &tui, const std::string
     webview::broadcast_message(message);
   }
 }
+
+static std::string resolve_path(const HaliConfig &cfg, const std::string &p) {
+  if (p.empty() || p == ".") {
+    return cfg.sandbox_;
+  }
+  if (p.substr(0, 2) == "./") {
+    return join_path(cfg.sandbox_, p.substr(2));
+  }
+  if (p[0] == '/') {
+    return p;
+  }
+  return join_path(cfg.sandbox_, unwrap(p));
+};
 
 void Agent::apply_generation_params() const {
   llama_->add_stop("<|turn|>");
@@ -332,8 +352,6 @@ std::string Agent::restart() {
 // Tool dispatch
 //
 std::string Agent::process_tool(const std::string &cmd) {
-  const std::string &sandbox = cfg_.sandbox_;
-
   std::string op, arg1, arg2;
   auto WS = cmd.find_first_of(" \n");
   if (WS == std::string::npos) {
@@ -363,19 +381,6 @@ std::string Agent::process_tool(const std::string &cmd) {
     }
   }
 
-  auto resolve = [&](const std::string &p) -> std::string {
-    if (p.empty() || p == ".") {
-      return sandbox;
-    }
-    if (p.substr(0, 2) == "./") {
-      return join_path(sandbox, p.substr(2));
-    }
-    if (p[0] == '/') {
-      return p;
-    }
-    return join_path(sandbox, unwrap(p));
-  };
-
   if (op == "TOOL:DATE") {
     tui_.show_tool(op);
     char buf[32]; time_t t = time(nullptr);
@@ -397,31 +402,27 @@ std::string Agent::process_tool(const std::string &cmd) {
     return rag_tool(arg1);
   }
   if (op == "TOOL:LIST") {
-    std::string dir = resolve(arg1);
+    std::string dir = resolve_path(cfg_, arg1);
     tui_.show_tool("listing: " + dir);
     return list_dir(dir);
   }
   if (op == "TOOL:EXISTS") {
-    std::string p = resolve(arg1);
+    std::string p = resolve_path(cfg_, arg1);
     tui_.show_tool("checking: " + p);
     return fs::exists(p) ? "YES" : "NO";
   }
   if (op == "TOOL:READ") {
     tui_.show_tool("reading: " + arg1);
-    std::string p = resolve(arg1);
+    std::string p = resolve_path(cfg_, arg1);
     return read_file(p);
   }
   if (op == "TOOL:WRITE") {
     tui_.show_tool("writing: " + arg1);
-    const auto path = resolve(arg1);
-    if (!path_in_sandbox(sandbox, path)) {
+    const auto path = resolve_path(cfg_, arg1);
+    if (!path_in_sandbox(cfg_.sandbox_, path)) {
       return "ERROR: path outside sandbox";
     }
     const auto data = strip_code_fences(arg1, arg2);
-    if (!utils::is_blank(cfg_.backup_path_)) {
-      const auto confirm = tool_write_backup(cfg_.backup_path_, path);
-      tui_.show_tool("backup: " + confirm);
-    }
     if (!utils::ends_with(path, SESSION_MD)) {
       // always allow overwriting SESSION.md
       if (cfg_.permission_prompt_ && !tui_.confirm_dialog(std::format("Allow model to write {}?", path))) {
@@ -433,6 +434,7 @@ std::string Agent::process_tool(const std::string &cmd) {
         }
       }
     }
+    backup_file(cfg_, tui_, path);
     const auto result = tool_write(path, data);
     if (!utils::starts_with(result, "OK")) {
       tui_.append_token(ICON_ERR + data);
@@ -444,7 +446,16 @@ std::string Agent::process_tool(const std::string &cmd) {
   }
   if (op == "TOOL:PATCH") {
     tui_.show_tool("patch: " + arg1);
-    const auto result = tool_patch(arg1, arg2);
+    const auto path = resolve_path(cfg_, arg1);
+    if (!path_in_sandbox(cfg_.sandbox_, path)) {
+      return "ERROR: path outside sandbox";
+    }
+    const auto validate = tool_patch_validate(path, arg2);
+    if (!validate.empty() && !tui_.confirm_dialog(std::format("[{}] - Allow model to patch {}?", validate, path))) {
+      return "ERROR: action prevented by user - " + validate;
+    }
+    backup_file(cfg_, tui_, path);
+    const auto result = tool_patch(path, arg2);
     if (!utils::starts_with(result, "OK")) {
       tui_.append_token(ICON_ERR + arg2);
       tui_.append_token(ICON_ERR + result);
@@ -455,6 +466,11 @@ std::string Agent::process_tool(const std::string &cmd) {
   }
   if (op == "TOOL:APPEND") {
     tui_.show_tool("append: " + arg1);
+    const auto path = resolve_path(cfg_, arg1);
+    if (!path_in_sandbox(cfg_.sandbox_, path)) {
+      return "ERROR: path outside sandbox";
+    }
+    backup_file(cfg_, tui_, path);
     const auto result = tool_append(arg1, arg2);
     if (!utils::starts_with(result, "OK")) {
       tui_.append_token(ICON_ERR + result);
@@ -464,9 +480,9 @@ std::string Agent::process_tool(const std::string &cmd) {
     return result;
   }
   if (op == "TOOL:MKDIR") {
-    std::string p = resolve(arg1);
+    std::string p = resolve_path(cfg_, arg1);
     tui_.show_tool("mkdir: " + arg1);
-    if (!path_in_sandbox(sandbox, p)) {
+    if (!path_in_sandbox(cfg_.sandbox_, p)) {
       return "ERROR: path outside sandbox";
     }
     return make_dir(p) ? "OK: created " + arg1 : "ERROR: mkdir failed for " + arg1;
