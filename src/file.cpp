@@ -397,7 +397,8 @@ std::string tool_write_backup(const std::string &backup_path, const std::string 
   std::string unique_suffix = std::string(ts) + "_" + std::to_string(micros);
 
   // Build final backup filename by appending the unique suffix
-  std::string final_name = backup_path + "/" + path + "." + unique_suffix;
+  // Use filename only (strip directory components from path)
+  std::string final_name = backup_path + "/" + source.filename().string() + "." + unique_suffix;
 
   // Create parent directories if needed
   fs::path bp(backup_path);
