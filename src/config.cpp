@@ -21,7 +21,7 @@ static const std::vector<std::string> ALLOWED_TOOLS = {
   "./gradlew"
 };
 
-static const KVCachePreset to_kv_preset(const std::string &str) {
+static KVCachePreset to_kv_preset(const std::string &str) {
   if (str == "f16") {
     return KVCachePreset::F16;
   } else if (str == "balanced") {
@@ -60,7 +60,7 @@ std::string HaliConfig::settings_path() const {
   return base + "/.config/hali/settings.json";
 }
 
-void HaliConfig::set_config(std::string config) {
+void HaliConfig::set_config(const std::string &config) {
   if (fs::exists(config)) {
     config_ = config;
   }

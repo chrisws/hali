@@ -723,7 +723,7 @@ bool Tui::confirm_dialog(const std::string &prompt) const {
   return (lo == "y" || lo == "yes" || lo == "sure" || lo == "k");
 }
 
-bool Tui::has_input() {
+bool Tui::has_input() const {
   // 10ms block
   int fd = notcurses_inputready_fd(nc_);
   struct pollfd pfd = { .fd = fd, .events = POLLIN };
@@ -741,7 +741,7 @@ bool Tui::is_escape() {
   return ni.id == NCKEY_ESC;
 }
 
-void Tui::setup_model(std::string &model_name, const LlamaMemoryInfo &mem, bool thinking) {
+void Tui::setup_model(const std::string &model_name, const LlamaMemoryInfo &mem, bool thinking) {
   update_usage(0.0f, mem);
   current_model_ = model_name;
   append_line(ICON_SYS + "Model ready: " + current_model_);

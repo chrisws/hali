@@ -431,7 +431,7 @@ std::string tool_write_backup(const std::string &backup_path, const std::string 
 //   🔧 ▏→ - tool actions (collected as pending actions)
 //   ⚡ ▏  - error messages (collected)
 //
-std::string format_session_md(const std::vector<std::string> lines) {
+std::string format_session_md(const std::vector<std::string> &lines) {
   static constexpr std::string ARROW = "→ ";
   std::string last_user_msg;
   std::vector<std::string> pending_actions;

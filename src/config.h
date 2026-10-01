@@ -29,7 +29,7 @@ struct HaliConfig {
   std::string kv_preset_to_string() const;
   bool save_settings() const;
   void load_settings();
-  void set_config(std::string config);
+  void set_config(const std::string &config);
 
   std::string model_path_;
   std::string embed_path_;

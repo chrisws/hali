@@ -72,7 +72,7 @@ Llama::Llama() :
   _memory_flush(false),
   _seed(LLAMA_DEFAULT_SEED) {
   llama_log_set([](enum ggml_log_level level, const char *text, void *user_data) {
-    Llama *llama = (Llama *)user_data;
+    Llama *llama = static_cast<Llama *>(user_data);
     if (level == GGML_LOG_LEVEL_ERROR && llama->_last_error.empty()) {
       // remember the first error message
       llama->_last_error = text;
@@ -158,7 +158,7 @@ bool Llama::is_memory_flush() {
   return result;
 }
 
-bool Llama::load_model(LlamaLoad &load) {
+bool Llama::load_model(const LlamaLoad &load) {
   ggml_backend_load_all();
 
   llama_model_params mparams = llama_model_default_params();
@@ -230,7 +230,7 @@ bool Llama::load_model(LlamaLoad &load) {
   return _last_error.empty();
 }
 
-bool Llama::load_embedding_model(string model_path) {
+bool Llama::load_embedding_model(const string &model_path) {
   ggml_backend_load_all();
 
   llama_model_params mparams = llama_model_default_params();

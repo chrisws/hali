@@ -10,7 +10,7 @@
 
 #include <string>
 
-std::string format_session_md(const std::vector<std::string> lines);
+std::string format_session_md(const std::vector<std::string> &lines);
 std::string tool_append(const std::string &path, const std::string &data);
 std::string tool_patch(const std::string& filename, const std::string& patch_str);
 std::string tool_patch_validate(const std::string& filename, const std::string& patch_str);

@@ -93,8 +93,8 @@ struct Llama {
   ~Llama();
 
   // init
-  bool load_model(LlamaLoad &load);
-  bool load_embedding_model(string model_path);
+  bool load_model(const LlamaLoad &load);
+  bool load_embedding_model(const string &model_path);
 
   // generation
   bool add_message(LlamaIter &iter, const string &role, const string &content);

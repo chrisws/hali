@@ -291,8 +291,8 @@ class Tui final: TuiContext {
   void init();
   void resize();
   bool is_escape();
-  bool has_input();
-  void setup_model(std::string &model_name, const LlamaMemoryInfo &mem, bool thinking);
+  bool has_input() const;
+  void setup_model(const std::string &model_name, const LlamaMemoryInfo &mem, bool thinking);
   void tick_spinner();
   void set_thinking(bool on);
   void update_usage(float tokens_sec, const LlamaMemoryInfo &mem);
