@@ -218,6 +218,7 @@ add_executable(hali
   src/llama_sb.cpp
   src/file.cpp
   src/agent.cpp
+  src/agent_utils.cpp
   src/tui.cpp
   src/ui_text.cpp
   src/graph.cpp

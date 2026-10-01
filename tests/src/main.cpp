@@ -4,6 +4,7 @@ void string_utils_test();
 void mcp_format_test();
 void sha1_test();
 void utf8_test();
+void agent_utils_test();
 
 #include "logging.h"
 
@@ -15,5 +16,6 @@ int main() {
   mcp_format_test();
   sha1_test();
   utf8_test();
+  agent_utils_test();
   return 0;
 }
