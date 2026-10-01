@@ -19,6 +19,7 @@ add_executable(hali_tests
   ../src/graph.cpp
   ../src/logging.cpp
   ../src/string_utils.cpp
+  ../src/agent_utils.cpp
   ../src/mcp_format.cpp
   ../src/sha1.cpp
   src/utf8_test.cpp

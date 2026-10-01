@@ -24,19 +24,12 @@
 #include "graph.h"
 #include "webview.h"
 #include "icon.h"
+#include "agent_utils.h"
 
 //
 // SESSION.md - see config.cpp
 //
 constexpr std::string SESSION_MD = "SESSION.md";
-
-//
-// handling for strip_code_fences
-//
-static const std::vector<std::string> CODE_EXTENSIONS = {
-  ".py",".c",".cpp",".h",".bas",".java",".html",".js",".ts",
-  ".json",".yaml",".toml",".sh",".go",".rs",".jsx",".tsx",".xml"
-};
 
 static std::string read_file(const std::string &path) {
   std::ifstream f(path, std::ios::binary);
@@ -62,15 +55,6 @@ static bool make_dir(const std::string &path) {
   }
 }
 
-static std::string join_path(const std::string &a, const std::string &b) {
-  if (b.empty()) return a;
-  if (b[0] == '/') return b;
-  std::string pa = a;
-  if (!pa.empty() && pa.back() == '/') pa.pop_back();
-  std::string pb = (b.front() == '/') ? b.substr(1) : b;
-  return pa + "/" + pb;
-}
-
 static std::string list_dir(const std::string &path) {
   std::ostringstream oss;
   std::error_code ec;
@@ -92,132 +76,13 @@ static bool path_in_sandbox(const std::string &sandbox, const std::string &path)
   return tstr == base.string() || tstr.compare(0, bstr.size(), bstr) == 0;
 }
 
-//
-// unwrap() - Remove a matching outer "wrapper" from a string.
-//
-// Trims leading/trailing whitespace first, then checks (in order):
-//
-//  1. Same-character pairs   "..."  '...'  |...|  `...`
-//  2. Mirror pairs           (...)  [...]  {...}
-//  3. HTML-like tags         <tag>...</tag>
-//  4. Plain angle brackets   <...>          (fallback if tags don't match)
-//
-// If none of the above apply, returns the whitespace-trimmed input unchanged.
-//
-// Examples:
-//   unwrap("\"hello\"")        -> "hello"
-//   unwrap("  [foo]  ")        -> "foo"
-//   unwrap("<b>bold</b>")      -> "bold"
-//   unwrap("<file>x</file>")   -> "x"
-//   unwrap("<hello>")          -> "hello"
-//   unwrap("plain")            -> "plain"
-//   unwrap("")                 -> ""
-//
-static std::string unwrap(const std::string &input) {
-  if (input.empty()) {
-    return input;
-  }
-
-  size_t left = 0;
-  size_t right = input.length() - 1;
-
-  while (left <= right && std::isspace(static_cast<unsigned char>(input[left]))) {
-    left++;
-  }
-  while (left <= right && std::isspace(static_cast<unsigned char>(input[right]))) {
-    right--;
-  }
-
-  if (left > right) {
-    return "";
-  }
-
-  // Same-character pairs: "", '', ||, ``
-  // Note: [], {} are NOT same-char pairs — they belong in mirror pairs only
-  if (input[left] == input[right]) {
-    if (input[left] == '"'  || input[left] == '\'' ||
-        input[left] == '|'  || input[left] == '`') {
-      return input.substr(left + 1, right - left - 1);
-    }
-  }
-
-  // Mirror pairs: (), [], {}, but NOT <> (handled below as possible HTML tags)
-  if (input[left] != input[right]) {
-    if ((input[left] == '(' && input[right] == ')') ||
-        (input[left] == '[' && input[right] == ']') ||
-        (input[left] == '{' && input[right] == '}')) {
-      return input.substr(left + 1, right - left - 1);
-    }
-  }
-
-  // HTML-like tags: <tag>content</tag>
-  // Also handles plain <...> as a fallback at the end
-  if (input[left] == '<' && input[right] == '>') {
-    // Find end of opening tag
-    size_t openTagEnd = left + 1;
-    while (openTagEnd <= right && input[openTagEnd] != '>') openTagEnd++;
-
-    if (openTagEnd < right) {
-      std::string openTagName = input.substr(left + 1, openTagEnd - left - 1);
-
-      // Find start of closing tag (search backwards for '<')
-      size_t closeTagStart = right;
-      while (closeTagStart > openTagEnd && input[closeTagStart] != '<') closeTagStart--;
-
-      if (closeTagStart > openTagEnd && input[closeTagStart + 1] == '/') {
-        std::string closeTagName = input.substr(closeTagStart + 2, right - closeTagStart - 2);
-
-        if (!openTagName.empty() && openTagName == closeTagName) {
-          // Return content between the tags
-          return input.substr(openTagEnd + 1, closeTagStart - openTagEnd - 1);
-        }
-      }
-    }
-
-    // Fallback: plain <...> with no matching HTML tags — unwrap the angle brackets
-    return input.substr(left + 1, right - left - 1);
-  }
-
-  return input.substr(left, right - left + 1);
-}
-
-static std::string strip_code_fences(const std::string &filename,
-                                     const std::string &src) {
-  auto ext = fs::path(filename).extension().string();
-  bool is_code = ranges::any_of(CODE_EXTENSIONS, [&](const std::string &e){ return ext == e; });
-  if (!is_code) {
-    return unwrap(src);
-  }
-  auto pos = src.find("```");
-  if (pos == std::string::npos) {
-    return src;
-  }
-  auto nl = src.find('\n', pos + 3);
-  if (nl == std::string::npos) {
-    return src;
-  }
-  std::string inner = src.substr(nl + 1);
-  auto end = inner.rfind("```");
-  if (end != std::string::npos) {
-    inner = inner.substr(0, end);
-  }
-  return inner;
-}
-
-static bool hasDangerousPatterns(const std::string &command) {
-  return ((command.find('|') != std::string::npos) ||
-          (command.find('>') != std::string::npos) ||
-          (command.find('<') != std::string::npos) ||
-          (command.find("rm ") != std::string::npos));
-}
-
 static std::string tool_run(HaliConfig &cfg, Tui &tui, const std::string &arg1, const std::string &arg2) {
   const std::string args = arg1 + " " + arg2;
   if (cfg.permission_prompt_ && !tui.confirm_dialog(std::format("Allow {} {} to run?", arg1, arg2))) {
     return "ERROR: prevented by user";
   } else {
     bool permitted = ranges::any_of(cfg.run_allowed_, [&](const std::string &a) {return a == arg1;});
-    if ((!permitted || hasDangerousPatterns(args)) && !tui.confirm_dialog(std::format("Allow {} {} to run?", arg1, arg2))) {
+    if ((!permitted || hasDangerousPatterns(args, cfg.run_allowed_)) && !tui.confirm_dialog(std::format("Allow {} {} to run?", arg1, arg2))) {
       return "ERROR: '" + arg1 + "' is not in the TOOL:RUN allowlist.";
     }
     if (!permitted) {
