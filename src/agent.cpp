@@ -559,7 +559,7 @@ void Agent::invoke_tool(const std::string &buffer, const std::string_view templa
   log_write(LEVEL_DEBUG, "tool request: [%s]", tool.c_str());
   std::string result = process_tool(tool);
   if (result.empty()) {
-    return;
+    result = "TOOL produced no results";
   }
   const std::string content = TOOL_RESULT + std::vformat(template_str, std::make_format_args(result)) + memory_info_status();
   // log_write(LEVEL_DEBUG, "tool: [%s] result: [%s]", tool.c_str(), result.c_str());
