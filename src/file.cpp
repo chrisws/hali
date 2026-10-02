@@ -8,6 +8,7 @@
 
 #include <string>
 #include <fstream>
+#include <format>
 #include <regex>
 #include <filesystem>
 #include <array>
@@ -96,7 +97,7 @@ static std::string cLangCheckSyntax(const std::string &source_code) {
 //
 // Check if a string has balanced braces and parentheses
 //
-static bool isBalanced(const std::string& code) {
+static std::pair<int, int> getBraceCounts(const std::string& code) {
   int braceCount = 0;
   int parenCount = 0;
   bool inString = false;
@@ -125,9 +126,16 @@ static bool isBalanced(const std::string& code) {
     else if (c == '(') parenCount++;
     else if (c == ')') parenCount--;
 
-    if (braceCount < 0 || parenCount < 0) return false;
+    if (braceCount < 0 || parenCount < 0) {
+      break;
+    }
   }
 
+  return {braceCount, parenCount};
+}
+
+static bool isBalanced(const std::string& code) {
+  auto [braceCount, parenCount] = getBraceCounts(code);
   return braceCount == 0 && parenCount == 0;
 }
 
@@ -257,8 +265,12 @@ std::string tool_patch_validate(const std::string& filename, const std::string& 
       result = "File contains conflict markers.";
     } else {
       auto [old_block, new_block] = parsePatch(patch_str);
-      if (!new_block.empty() && !isBalanced(new_block)) {
-        result = "NEW block has unbalanced braces or parentheses.";
+      if (!old_block.empty() && !new_block.empty()) {
+        auto [oldBraceCount, oldParenCount] = getBraceCounts(old_block);
+        auto [newBraceCount, newParenCount] = getBraceCounts(new_block);
+        if ((newBraceCount != 0 || newParenCount != 0) && (oldBraceCount != newBraceCount)) {
+          result = "NEW block has unbalanced braces or parentheses.";
+        }
       }
     }
   }

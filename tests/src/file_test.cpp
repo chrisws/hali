@@ -16,7 +16,7 @@ static bool contains(const string &haystack, const string &needle) {
 // Test: empty input produces a valid SESSION.md skeleton
 //
 static void test_empty_input() {
-  std::vector<std::string> chat;  
+  std::vector<std::string> chat;
   string result = format_session_md(chat);
 
   assert(contains(result, "# Session State Snapshot"));
@@ -417,14 +417,37 @@ static void test_tool_patch_unbalanced() {
 
   string patch = "<<<<<<< OLD\nint foo() { return 1; }\n=======\nint foo() { return 42; // missing brace\n>>>>>>> NEW";
 
-  string result = tool_patch(test_file, patch);
-  assert(result.find("ERROR") != string::npos);
+  string result = tool_patch_validate(test_file, patch);
   assert(result.find("unbalanced") != string::npos);
 
   // Clean up
   remove(test_file.c_str());
 
   cout << "test_tool_patch_unbalanced passed" << endl;
+}
+
+// Test tool_patch function with unbalanced NEW block
+static void test_tool_patch_equal_unbalanced() {
+  string test_file = "/tmp/test_patch4.cpp";
+  string content = "int foo() { return 1; }\n";
+
+  ofstream out(test_file);
+  out << content;
+  out.close();
+
+  string patch = "<<<<<<< OLD\nint foo() { return 1; \n=======\nint foo() { return 42; // missing brace\n>>>>>>> NEW";
+  string result = tool_patch_validate(test_file, patch);
+  assert(result.find("unbalanced") == string::npos);
+
+  // test when there are no braces
+  patch = "<<<<<<< OLD\nint foo=1;\n=======\nint foo=2; // now set to 2\n>>>>>>> NEW";
+  result = tool_patch_validate(test_file, patch);
+  assert(result.find("unbalanced") == string::npos);
+
+  // Clean up
+  remove(test_file.c_str());
+
+  cout << "test_tool_patch_equal_unbalanced passed" << endl;
 }
 
 // Test tool_patch function with conflict markers in file
@@ -438,8 +461,7 @@ static void test_tool_patch_conflict_markers() {
 
   string patch = "<<<<<<< OLD\nint foo() { return 1; }\n=======\nint foo() { return 42; }\n>>>>>>> NEW";
 
-  string result = tool_patch(test_file, patch);
-  assert(result.find("ERROR") != string::npos);
+  string result = tool_patch_validate(test_file, patch);
   assert(result.find("conflict markers") != string::npos);
 
   // Clean up
@@ -974,6 +996,7 @@ void file_test() {
   test_tool_patch_missing_old();
   test_tool_patch_multiple_old();
   test_tool_patch_unbalanced();
+  test_tool_patch_equal_unbalanced();
   test_tool_patch_conflict_markers();
   test_tool_patch_empty_old();
   test_tool_patch_empty_new();
@@ -1006,7 +1029,7 @@ void file_test() {
   test_tool_append_multiline();
   test_tool_append_log();
   cout << "\nAll tool_append tests passed!\n" << endl;
-  
+
   test_empty_input();
   test_simple_exchange();
   test_tool_actions();
