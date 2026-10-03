@@ -373,6 +373,9 @@ class Tui final: TuiContext {
   uint64_t inp_ch(uint32_t r, uint32_t g, uint32_t b) const;
   void setup_backgrounds() const;
 
+  // ── popup helper ──────────────────────────────────────────────────
+  void draw_popup_box(ncplane *pl, int height, int width) const;
+
   // ── utils ─────────────────────────────────────────────────────────
   uint64_t get_line_color(const std::string &line) const;
 

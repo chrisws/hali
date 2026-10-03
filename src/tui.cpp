@@ -137,6 +137,38 @@ void Tui::setup_backgrounds() const {
   set_plane_base(inputpl_, Color::ColorElement::INPUT_BACKGROUND);
 }
 
+// ─── Tui::draw_popup_box ───────────────────────────────────────────────
+// Draws a single-line themed popup border on the given plane.
+// Sets the plane base to the theme popup background and draws the box
+// using ncplane_box_sized with the theme popup border color.
+//
+void Tui::draw_popup_box(ncplane *pl, int height, int width) const {
+  auto bg = theme_->get_popup_background();
+  uint64_t base_ch = NCCHANNELS_INITIALIZER(bg.r, bg.g, bg.b, bg.r, bg.g, bg.b);
+  ncplane_set_base(pl, " ", 0, base_ch);
+
+  auto border = theme_->get_popup_border();
+  uint64_t border_ch = 0;
+  ncchannels_set_fg_rgb8(&border_ch, border.r, border.g, border.b);
+  ncchannels_set_bg_rgb8(&border_ch, bg.r, bg.g, bg.b);
+
+  auto load = [&](nccell &c, const char *s) {
+    nccell_load(pl, &c, s);
+    c.channels = border_ch;
+  };
+
+  nccell ul = {}, ur = {}, ll = {}, lr = {}, hl = {}, vl = {};
+  load(ul, "┌"); load(ur, "┐"); load(ll, "└");
+  load(lr, "┘"); load(hl, "─"); load(vl, "│");
+
+  ncplane_cursor_move_yx(pl, 0, 0);
+  ncplane_box_sized(pl, &ul, &ur, &ll, &lr, &hl, &vl, height, width, 0);
+
+  nccell_release(pl, &ul); nccell_release(pl, &ur);
+  nccell_release(pl, &ll); nccell_release(pl, &lr);
+  nccell_release(pl, &hl); nccell_release(pl, &vl);
+}
+
 // ─── Tui::init ──────────────────────────────────────────────────────────
 void Tui::init() {
   notcurses_options opts{};
