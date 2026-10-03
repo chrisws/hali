@@ -1,6 +1,8 @@
 #include <iostream>
 #include <cassert>
 #include <string>
+#include <sstream>
+#include <filesystem>
 
 // Expose private members for testing
 #define private public
@@ -52,8 +54,8 @@ static void test_pos_of_word_end() {
   assert(in.pos_of_word_end(10) == 10);
 
   in.input_buf_ = "hello";
-  assert(in.pos_of_word_end(0) == 3);
-  assert(in.pos_of_word_end(4) == 3);
+  assert(in.pos_of_word_end(0) == 4);
+  assert(in.pos_of_word_end(4) == 4);
 
   in.input_buf_ = "  hello";
   assert(in.pos_of_word_end(2) == 6);
@@ -80,16 +82,13 @@ static void test_move_to_prev_word() {
   assert(in.move_to_prev_word(0) == 0);
   // At space -> start of previous word
   assert(in.move_to_prev_word(5) == 0);
+  // At start of "world" (pos 6), skip space back to start of "hello"
+  assert(in.move_to_prev_word(6) == 0);
 
   in.input_buf_ = "one two three";
   // o=0,n=1,e=2,' '=3,t=4,w=5,o=6,' '=7,t=8,h=9,r=10,e=11,e=12
   assert(in.move_to_prev_word(5) == 4);
   assert(in.move_to_prev_word(10) == 8);
-
-  // NOTE: at a word boundary (start of "world"), the function returns the
-  // same position instead of skipping to the previous word. This is a
-  // known limitation - the second while only skips word chars, not spaces.
-  // assert(in.move_to_prev_word(6) == 0);  // expected, code returns 6
 
   cout << "test_move_to_prev_word passed" << endl;
 }
@@ -105,6 +104,8 @@ static void test_move_to_next_word() {
   assert(in.move_to_next_word(0) == 5);
   // Middle of "hello" -> position after "hello"
   assert(in.move_to_next_word(2) == 5);
+  // At space (pos 5), skip forward to end of "world"
+  assert(in.move_to_next_word(5) == 11);
   // Start of "world" -> end of buffer (11)
   assert(in.move_to_next_word(6) == 11);
   // At end of buffer
@@ -114,10 +115,6 @@ static void test_move_to_next_word() {
   assert(in.move_to_next_word(0) == 3);
   assert(in.move_to_next_word(4) == 7);
   assert(in.move_to_next_word(8) == 13);
-
-  // NOTE: at a space, the second while loop walks backward (bug) and
-  // returns the start of the previous word instead of the end of the next.
-  // assert(in.move_to_next_word(5) == 11);  // expected, code returns 0
 
   cout << "test_move_to_next_word passed" << endl;
 }
@@ -140,7 +137,7 @@ static void test_delete_word_before() {
 
   in.input_buf_ = "hello";
   pos = in.delete_word_before(3);
-  assert(in.input_buf_ == "llo");
+  assert(in.input_buf_ == "lo");
   assert(pos == 0);
 
   in.input_buf_ = "hello";
@@ -164,7 +161,7 @@ static void test_kill_word_backward() {
 
   in.input_buf_ = "hello";
   pos = in.kill_word_backward(4);
-  assert(in.input_buf_ == "");
+  assert(in.input_buf_ == "o");
   assert(pos == 0);
 
   cout << "test_kill_word_backward passed" << endl;
@@ -296,6 +293,42 @@ static void test_empty_buffer() {
   cout << "test_empty_buffer passed" << endl;
 }
 
+//
+// Test: word navigation with multiple spaces between words
+//
+static void test_multiple_spaces() {
+  Input in;
+
+  // "position         in    multiple      spaces"
+  //  p(0) o(1) s(2) i(3) t(4) i(5) o(6) n(7) sp(8-16) i(17) n(18)
+  //  sp(19-22) m(23) u(24) l(25) t(26) i(27) p(28) l(29) e(30)
+  //  sp(31-36) s(37) p(38) a(39) c(40) e(41) s(42)
+  in.input_buf_ = "position         in    multiple      spaces";
+
+  // move_to_prev_word at word starts
+  assert(in.move_to_prev_word(17) == 0);   // start of "in" -> start of "position"
+  assert(in.move_to_prev_word(23) == 17);  // start of "multiple" -> start of "in"
+  assert(in.move_to_prev_word(37) == 23);  // start of "spaces" -> start of "multiple"
+
+  // move_to_next_word at spaces
+  assert(in.move_to_next_word(8) == 19);   // space after "position" -> end of "in"
+  assert(in.move_to_next_word(19) == 31);  // space after "in" -> end of "multiple"
+  assert(in.move_to_next_word(31) == 43);  // space after "multiple" -> end of "spaces"
+
+  // delete_word_before at various positions
+  in.input_buf_ = "position         in    multiple      spaces";
+  int pos = in.delete_word_before(17);
+  assert(in.input_buf_ == "in    multiple      spaces");
+  assert(pos == 0);
+
+  in.input_buf_ = "position         in    multiple      spaces";
+  pos = in.delete_word_before(37);
+  assert(in.input_buf_ == "position         in    spaces");
+  assert(pos == 23);
+
+  cout << "test_multiple_spaces passed" << endl;
+}
+
 void input_test() {
   test_pos_of_word_start();
   test_pos_of_word_end();
@@ -308,6 +341,7 @@ void input_test() {
   test_lowercase_word();
   test_word_with_underscore();
   test_empty_buffer();
+  test_multiple_spaces();
 
   cout << "\nAll input tests passed!\n" << endl;
 }

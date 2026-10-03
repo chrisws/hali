@@ -28,6 +28,7 @@ add_executable(hali_tests
   src/string_utils_test.cpp
   src/mcp_format_test.cpp
   src/sha1_test.cpp
+  src/input_test.cpp
   src/agent_utils_test.cpp
   src/main.cpp
 )
