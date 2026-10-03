@@ -198,7 +198,7 @@ void Tui::redraw_header() const {
   const char *spin_str = thinking_ ? SPIN[spinner_frame_ % 8] : " ";
   char buf[512];
   int n = std::snprintf(buf, sizeof(buf),
-                        " ✦ HALI │ %-32s │ %5.1f tok/s │ KV %4.1f%% │ VRAM %4.1f%%  %s",
+                        " 🪶 HALI │ %-32s │ %5.1f tok/s │ KV %4.1f%% │ VRAM %4.1f%%  %s",
                         current_model_.c_str(), static_cast<double>(tokens_per_sec_),
                         static_cast<double>(kv_pct), static_cast<double>(vram_pct), spin_str);
   if (n > term_cols_) buf[term_cols_] = '\0';
