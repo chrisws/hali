@@ -8,12 +8,11 @@
 
 #pragma once
 
-#include <filesystem>
+#include <algorithm>
 #include <string>
 #include <vector>
-#include <fstream>
 
-namespace fs = std::filesystem;
+#include "line_list.h"
 
 //
 // InputHistory — up/down arrow navigation through submitted inputs
@@ -76,16 +75,12 @@ class InputHistory {
   }
 
   /**
-   * @brief Load history from ~/.config/hali/hali.history (one entry per line).
+   * @brief Load history from a file (one entry per line).
    * Silently succeeds if the file doesn't exist.
    */
   void load(const std::string &path) {
-    std::ifstream f(path);
-    if (!f) return;
-    std::string line;
-    while (std::getline(f, line)) {
-      if (!line.empty()) history_stack.push_back(line);
-    }
+    history_stack.clear();
+    load_lines(path, history_stack);
     current_index = static_cast<int>(history_stack.size());
   }
 
@@ -94,24 +89,22 @@ class InputHistory {
    * Caps at MAX_PERSIST entries so the file never grows unbounded.
    */
   void save(const std::string &path) const {
-    // Ensure parent directory exists.
-    fs::path dir = fs::path(path).parent_path();
-    std::error_code ec;
-    fs::create_directories(dir, ec);
-
-    std::ofstream f(path, std::ios::trunc);
-    if (!f) return;
-
     static constexpr int MAX_PERSIST = 500;
     int start = std::max(0, static_cast<int>(history_stack.size()) - MAX_PERSIST);
+
+    std::vector<std::string> out;
+    out.reserve(static_cast<int>(history_stack.size()) - start);
     for (int i = start; i < static_cast<int>(history_stack.size()); ++i) {
       // Escape embedded newlines so each entry stays on one line.
+      std::string escaped;
+      escaped.reserve(history_stack[i].size());
       for (char c : history_stack[i]) {
-        if (c == '\n') f << "\\n";
-        else           f << c;
+        if (c == '\n') escaped += "\\n";
+        else           escaped += c;
       }
-      f << '\n';
+      out.push_back(std::move(escaped));
     }
+    save_lines(path, out);
   }
 
   private:
