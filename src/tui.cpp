@@ -460,42 +460,18 @@ void Tui::show_modal_popup(const std::string &message) {
   modal_plane_ = ncplane_create(stdpl_, &opts);
   if (!modal_plane_) return;
 
-  // Background: deep navy.
-  static constexpr uint32_t PBG_R = 20, PBG_G = 28, PBG_B = 50;
-  ncplane_set_base(modal_plane_, " ", 0,
-                   NCCHANNELS_INITIALIZER(PBG_R, PBG_G, PBG_B, PBG_R, PBG_G, PBG_B));
-  ncplane_erase(modal_plane_);
-
-  // Border — bright cyan.
-  uint64_t border_ch = NCCHANNELS_INITIALIZER(80, 220, 255, PBG_R, PBG_G, PBG_B);
-  ncplane_set_channels(modal_plane_, border_ch);
-
-  // Draw corners and edges manually so we don't require nccell border helpers.
-  // Top row
-  ncplane_putstr_yx(modal_plane_, 0, 0, "╔");
-  for (int c = 1; c < popup_w - 1; ++c)
-    ncplane_putstr_yx(modal_plane_, 0, c, "═");
-  ncplane_putstr_yx(modal_plane_, 0, popup_w - 1, "╗");
-  // Middle rows
-  for (int r = 1; r < popup_h - 1; ++r) {
-    ncplane_putstr_yx(modal_plane_, r, 0, "║");
-    ncplane_putstr_yx(modal_plane_, r, popup_w - 1, "║");
-  }
-  // Bottom row
-  ncplane_putstr_yx(modal_plane_, popup_h - 1, 0, "╚");
-  for (int c = 1; c < popup_w - 1; ++c)
-    ncplane_putstr_yx(modal_plane_, popup_h - 1, c, "═");
-  ncplane_putstr_yx(modal_plane_, popup_h - 1, popup_w - 1, "╝");
+  // Themed popup box (single-line border, theme colors).
+  draw_popup_box(modal_plane_, popup_h, popup_w);
 
   // Title bar.
-  uint64_t title_ch = NCCHANNELS_INITIALIZER(255, 220, 80, PBG_R, PBG_G, PBG_B);
-  ncplane_set_channels(modal_plane_, title_ch);
+  auto tc = theme_->get_popup_color();
+  auto bg = theme_->get_popup_background();
+  uint64_t text_ch = NCCHANNELS_INITIALIZER(tc.r, tc.g, tc.b, bg.r, bg.g, bg.b);
+  ncplane_set_channels(modal_plane_, text_ch);
   ncplane_putstr_yx(modal_plane_, 1, 2, "⏳ Loading…");
 
   // Message.
-  uint64_t msg_ch = NCCHANNELS_INITIALIZER(200, 200, 200, PBG_R, PBG_G, PBG_B);
-  ncplane_set_channels(modal_plane_, msg_ch);
-  // Truncate message to fit inside border.
+  ncplane_set_channels(modal_plane_, text_ch);
   int max_msg = popup_w - 4;
   std::string display = message.size() > static_cast<size_t>(max_msg)
     ? message.substr(0, max_msg)
@@ -514,11 +490,6 @@ void Tui::dismiss_modal_popup() {
 }
 
 //
-// ─── Tui::file_picker ────────────────────────────────────────────────
-// Interactive directory/file browser popup.
-// Keyboard:  ↑/↓ navigate,  Enter select/descend,  Backspace go up,
-//            's' select current dir for indexing,   Esc cancel.
-// Returns the chosen path or "" on cancel.
 // ─── Tui::file_picker ────────────────────────────────────────────────
 // Unified interactive directory/file browser used by /rag, /model, /embed.
 // title_hint appears in the popup header (e.g. "RAG Folder", "Model File").
@@ -578,8 +549,6 @@ std::string Tui::file_picker(const std::string &start_dir,
   struct ncplane *picker = ncplane_create(stdpl_, &opts);
   if (!picker) return "";
 
-  static constexpr uint32_t PBG_R = 18, PBG_G = 24, PBG_B = 40;
-  ncplane_set_base(picker, " ", 0, NCCHANNELS_INITIALIZER(PBG_R, PBG_G, PBG_B, PBG_R, PBG_G, PBG_B));
   // Build a compact hint line appropriate to the operation.
   // /rag adds 's=select dir'; /model and /embed only need file selection.
   std::string hint_line = "↑↓ navigate  Enter open/select  Esc cancel";
@@ -587,38 +556,44 @@ std::string Tui::file_picker(const std::string &start_dir,
       title_hint.find("Folder") != std::string::npos) {
     hint_line = "↑↓ navigate  Enter open  s=select dir  Esc cancel";
   }
+
+  // Pre-compute theme colors for the picker.
+  auto tc  = theme_->get_popup_color();
+  auto bg  = theme_->get_popup_background();
+  auto brd = theme_->get_popup_border();
+
+  // Helper: build a channel with the popup background.
+  auto ch = [&](uint32_t r, uint32_t g, uint32_t b) -> uint64_t {
+    return NCCHANNELS_INITIALIZER(r, g, b, bg.r, bg.g, bg.b);
+  };
+
   auto draw_picker = [&]() {
     ncplane_erase(picker);
-    uint64_t border_ch = NCCHANNELS_INITIALIZER(100, 180, 255, PBG_R, PBG_G, PBG_B);
-    ncplane_set_channels(picker, border_ch);
-    ncplane_putstr_yx(picker, 0, 0, "╔");
-    for (int c = 1; c < PW - 1; ++c) ncplane_putstr_yx(picker, 0, c, "═");
-    ncplane_putstr_yx(picker, 0, PW - 1, "╗");
-    for (int r = 1; r < PH - 1; ++r) {
-      ncplane_putstr_yx(picker, r, 0,      "║");
-      ncplane_putstr_yx(picker, r, PW - 1, "║");
-    }
-    ncplane_putstr_yx(picker, PH - 1, 0, "╚");
-    for (int c = 1; c < PW - 1; ++c) ncplane_putstr_yx(picker, PH - 1, c, "═");
-    ncplane_putstr_yx(picker, PH - 1, PW - 1, "╝");
+    draw_popup_box(picker, PH, PW);
 
     // Title
-    ncplane_set_channels(picker, NCCHANNELS_INITIALIZER(255, 220, 80, PBG_R, PBG_G, PBG_B));
+    ncplane_set_channels(picker, ch(tc.r, tc.g, tc.b));
     std::string title_str = " 📂 " + title_hint + " Picker ";
     if (static_cast<int>(title_str.size()) > PW - 4) title_str = title_str.substr(0, PW - 4);
     ncplane_putstr_yx(picker, 0, 2, title_str.c_str());
+
     // Current path (truncated).
     std::string path_display = current_dir;
     if (static_cast<int>(path_display.size()) > PW - 4) {
       path_display = "…" + path_display.substr(path_display.size() - (PW - 5));
     }
-    ncplane_set_channels(picker, NCCHANNELS_INITIALIZER(160, 200, 240, PBG_R, PBG_G, PBG_B));
+    ncplane_set_channels(picker, ch(tc.r, tc.g, tc.b));
     ncplane_putstr_yx(picker, 1, 2, path_display.c_str());
-    // Hint line (bottom interior row).
-    ncplane_set_channels(picker, NCCHANNELS_INITIALIZER(120, 120, 160, PBG_R, PBG_G, PBG_B));
+
+    // Hint line (bottom interior row) — dimmed.
+    uint32_t dim_r = tc.r * 70 / 100;
+    uint32_t dim_g = tc.g * 70 / 100;
+    uint32_t dim_b = tc.b * 70 / 100;
+    ncplane_set_channels(picker, ch(dim_r, dim_g, dim_b));
     std::string hint_trunc = hint_line;
     if (static_cast<int>(hint_trunc.size()) > PW - 4) hint_trunc = hint_trunc.substr(0, PW - 4);
     ncplane_putstr_yx(picker, PH - 2, 2, hint_trunc.c_str());
+
     // Entry list.
     int list_rows = PH - 5;
     if (selected < scroll) {
@@ -632,14 +607,17 @@ std::string Tui::file_picker(const std::string &start_dir,
       if (idx >= static_cast<int>(entries.size())) break;
       bool is_selected = (idx == selected);
       bool is_dir = !entries[idx].empty() && entries[idx].back() == '/';
-      uint32_t fr, fg, fb;
-      if (is_selected)  { fr = 20;  fg = 20;  fb = 20;  }
-      else if (is_dir)   { fr = 120; fg = 200; fb = 255; }
-      else               { fr = 200; fg = 200; fb = 200; }
-      uint32_t br = is_selected ? 100 : PBG_R;
-      uint32_t bg = is_selected ? 180 : PBG_G;
-      uint32_t bb = is_selected ? 255 : PBG_B;
-      ncplane_set_channels(picker, NCCHANNELS_INITIALIZER(fr, fg, fb, br, bg, bb));
+      uint64_t entry_ch;
+      if (is_selected) {
+        // Inverted: fg = popup bg, bg = popup border.
+        entry_ch = NCCHANNELS_INITIALIZER(bg.r, bg.g, bg.b, brd.r, brd.g, brd.b);
+      } else if (is_dir) {
+        entry_ch = ch(tc.r, tc.g, tc.b);
+      } else {
+        // Files: dimmed.
+        entry_ch = ch(dim_r, dim_g, dim_b);
+      }
+      ncplane_set_channels(picker, entry_ch);
       std::string label = (is_selected ? " ▶ " : "   ") + entries[idx];
       if (static_cast<int>(label.size()) > PW - 2) label = label.substr(0, PW - 2);
       while (static_cast<int>(label.size()) < PW - 2) label += ' ';
@@ -655,7 +633,6 @@ std::string Tui::file_picker(const std::string &start_dir,
   for (;;) {
     InputEvent ev = get_event();
     if (ev.is(Key::ESCAPE)) {
-      // cancelled
       break;
     }
     if (ev.is(Key::UP)) {
@@ -672,7 +649,6 @@ std::string Tui::file_picker(const std::string &start_dir,
     }
     // 's' — select the current directory (useful for /rag, ignored for file pickers).
     if (ev.is(Key::S)) {
-      // Select current directory for RAG indexing.
       result = current_dir;
       break;
     }
@@ -725,34 +701,72 @@ std::string Tui::file_picker(const std::string &start_dir,
 
 //
 // ─── Tui::confirm_dialog ─────────────────────────────────────────────
+// Centered popup dialog for y/n confirmation.
+//   y / Y / Enter  → true
+//   n / N / Esc    → false
+//   other keys     → ignored
 //
 bool Tui::confirm_dialog(const std::string &prompt) const {
-  ncplane_erase(inputpl_);
-  ncplane_set_channels(inputpl_, inp_ch(255, 200, 80));
-  std::string msg = " " + prompt + " [y/n] ❯ ";
-  ncplane_putstr_yx(inputpl_, 1, 0, msg.c_str());
+  // Create a centered popup plane.
+  int popup_w = std::min(static_cast<int>(prompt.size()) + 16, term_cols_ - 4);
+  popup_w = std::max(popup_w, 40);
+  int popup_h = 6;
+  int py = std::max(0, (term_rows_ - popup_h) / 2);
+  int px = std::max(0, (term_cols_ - popup_w) / 2);
+
+  ncplane_options opts{};
+  opts.y    = py; opts.x    = px;
+  opts.rows = static_cast<unsigned>(popup_h);
+  opts.cols = static_cast<unsigned>(popup_w);
+  ncplane *popup = ncplane_create(stdpl_, &opts);
+  if (!popup) return false;
+
+  // Themed popup box (single-line border).
+  draw_popup_box(popup, popup_h, popup_w);
+
+  auto tc = theme_->get_popup_color();
+  auto bg = theme_->get_popup_background();
+  uint64_t text_ch = NCCHANNELS_INITIALIZER(tc.r, tc.g, tc.b, bg.r, bg.g, bg.b);
+
+  // Prompt text (row 1).
+  ncplane_set_channels(popup, text_ch);
+  std::string display = prompt;
+  int max_prompt = popup_w - 4;
+  if (static_cast<int>(display.size()) > max_prompt) {
+    display = display.substr(0, max_prompt);
+  }
+  ncplane_putstr_yx(popup, 1, 2, display.c_str());
+
+  // Hint line (row 4) — dimmed.
+  uint32_t dim_r = tc.r * 70 / 100;
+  uint32_t dim_g = tc.g * 70 / 100;
+  uint32_t dim_b = tc.b * 70 / 100;
+  uint64_t hint_ch = NCCHANNELS_INITIALIZER(dim_r, dim_g, dim_b, bg.r, bg.g, bg.b);
+  ncplane_set_channels(popup, hint_ch);
+  ncplane_putstr_yx(popup, 4, 2, "[y]es  [n]o  (Enter confirm, Esc cancel)");
+
   notcurses_render(nc_);
-  std::string answer;
+
+  // Block until a valid response.
+  bool result = false;
   for (;;) {
     InputEvent ev = get_event();
-    if (ev.is(Key::ENTER) || ev.is(Key::NL) || ev.is(Key::CR)) {
+    uint32_t key = ev.val();
+    if (key == 'y' || key == 'Y' || ev.is(Key::ENTER) || ev.is(Key::NL) || ev.is(Key::CR)) {
+      result = true;
       break;
     }
-    if (ev.is(Key::BACKSPACE) && !answer.empty()) {
-      answer.pop_back();
-    } else if (ev.is_ascii()) {
-      answer += static_cast<char>(ev.key());
+    if (key == 'n' || key == 'N' || ev.is(Key::ESCAPE)) {
+      result = false;
+      break;
     }
-    ncplane_erase(inputpl_);
-    ncplane_set_channels(inputpl_, inp_ch(255, 200, 80));
-    ncplane_putstr_yx(inputpl_, 1, 0, (msg + answer).c_str());
-    notcurses_render(nc_);
+    // Other keys ignored.
   }
-  std::string lo = answer;
-  ranges::transform(lo, lo.begin(), ::tolower);
+
+  ncplane_destroy(popup);
   redraw_input();
   notcurses_render(nc_);
-  return (lo == "y" || lo == "yes" || lo == "sure" || lo == "k");
+  return result;
 }
 
 bool Tui::has_input() const {
