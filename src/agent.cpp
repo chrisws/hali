@@ -169,7 +169,7 @@ bool Agent::setup_model() {
 
   // Show a modal popup so the user knows loading is in progress.
   std::string model_name = fs::path(cfg_.model_path_).filename().string();
-  tui_.show_modal_popup("Loading " + model_name);
+  tui_.show_loading_modal_popup(model_name);
   // Destroy the iterator first — it holds references into the llama context.
   // Freeing llama while iter is still alive causes use-after-free / load failure.
   iter_.reset();
@@ -205,7 +205,7 @@ bool Agent::setup_model() {
 }
 
 bool Agent::setup_embed(const std::string &path) {
-  tui_.show_modal_popup("Loading embedding model: " + fs::path(path).filename().string());
+  tui_.show_loading_modal_popup("embedding model: " + fs::path(path).filename().string());
   tui_.redraw_all();
   embed_llama_ = std::make_unique<Llama>();
   if (!embed_llama_->load_embedding_model(path)) {

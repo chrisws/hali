@@ -319,7 +319,10 @@ class Tui final: TuiContext {
   std::vector<std::string> get_chat() const;
 
   // Modal popup overlay while a long operation runs.
-  void show_modal_popup(const std::string &message);
+  void show_modal_popup(const std::string &title, const std::string &message);
+  void show_loading_modal_popup(const std::string &message) {
+    show_modal_popup("⏳ Loading… ", message);
+  }
   void dismiss_modal_popup();
 
   // ── folder picker popup ───────────────────────────────────────

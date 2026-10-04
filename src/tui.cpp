@@ -442,7 +442,7 @@ void Tui::append_token(const std::string &token) {
 // Creates a centred floating plane with a border and a status message.
 // The popup sits above all other planes and blocks until explicitly dismissed.
 //
-void Tui::show_modal_popup(const std::string &message) {
+void Tui::show_modal_popup(const std::string &title, const std::string &message) {
   // Dismiss any previous popup first.
   dismiss_modal_popup();
 
@@ -468,7 +468,7 @@ void Tui::show_modal_popup(const std::string &message) {
   auto bg = theme_->get_popup_background();
   uint64_t text_ch = NCCHANNELS_INITIALIZER(tc.r, tc.g, tc.b, bg.r, bg.g, bg.b);
   ncplane_set_channels(modal_plane_, text_ch);
-  ncplane_putstr_yx(modal_plane_, 1, 2, "⏳ Loading…");
+  ncplane_putstr_yx(modal_plane_, 0, 2, title.c_str());
 
   // Message.
   ncplane_set_channels(modal_plane_, text_ch);
