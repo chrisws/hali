@@ -16,9 +16,8 @@
 
 static const std::vector<std::string> ALLOWED_TOOLS = {
   "cat", "head", "tail", "grep", "wc", "stat", "ls", "find",
-  "awk", "sed", "tr", "cut", "sort", "uniq", "od", "xxd",
+  "awk", "sed", "tr", "cut", "sort", "uniq", "od", "xxd", "git",
   "file", "uname", "whoami", "pwd", "id", "g++", "date", "sed",
-  "./gradlew", "git"
 };
 
 static KVCachePreset to_kv_preset(const std::string &str) {
@@ -35,6 +34,10 @@ HaliConfig::HaliConfig() {
   for (const auto &tool : ALLOWED_TOOLS) {
     run_allowed_.emplace_back(tool);
   }
+
+  // Load user-approved commands and merge into the full allow-list.
+  user_run_allowed_.load(RunAllowed::default_path());
+  user_run_allowed_.merge_into(run_allowed_);
 }
 
 std::string HaliConfig::kv_preset_to_string() const {

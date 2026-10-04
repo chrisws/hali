@@ -20,6 +20,7 @@
 #include "curl.h"
 #include "mcp_client.h"
 #include "string_utils.h"
+#include "run_allowed.h"
 #include "ui_text.h"
 #include "webview.h"
 #include "icon.h"
@@ -410,6 +411,7 @@ int main(int argc, char **argv) {
   log_close();
 
   // Persist input history for the next session.
+  cfg.user_run_allowed_.save(RunAllowed::default_path());
   tui.history_save(history_path());
   curl_close();
   return 0;

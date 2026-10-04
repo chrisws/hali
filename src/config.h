@@ -13,6 +13,7 @@
 #include <filesystem>
 #include "llama.h"
 #include "llama_sb.h"
+#include "run_allowed.h"
 
 namespace fs = std::filesystem;
 
@@ -68,6 +69,7 @@ struct HaliConfig {
   // Empty means "allow anything inside the sandbox" (original behaviour).
   std::vector<std::string> run_allowed_;
   std::vector<std::string> knowledge_files_;
+  RunAllowed user_run_allowed_;
 
   // MCP support
   std::string mcp_context_;

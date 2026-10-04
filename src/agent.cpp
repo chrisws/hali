@@ -83,11 +83,14 @@ static std::string tool_run(HaliConfig &cfg, Tui &tui, const std::string &arg1, 
     return "ERROR: prevented by user";
   } else {
     bool permitted = ranges::any_of(cfg.run_allowed_, [&](const std::string &a) {return a == arg1;});
-    if ((!permitted || hasDangerousPatterns(args, cfg.run_allowed_)) && !tui.confirm_dialog(std::format("Allow {} {} to run?", arg1, arg2))) {
-      return "ERROR: '" + arg1 + "' is not in the TOOL:RUN allowlist.";
-    }
-    if (!permitted) {
-      cfg.run_allowed_.emplace_back(arg1);
+    if (!permitted || hasDangerousPatterns(args, cfg.run_allowed_)) {
+      if (!tui.confirm_dialog(std::format("Allow {} {} to run?", arg1, arg2))) {
+        return "ERROR: '" + arg1 + "' is not permitted to run.";
+      } else {
+        // remember the user confirmed commands
+        cfg.run_allowed_.emplace_back(arg1);
+        cfg.user_run_allowed_.add(arg1);
+      }
     }
   }
   const std::string command = args + " 2>&1";
