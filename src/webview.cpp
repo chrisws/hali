@@ -106,24 +106,25 @@ static std::string mime_type(const std::string &path) {
 
 static const std::string RELOAD_SNIPPET =
   "\n<script>\n"
-  "(function() {\n"
-  "  var proto = location.protocol === 'https:' ? 'wss://' : 'ws://';\n"
-  "  var ws = new WebSocket(proto + location.host + '"
+  "document.addEventListener('DOMContentLoaded', () => {\n"
+  "  console.log('[hali] DOMContentLoaded — creating WebSocket');\n"
+  "  const proto = location.protocol === 'https:' ? 'wss://' : 'ws://';\n"
+  "  const ws = new WebSocket(proto + location.host + '"
   + std::string(WS_PATH) +
   "');\n"
-  "  ws.onmessage = function(e) {\n"
+  "  ws.addEventListener('message', (e) => {\n"
   "    if (typeof window._ws_onMessage === 'function') window._ws_onMessage(e);\n"
   "    else if (e.data === 'reload') location.reload();\n"
-  "  };\n"
-  "  ws.onopen = function() {\n"
-  "    window._ws_sendMessage = function(msg) {\n"
+  "  });\n"
+  "  ws.addEventListener('open', () => {\n"
+  "    window._ws_sendMessage = (msg) => {\n"
   "      if (ws.readyState === WebSocket.OPEN) ws.send(msg);\n"
   "    };\n"
   "    if (typeof window._ws_onOpen === 'function') window._ws_onOpen();\n"
-  "  };\n"
-  "  ws.onclose   = function(e) { console.log('closed %o', e); };\n"
-  "  ws.onerror   = function(e) { console.error('[%o]', e); };\n"
-  "})();\n"
+  "  });\n"
+  "  ws.addEventListener('close', (e) => console.log('closed', e));\n"
+  "  ws.addEventListener('error', (e) => console.error('[%o]', e));\n"
+  "});\n"
   "</script>\n";
 // ────────────────────────────────────────────────────────────────────────────
 // WebServer
@@ -213,12 +214,17 @@ struct WebServer {
 
   // ── Public ────────────────────────────────────────────────────────
   void broadcast_message(const std::string &message) {
-    if (!live_reload_) return;
+    if (!live_reload_) {
+      log_write(LEVEL_INFO, "live_reload disabled");
+      return;
+    }
+    log_write(LEVEL_INFO, "broadcasting [%s]", message.c_str());
     std::string frame = ws_encode_frame(message);
     std::lock_guard<std::mutex> lock(ws_mutex_);
     for (auto it = ws_clients_.begin(); it != ws_clients_.end(); ) {
       ssize_t n = ::send(*it, frame.data(), frame.size(), MSG_NOSIGNAL);
       if (n < 0) {
+        log_write(LEVEL_INFO, "broadcast_message failed [%d]", n);
         ::close(*it);
         it = ws_clients_.erase(it);
       } else {
@@ -229,10 +235,22 @@ struct WebServer {
 
   // ── Internals ─────────────────────────────────────────────────────
   static std::string ws_encode_frame(const std::string &payload) {
-    // RFC 6455: server → client text frame, unmasked, payload < 126 bytes.
+    // RFC 6455: server → client text frame, unmasked.
     std::string frame;
     frame += static_cast<char>(0x81); // FIN=1, opcode=1 (text)
-    frame += static_cast<char>(payload.size());
+    size_t len = payload.size();
+    if (len < 126) {
+      frame += static_cast<char>(len);
+    } else if (len < 65536) {
+      frame += static_cast<char>(126);
+      frame += static_cast<char>((len >> 8) & 0xFF);
+      frame += static_cast<char>(len & 0xFF);
+    } else {
+      frame += static_cast<char>(127);
+      for (int i = 7; i >= 0; --i) {
+        frame += static_cast<char>((len >> (i * 8)) & 0xFF);
+      }
+    }
     frame += payload;
     return frame;
   }
@@ -486,15 +504,16 @@ struct WebServer {
         ws_clients_.push_back(fd);
       }
 
-      // Pump the client → server channel until the browser
-      // disconnects.  Each text frame is pushed onto the
-      // message queue for the agent to consume.
-      std::string rx;  // leftover bytes that do not yet form a
-                        // complete frame
+      // Pump the client → server channel until the browser disconnects.
+      // Each text frame is pushed onto the message queue for the agent to consume.
+      std::string rx;  // leftover bytes that do not yet form a complete frame
       char chunk[4096];
       while (true) {
         ssize_t n = ::recv(fd, chunk, sizeof(chunk), 0);
-        if (n <= 0) break;
+        if (n <= 0) {
+          log_write(LEVEL_INFO, "ws recv [%d]", n);
+          break;
+        }
         rx.append(chunk, static_cast<size_t>(n));
         // Decode every complete frame in rx.
         size_t pos = 0;
@@ -515,7 +534,9 @@ struct WebServer {
       {
         std::lock_guard<std::mutex> lock(ws_mutex_);
         auto it = std::ranges::find(ws_clients_, fd);
-        if (it != ws_clients_.end()) ws_clients_.erase(it);
+        if (it != ws_clients_.end()) {
+          ws_clients_.erase(it);
+        }
       }
       ::close(fd);
       return;
