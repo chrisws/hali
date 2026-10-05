@@ -11,10 +11,7 @@
 #include <format>
 #include <regex>
 #include <filesystem>
-#include <array>
 #include <memory>
-#include <cstdio>
-#include <unistd.h>
 
 #include "file.h"
 #include "string_utils.h"
