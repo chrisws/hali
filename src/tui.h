@@ -21,14 +21,14 @@
 
 // Theme enum for switching
 enum class ThemeMode {
-  DARK = 0,
-  LIGHT = 1,
-  NAVY = 2  // Original Hali color scheme
+  DARK = 0,       // Material Design 3 dark
+  LIGHT = 1,      // Modern light
+  SOLARIZED = 2   // Solarized dark palette
 };
 
 //
 // Color theme system ───────────────────────────────────────────────────
-// Solarized-inspired palette with Dark and Light themes
+// Multiple palettes: Modern Dark, Solarized, Light, Navy
 //
 namespace Color {
   struct RGB {
@@ -70,7 +70,7 @@ class ColorTheme {
   virtual Color::RGB get_popup_border() const = 0;
 };
 
-// Solarized Dark theme
+// Solarized Dark theme (legacy)
 namespace Color {
   namespace Chat {
     constexpr RGB COLOR_CHAT_HALI = {180, 255, 180};
@@ -81,7 +81,7 @@ namespace Color {
     constexpr RGB COLOR_CHAT_DEFAULT = {210, 210, 210};
   }
 
-  namespace DarkTheme {
+  namespace SolarizedTheme {
     constexpr RGB INPUT_BORDER              = {80, 120, 160};
     constexpr RGB INPUT_PROMPT              = {100, 210, 255};
     constexpr RGB INPUT_TEXT                = {230, 230, 230};
@@ -146,19 +146,27 @@ namespace Color {
     };
   }
 
-  // Solarized Light theme
-  namespace LightTheme {
-    constexpr RGB INPUT_BORDER              = {80, 120, 160};
-    constexpr RGB INPUT_PROMPT              = {100, 210, 255};
-    constexpr RGB INPUT_TEXT                = {108, 117, 125};
-    constexpr RGB INPUT_CURSOR              = {180, 230, 255};
-    constexpr RGB CHAT_BACKGROUND           = {253, 246, 227};
-    constexpr RGB INPUT_BACKGROUND          = {238, 232, 213};
-    constexpr RGB HEADER_BACKGROUND         = {238, 232, 213};
-    constexpr RGB HEADER_TEXT               = {108, 117, 125};
-    constexpr RGB POPUP_BACKGROUND          = {245, 245, 245};
-    constexpr RGB POPUP_BORDER              = {194, 178, 128};
-    constexpr RGB POPUP_TEXT                = {108, 117, 125};
+  // Modern Dark theme (Material Design 3 dark)
+  namespace DarkTheme {
+    constexpr RGB INPUT_BORDER              = {142, 142, 147};  // outline #8E8E93
+    constexpr RGB INPUT_PROMPT              = {187, 134, 252};  // primary #BB86FC
+    constexpr RGB INPUT_TEXT                = {230, 225, 229};  // on-surface #E6E1E5
+    constexpr RGB INPUT_CURSOR              = {  3, 218, 198};  // secondary #03DAC6
+    constexpr RGB CHAT_BACKGROUND           = { 18,  18,  18};  // background #121212
+    constexpr RGB INPUT_BACKGROUND          = { 30,  30,  30};  // surface #1E1E1E
+    constexpr RGB HEADER_BACKGROUND         = { 41,  41,  41};  // surface-variant #292929
+    constexpr RGB HEADER_TEXT               = {202, 196, 208};  // on-surface-variant #CAC4D0
+    constexpr RGB POPUP_BACKGROUND          = { 41,  41,  41};  // surface-variant #292929
+    constexpr RGB POPUP_BORDER              = {187, 134, 252};  // primary #BB86FC
+    constexpr RGB POPUP_TEXT                = {230, 225, 229};  // on-surface #E6E1E5
+
+    // Chat colors tuned for Material dark backgrounds
+    constexpr RGB CHAT_HALI                 = {  3, 218, 198};  // secondary teal
+    constexpr RGB CHAT_SYSTEM               = {255, 180, 171};  // error/warm
+    constexpr RGB CHAT_TOOL                 = {255, 204, 128};  // amber
+    constexpr RGB CHAT_ERROR                = {255, 180, 171};  // error #FFB4AB
+    constexpr RGB CHAT_THINKING             = {187, 134, 252};  // primary purple
+    constexpr RGB CHAT_DEFAULT              = {230, 225, 229};  // on-surface
 
     struct Impl : ColorTheme {
       Color::RGB get_color(Color::ColorElement element) const override {
@@ -190,17 +198,91 @@ namespace Color {
           case Color::ColorElement::COLOR_CHAT_USER:
             return INPUT_PROMPT;
           case Color::ColorElement::COLOR_CHAT_HALI:
-            return Color::Chat::COLOR_CHAT_HALI;
+            return CHAT_HALI;
           case Color::ColorElement::COLOR_CHAT_SYSTEM:
-            return Color::Chat::COLOR_CHAT_SYSTEM;
+            return CHAT_SYSTEM;
           case Color::ColorElement::COLOR_CHAT_TOOL:
-            return Color::Chat::COLOR_CHAT_TOOL;
+            return CHAT_TOOL;
           case Color::ColorElement::COLOR_CHAT_ERROR:
-            return Color::Chat::COLOR_CHAT_ERROR;
+            return CHAT_ERROR;
           case Color::ColorElement::COLOR_CHAT_THINKING:
-            return Color::Chat::COLOR_CHAT_THINKING;
+            return CHAT_THINKING;
           case Color::ColorElement::COLOR_CHAT_DEFAULT:
-            return Color::Chat::COLOR_CHAT_DEFAULT;
+            return CHAT_DEFAULT;
+          default:
+            return INPUT_PROMPT;
+        }
+      }
+
+      Color::RGB get_popup_color() const override { return POPUP_TEXT; }
+      Color::RGB get_popup_background() const override { return POPUP_BACKGROUND; }
+      Color::RGB get_popup_border() const override { return POPUP_BORDER; }
+    };
+  }
+
+  // Modern Light theme (clean white, dark text, blue accent)
+  namespace LightTheme {
+    constexpr RGB INPUT_BORDER              = {180, 190, 205};
+    constexpr RGB INPUT_PROMPT              = { 37,  99, 235};
+    constexpr RGB INPUT_TEXT                = { 31,  41,  55};
+    constexpr RGB INPUT_CURSOR              = { 37,  99, 235};
+    constexpr RGB CHAT_BACKGROUND           = {255, 255, 255};
+    constexpr RGB INPUT_BACKGROUND          = {245, 247, 250};
+    constexpr RGB HEADER_BACKGROUND         = {240, 242, 245};
+    constexpr RGB HEADER_TEXT               = { 55,  65,  81};
+    constexpr RGB POPUP_BACKGROUND          = {250, 251, 252};
+    constexpr RGB POPUP_BORDER              = {180, 190, 205};
+    constexpr RGB POPUP_TEXT                = { 31,  41,  55};
+
+    // Chat colors tuned for light backgrounds
+    constexpr RGB CHAT_HALI                 = { 22, 163,  74};
+    constexpr RGB CHAT_SYSTEM               = {146,  64,  14};
+    constexpr RGB CHAT_TOOL                 = {217, 119,   6};
+    constexpr RGB CHAT_ERROR                = {220,  38,  38};
+    constexpr RGB CHAT_THINKING             = {109,  40, 217};
+    constexpr RGB CHAT_DEFAULT              = { 31,  41,  55};
+
+    struct Impl : ColorTheme {
+      Color::RGB get_color(Color::ColorElement element) const override {
+        switch (element) {
+          case Color::ColorElement::INPUT_BORDER:
+            return INPUT_BORDER;
+          case Color::ColorElement::INPUT_TEXT:
+            return INPUT_TEXT;
+          case Color::ColorElement::INPUT_PROMPT:
+            return INPUT_PROMPT;
+          case Color::ColorElement::INPUT_CURSOR:
+            return INPUT_CURSOR;
+          case Color::ColorElement::CHAT_BACKGROUND:
+            return CHAT_BACKGROUND;
+          case Color::ColorElement::INPUT_BACKGROUND:
+            return INPUT_BACKGROUND;
+          case Color::ColorElement::HEADER_BACKGROUND:
+            return HEADER_BACKGROUND;
+          case Color::ColorElement::HEADER_TEXT:
+            return HEADER_TEXT;
+          case Color::ColorElement::POPUP_BACKGROUND:
+            return POPUP_BACKGROUND;
+          case Color::ColorElement::POPUP_BORDER:
+            return POPUP_BORDER;
+          case Color::ColorElement::POPUP_TEXT:
+            return POPUP_TEXT;
+          case Color::ColorElement::COLOR_CHAT_LOGO_GRADIENT:
+            return CHAT_BACKGROUND;
+          case Color::ColorElement::COLOR_CHAT_USER:
+            return INPUT_PROMPT;
+          case Color::ColorElement::COLOR_CHAT_HALI:
+            return CHAT_HALI;
+          case Color::ColorElement::COLOR_CHAT_SYSTEM:
+            return CHAT_SYSTEM;
+          case Color::ColorElement::COLOR_CHAT_TOOL:
+            return CHAT_TOOL;
+          case Color::ColorElement::COLOR_CHAT_ERROR:
+            return CHAT_ERROR;
+          case Color::ColorElement::COLOR_CHAT_THINKING:
+            return CHAT_THINKING;
+          case Color::ColorElement::COLOR_CHAT_DEFAULT:
+            return CHAT_DEFAULT;
           default:
             return INPUT_PROMPT;
         }

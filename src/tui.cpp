@@ -73,8 +73,8 @@ void Tui::set_theme(ThemeMode mode) {
     case ThemeMode::LIGHT:
       theme_ = std::make_unique<Color::LightTheme::Impl>();
       break;
-    case ThemeMode::NAVY:
-      theme_ = std::make_unique<Color::NavyTheme::Impl>();
+    case ThemeMode::SOLARIZED:
+      theme_ = std::make_unique<Color::SolarizedTheme::Impl>();
       break;
   }
   setup_backgrounds();
@@ -83,14 +83,14 @@ void Tui::set_theme(ThemeMode mode) {
 
 void Tui::toggle_theme() {
   switch (current_theme_) {
-    case ThemeMode::NAVY:
-      set_theme(ThemeMode::DARK);
-      break;
     case ThemeMode::DARK:
       set_theme(ThemeMode::LIGHT);
       break;
     case ThemeMode::LIGHT:
-      set_theme(ThemeMode::NAVY);
+      set_theme(ThemeMode::SOLARIZED);
+      break;
+    case ThemeMode::SOLARIZED:
+      set_theme(ThemeMode::DARK);
       break;
   }
 }
