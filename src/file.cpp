@@ -217,6 +217,8 @@ std::string tool_patch_validate(const std::string& filename, const std::string& 
         if ((newBraceCount != 0 || newParenCount != 0) && (oldBraceCount != newBraceCount)) {
           result = "NEW block has unbalanced braces or parentheses.";
         }
+      } else if (new_block.empty()) {
+        result = "NEW block is empty.";
       }
     }
   }
@@ -242,11 +244,6 @@ std::string tool_patch(const std::string& filename, const std::string& patch_str
   // Validate OLD block is not empty
   if (old_block.empty()) {
     return "ERROR: OLD block is empty. Cannot patch.";
-  }
-
-  // Validate NEW block is not empty
-  if (new_block.empty()) {
-    return "ERROR: NEW block is empty. Cannot patch.";
   }
 
   // Search for OLD block as exact, single match

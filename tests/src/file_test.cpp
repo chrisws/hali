@@ -502,8 +502,7 @@ static void test_tool_patch_empty_new() {
 
   string patch = "<<<<<<< OLD\nint foo() { return 1; }\n=======\n>>>>>>> NEW";
 
-  string result = tool_patch(test_file, patch);
-  assert(result.find("ERROR") != string::npos);
+  string result = tool_patch_validate(test_file, patch);
   assert(result.find("empty") != string::npos);
 
   // Clean up
