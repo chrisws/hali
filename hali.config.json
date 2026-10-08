@@ -1,0 +1,16 @@
+{
+  "model_path":     "/home/chrisws/models/qwen/Qwen3.8-27B-GSQ-RCO-IQ3_S-mtp.gguf",
+  "n_gpu_layers":   64,
+  "embed_path":     "",
+  "n_ctx":          60000,
+  "n_batch":        128,
+  "temperature":    0.2,
+  "top_p":          0.2,
+  "min_p":          0,
+  "top_k":          60,
+  "penalty_repeat": 1,
+  "penalty_last_n": 256,
+  "offload_kqv":   true,
+  "rag_top_k":      5,
+  "kv_cache_preset": "f16"
+}
