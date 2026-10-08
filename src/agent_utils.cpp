@@ -249,14 +249,51 @@ SearchFlags parse_search_flags(const std::string &flags_str) {
   return f;
 }
 
+bool glob_match(const std::string &str, const std::string &pattern, size_t si = 0, size_t pi = 0) {
+  while (pi < pattern.size()) {
+    if (pattern[pi] == '*') {
+      while (pi < pattern.size() && pattern[pi] == '*') pi++;
+      if (pi == pattern.size()) return true;
+      for (size_t s = si; s <= str.size(); s++) {
+        if (glob_match(str, pattern, s, pi)) return true;
+      }
+      return false;
+    } else if (pattern[pi] == '?') {
+      if (si >= str.size()) return false;
+      si++; pi++;
+    } else if (pattern[pi] == '[') {
+      if (si >= str.size()) return false;
+      size_t close = pattern.find(']', pi + 1);
+      if (close == std::string::npos) {
+        if (str[si] != '[') return false;
+        si++; pi++;
+      } else {
+        bool negated = (pi + 1 < close && pattern[pi + 1] == '!');
+        size_t start = negated ? pi + 2 : pi + 1;
+        bool matched = false;
+        for (size_t c = start; c < close; c++) {
+          if (c + 2 < close && pattern[c + 1] == '-') {
+            if (str[si] >= pattern[c] && str[si] <= pattern[c + 2]) { matched = true; break; }
+            c += 2;
+          } else {
+            if (str[si] == pattern[c]) { matched = true; break; }
+          }
+        }
+        if (negated) matched = !matched;
+        if (!matched) return false;
+        si++; pi = close + 1;
+      }
+    } else {
+      if (si >= str.size() || str[si] != pattern[pi]) return false;
+      si++; pi++;
+    }
+  }
+  return si == str.size();
+}
+
 bool matches_include(const std::string &filename, const std::string &glob) {
   if (glob.empty()) return true;
-  if (glob.size() >= 2 && glob[0] == '*' && glob[1] == '.') {
-    std::string ext = glob.substr(1);
-    return filename.size() >= ext.size() &&
-           filename.compare(filename.size() - ext.size(), ext.size(), ext) == 0;
-  }
-  return filename == glob;
+  return glob_match(filename, glob);
 }
 
 bool has_shell_metachars(const std::string &pattern) {
@@ -279,10 +316,6 @@ std::string search_single_file(const std::string &filepath, const std::string &p
     lines.push_back(line);
   }
 
-  if (flags.line_count) {
-    return std::to_string(lines.size());
-  }
-
   // Determine effective line range (1-based → 0-based)
   size_t range_start = 0;
   size_t range_end = lines.size();
@@ -294,7 +327,7 @@ std::string search_single_file(const std::string &filepath, const std::string &p
   }
 
   if (pattern.empty()) {
-    // No pattern: if --lines specified, return those lines (sed-like); else ""
+    // No pattern: if --lines specified, return those lines (sed-like)
     if (flags.lines_start > 0) {
       std::ostringstream oss;
       for (size_t i = range_start; i < range_end; i++) {
@@ -305,6 +338,10 @@ std::string search_single_file(const std::string &filepath, const std::string &p
         }
       }
       return oss.str();
+    }
+    // --line-count with empty pattern: return total line count
+    if (flags.line_count) {
+      return std::to_string(lines.size());
     }
     return "";
   }
@@ -322,7 +359,7 @@ std::string search_single_file(const std::string &filepath, const std::string &p
       return filepath + "\n";
     }
 
-    if (flags.count) {
+    if (flags.count || flags.line_count) {
       continue;
     }
 
@@ -347,8 +384,8 @@ std::string search_single_file(const std::string &filepath, const std::string &p
     last_end = end;
   }
 
-  if (flags.count) {
-    return std::to_string(match_count);
+  if (flags.count || flags.line_count) {
+    return match_count > 0 ? std::to_string(match_count) : "";
   }
 
   return oss.str();
