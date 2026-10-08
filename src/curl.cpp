@@ -162,8 +162,66 @@ static std::string html_to_text(const std::string &html) {
   return s;
 }
 
+//
+// is_blocked_url — reject private, link-local, and loopback addresses
+//
+static bool is_blocked_url(const std::string &url) {
+  // Extract host from URL (scheme://host[:port]/path)
+  auto scheme_end = url.find("://");
+  if (scheme_end == std::string::npos) return false;
+  auto host_start = scheme_end + 3;
+  std::string host;
+  if (host_start < url.size() && url[host_start] == '[') {
+    // IPv6 bracket notation: [::1] or [fe80::1]
+    auto close = url.find(']', host_start);
+    if (close == std::string::npos) return false;
+    host = url.substr(host_start, close - host_start + 1);
+  } else {
+    auto host_end = url.find_first_of("/:", host_start);
+    if (host_end == std::string::npos) host_end = url.size();
+    host = url.substr(host_start, host_end - host_start);
+  }
+
+  // Block localhost
+  if (host == "localhost") return true;
+
+  // Strip brackets for IPv6 comparison
+  std::string bare_host = host;
+  if (!bare_host.empty() && bare_host.front() == '[' && bare_host.back() == ']') {
+    bare_host = bare_host.substr(1, bare_host.size() - 2);
+  }
+
+  // Block IPv6 loopback and link-local
+  if (bare_host == "::1") return true;
+  if (bare_host.rfind("fe80", 0) == 0 || bare_host.rfind("FE80", 0) == 0) return true;
+
+  // IPv4 range checks
+  if (host.find('.') != std::string::npos) {
+    // 127.x.x.x (loopback)
+    if (host.rfind("127.", 0) == 0) return true;
+    // 10.x.x.x (private)
+    if (host.rfind("10.", 0) == 0) return true;
+    // 192.168.x.x (private)
+    if (host.rfind("192.168.", 0) == 0) return true;
+    // 169.254.x.x (link-local)
+    if (host.rfind("169.254.", 0) == 0) return true;
+    // 172.16.x.x - 172.31.x.x (private)
+    if (host.rfind("172.", 0) == 0) {
+      auto dot = host.find('.', 4);
+      if (dot != std::string::npos) {
+        int second = 0;
+        try { second = std::stoi(host.substr(4, dot - 4)); } catch (...) {}
+        if (second >= 16 && second <= 31) return true;
+      }
+    }
+  }
+
+  return false;
+}
+
 std::string tool_curl(const std::string &url) {
   if (url.empty()) return "ERROR: TOOL:CURL requires a URL argument";
+  if (is_blocked_url(url)) return "ERROR: URL blocked (private/link-local/loopback)";
   CURL *curl = curl_easy_init();
   if (!curl) return "ERROR: curl_easy_init failed";
   std::string body;

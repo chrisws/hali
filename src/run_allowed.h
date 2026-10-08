@@ -10,6 +10,9 @@
 
 #include <algorithm>
 #include <cstdlib>
+#include <ctime>
+#include <fstream>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -72,19 +75,63 @@ class RunAllowed {
   bool empty() const { return entries_.empty(); }
 
   /**
-   * @brief Load user-approved names from a file (one per line).
+   * @brief Load user-approved names from a file.
+   * Format: one entry per line, optionally "name\tYYYYMMDD".
+   * Entries older than ttl_days are discarded.
    * Silently succeeds if the file doesn't exist.
    */
-  void load(const std::string &path) {
+  void load(const std::string &path, int ttl_days = 30) {
     entries_.clear();
-    load_lines(path, entries_);
+    std::ifstream f(path);
+    if (!f) return;
+    std::string line;
+    auto today = current_date_int();
+    while (std::getline(f, line)) {
+      // Strip whitespace
+      while (!line.empty() && (line.back() == '\r' || line.back() == '\n' || line.back() == ' ')) line.pop_back();
+      if (line.empty()) continue;
+      // Parse optional timestamp: name\tYYYYMMDD
+      std::string name = line;
+      auto tab = line.find('\t');
+      if (tab != std::string::npos) {
+        name = line.substr(0, tab);
+        std::string ts = line.substr(tab + 1);
+        if (ts.size() == 8) {
+          int entry_date = 0;
+          try { entry_date = std::stoi(ts); } catch (...) {}
+          if (entry_date > 0 && date_diff_days(today, entry_date) > ttl_days) {
+            continue;  // expired
+          }
+        }
+      }
+      if (!name.empty() && !contains(name)) {
+        entries_.push_back(name);
+      }
+    }
   }
 
   /**
-   * @brief Persist user-approved names to disk (one per line).
+   * @brief Persist user-approved names to disk with timestamps.
+   * Format: "name\tYYYYMMDD" per line.
    */
   void save(const std::string &path) const {
-    save_lines(path, entries_);
+    std::ofstream f(path, std::ios::trunc);
+    if (!f) return;
+    std::string ts = std::to_string(current_date_int());
+    for (const auto &name : entries_) {
+      f << name << "\t" << ts << "\n";
+    }
+  }
+
+  /** @brief Returns a formatted summary for startup display. */
+  std::string summary() const {
+    if (entries_.empty()) return "";
+    std::string s = std::to_string(entries_.size()) + " previously approved RUN command"
+      + (entries_.size() > 1 ? "s:" : ":");
+    for (const auto &name : entries_) {
+      s += "\n  - " + name;
+    }
+    return s;
   }
 
   /**
@@ -100,5 +147,34 @@ class RunAllowed {
   }
 
   private:
+  /** @brief Returns current date as YYYYMMDD integer. */
+  static int current_date_int() {
+    std::time_t t = std::time(nullptr);
+    std::tm *lt = std::localtime(&t);
+    if (!lt) return 0;
+    return (lt->tm_year + 1900) * 10000 + (lt->tm_mon + 1) * 100 + lt->tm_mday;
+  }
+
+  /**
+   * @brief Returns the number of days between two YYYYMMDD dates (a - b).
+   * Uses mktime for proper calendar arithmetic.
+   */
+  static int date_diff_days(int ymd_a, int ymd_b) {
+    auto to_days = [](int ymd) -> long {
+      int y = ymd / 10000;
+      int m = (ymd / 100) % 100;
+      int d = ymd % 100;
+      std::tm tm = {};
+      tm.tm_year = y - 1900;
+      tm.tm_mon = m - 1;
+      tm.tm_mday = d;
+      tm.tm_hour = 12;  // noon to avoid DST edge cases
+      std::time_t t = std::mktime(&tm);
+      if (t == -1) return 0;
+      return static_cast<long>(t / 86400);
+    };
+    return static_cast<int>(to_days(ymd_a) - to_days(ymd_b));
+  }
+
   std::vector<std::string> entries_;
 };

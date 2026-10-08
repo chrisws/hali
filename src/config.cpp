@@ -15,9 +15,8 @@
 #include "json.h"
 
 static const std::vector<std::string> ALLOWED_TOOLS = {
-  "cat", "head", "tail", "grep", "wc", "stat", "ls", "find",
-  "awk", "sed", "tr", "cut", "sort", "uniq", "od", "xxd", "git",
-  "file", "uname", "whoami", "pwd", "id", "g++", "date", "sed",
+  "wc", "stat", "tr", "cut", "sort", "uniq", "od", "xxd", "git",
+  "file", "uname", "whoami", "pwd", "id", "g++", "date",
 };
 
 static KVCachePreset to_kv_preset(const std::string &str) {
@@ -189,6 +188,7 @@ std::string HaliConfig::build_system_prompt() const {
     "## Available Tools\n"
     "  TOOL:LIST   [dir]          list files (default: sandbox root)\n"
     "  TOOL:READ   <file>         read file contents\n"
+    "  TOOL:SEARCH <pattern> <path> [flags]  search files (flags: --recursive --line-numbers --count --line-count --files-only --include=<glob> --context=<n>)\n"
     "  TOOL:APPEND <file> <text>  append text to an existing file\n"
     "  TOOL:PATCH  <file> <tags>  patch an existing file - see below\n"
     "  TOOL:WRITE  <file> <text>  write text to file\n"

@@ -10,6 +10,7 @@
 #include <filesystem>
 #include <fstream>
 #include <mutex>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -68,28 +69,19 @@ static std::string list_dir(const std::string &path) {
   return utils::is_blank(result) ? "[.]" : result;
 }
 
-static bool path_in_sandbox(const std::string &sandbox, const std::string &path) {
-  std::error_code ec;
-  auto base   = fs::canonical(sandbox, ec);  if (ec) return false;
-  auto target = fs::weakly_canonical(path, ec);
-  std::string bstr = base.string() + "/";
-  std::string tstr = target.string();
-  return tstr == base.string() || tstr.compare(0, bstr.size(), bstr) == 0;
-}
-
 static std::string tool_run(HaliConfig &cfg, Tui &tui, const std::string &arg1, const std::string &arg2) {
   const std::string args = arg1 + " " + arg2;
   if (cfg.permission_prompt_ && !tui.confirm_dialog(std::format("Allow {} {} to run?", arg1, arg2))) {
     return "ERROR: prevented by user";
   } else {
-    bool permitted = ranges::any_of(cfg.run_allowed_, [&](const std::string &a) {return a == arg1;});
+    bool permitted = ranges::any_of(cfg.run_allowed_, [&](const std::string &a) {return a == args;});
     if (!permitted || hasDangerousPatterns(args, cfg.run_allowed_)) {
       if (!tui.confirm_dialog(std::format("Allow {} {} to run?", arg1, arg2))) {
-        return "ERROR: '" + arg1 + "' is not permitted to run.";
+        return "ERROR: '" + args + "' is not permitted to run.";
       } else {
-        // remember the user confirmed commands
-        cfg.run_allowed_.emplace_back(arg1);
-        cfg.user_run_allowed_.add(arg1);
+        // remember the user confirmed the full command line
+        cfg.run_allowed_.emplace_back(args);
+        cfg.user_run_allowed_.add(args);
       }
     }
   }
@@ -132,19 +124,6 @@ static void broadcast_message(const HaliConfig &cfg, Tui &tui, const std::string
   }
 }
 
-static std::string resolve_path(const HaliConfig &cfg, const std::string &p) {
-  if (p.empty() || p == ".") {
-    return cfg.sandbox_;
-  }
-  if (p.substr(0, 2) == "./") {
-    return join_path(cfg.sandbox_, p.substr(2));
-  }
-  if (p[0] == '/') {
-    return p;
-  }
-  return join_path(cfg.sandbox_, unwrap(p));
-};
-
 void Agent::apply_generation_params() const {
   llama_->add_stop("<|turn|>");
   llama_->add_stop("<|im_end|>");
@@ -169,6 +148,7 @@ bool Agent::setup_model() {
     tui_.redraw_all();
     return false;
   }
+  set_sandbox_root(cfg_.sandbox_);
 
   // Show a modal popup so the user knows loading is in progress.
   std::string model_name = fs::path(cfg_.model_path_).filename().string();
@@ -202,6 +182,10 @@ bool Agent::setup_model() {
   LlamaMemoryInfo mem = llama_->memory_info();
   tui_.dismiss_modal_popup();
   tui_.setup_model(model_name, mem, cfg_.thinking_);
+
+  if (auto summary = cfg_.user_run_allowed_.summary(); !summary.empty()) {
+    tui_.append_line(ICON_SYS + summary);
+  }
 
   model_loaded_ = true;
   return true;
@@ -406,23 +390,44 @@ std::string Agent::process_tool(const std::string &cmd) {
     return rag_tool(arg1);
   }
   if (op == "TOOL:LIST") {
-    std::string dir = resolve_path(cfg_, arg1);
+    std::string dir = resolve_path(cfg_.sandbox_, arg1);
+    if (!path_in_sandbox(cfg_.sandbox_, dir)) {
+      return "ERROR: path outside sandbox";
+    }
     tui_.show_tool("listing: " + dir);
     return list_dir(dir);
   }
   if (op == "TOOL:EXISTS") {
-    std::string p = resolve_path(cfg_, arg1);
+    std::string p = resolve_path(cfg_.sandbox_, arg1);
+    if (!path_in_sandbox(cfg_.sandbox_, p)) {
+      return "ERROR: path outside sandbox";
+    }
     tui_.show_tool("checking: " + p);
     return fs::exists(p) ? "YES" : "NO";
   }
   if (op == "TOOL:READ") {
     tui_.show_tool("reading: " + arg1);
-    std::string p = resolve_path(cfg_, arg1);
+    std::string p = resolve_path(cfg_.sandbox_, arg1);
+    if (!path_in_sandbox(cfg_.sandbox_, p)) {
+      return "ERROR: path outside sandbox";
+    }
     return read_file(p);
+  }
+  if (op == "TOOL:SEARCH") {
+    tui_.show_tool("search: " + arg1);
+    std::string path_part, flags_part;
+    auto space_pos = arg2.find(' ');
+    if (space_pos != std::string::npos) {
+      path_part = arg2.substr(0, space_pos);
+      flags_part = arg2.substr(space_pos + 1);
+    } else {
+      path_part = arg2;
+    }
+    return tool_search(cfg_.sandbox_, arg1, path_part, flags_part);
   }
   if (op == "TOOL:WRITE") {
     tui_.show_tool("writing: " + arg1);
-    const auto path = resolve_path(cfg_, arg1);
+    const auto path = resolve_path(cfg_.sandbox_, arg1);
     if (!path_in_sandbox(cfg_.sandbox_, path)) {
       return "ERROR: path outside sandbox";
     }
@@ -450,7 +455,7 @@ std::string Agent::process_tool(const std::string &cmd) {
   }
   if (op == "TOOL:PATCH") {
     tui_.show_tool("patch: " + arg1);
-    const auto path = resolve_path(cfg_, arg1);
+    const auto path = resolve_path(cfg_.sandbox_, arg1);
     if (!path_in_sandbox(cfg_.sandbox_, path)) {
       return "ERROR: path outside sandbox";
     }
@@ -473,12 +478,12 @@ std::string Agent::process_tool(const std::string &cmd) {
   }
   if (op == "TOOL:APPEND") {
     tui_.show_tool("append: " + arg1);
-    const auto path = resolve_path(cfg_, arg1);
+    const auto path = resolve_path(cfg_.sandbox_, arg1);
     if (!path_in_sandbox(cfg_.sandbox_, path)) {
       return "ERROR: path outside sandbox";
     }
     backup_file(cfg_, tui_, path);
-    const auto result = tool_append(arg1, arg2);
+    const auto result = tool_append(path, arg2);
     if (!utils::starts_with(result, "OK")) {
       tui_.append_token(ICON_ERR + result);
     } else {
@@ -487,7 +492,7 @@ std::string Agent::process_tool(const std::string &cmd) {
     return result;
   }
   if (op == "TOOL:MKDIR") {
-    std::string p = resolve_path(cfg_, arg1);
+    std::string p = resolve_path(cfg_.sandbox_, arg1);
     tui_.show_tool("mkdir: " + arg1);
     if (!path_in_sandbox(cfg_.sandbox_, p)) {
       return "ERROR: path outside sandbox";
@@ -521,7 +526,7 @@ std::string Agent::process_tool(const std::string &cmd) {
   }
   if (op == "TOOL:MCP") {
     tui_.show_tool("mcp: " + arg1);
-    return mcp_client_.call_tool(arg1, arg2);
+    return mcp_client_.call_tool(arg1, arg2, cfg_.sandbox_);
   }
   if (op == "TOOL:GRAPH") {
     const int cols = tui_.get_term_cols() * 0.75;

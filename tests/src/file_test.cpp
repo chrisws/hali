@@ -1,9 +1,11 @@
 #include <iostream>
 #include <cassert>
 #include <string>
+#include <filesystem>
 #include "file.cpp"
 
 using namespace std;
+namespace fs = std::filesystem;
 
 //
 // Helper: check that a string contains a substring
@@ -986,6 +988,51 @@ static void test_tool_append_log() {
   cout << "test_tool_append_log passed" << endl;
 }
 
+//
+// Internal path validation tests (P2-1 defense in depth)
+//
+
+static void test_file_internal_validation() {
+  const string sandbox = "/tmp/hali_test_file_sandbox";
+  fs::create_directories(sandbox);
+
+  // Set sandbox root to enable internal validation
+  set_sandbox_root(sandbox);
+
+  // Write inside sandbox should succeed
+  string result = tool_write(sandbox + "/test.txt", "hello");
+  assert(result.find("OK") != string::npos);
+
+  // Write outside sandbox should fail
+  result = tool_write("/tmp/hali_outside_test.txt", "evil");
+  assert(result.find("ERROR: path outside sandbox") != string::npos);
+
+  // Append inside sandbox should succeed
+  result = tool_append(sandbox + "/test.txt", " world");
+  assert(result.find("OK") != string::npos);
+
+  // Append outside sandbox should fail
+  result = tool_append("/tmp/hali_outside_append.txt", "evil");
+  assert(result.find("ERROR: path outside sandbox") != string::npos);
+
+  assert(result.find("ERROR: path outside sandbox") != string::npos);
+  // Patch outside sandbox should fail (path check happens before patch parsing)
+  result = tool_patch("/tmp/hali_outside_patch.txt", "some patch data");
+  assert(result.find("ERROR: path outside sandbox") != string::npos);  assert(result.find("ERROR: path outside sandbox") != string::npos);
+
+  // Traversal escape should fail
+  result = tool_write(sandbox + "/../../tmp/hali_escape.txt", "evil");
+  assert(result.find("ERROR: path outside sandbox") != string::npos);
+
+  // Reset sandbox root (disables check for remaining tests)
+  set_sandbox_root("");
+
+  // Clean up
+  fs::remove_all(sandbox);
+
+  cout << "test_file_internal_validation passed" << endl;
+}
+
 void file_test() {
   test_isBalanced();
   test_parsePatch();
@@ -1042,4 +1089,7 @@ void file_test() {
   test_no_errors_section();
   test_whitespace_lines();
   cout << "\nAll format_session tests passed!\n" << endl;
+
+  test_file_internal_validation();
+  cout << "\nAll file internal validation tests passed!\n" << endl;
 }

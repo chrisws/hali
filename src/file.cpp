@@ -20,6 +20,27 @@
 
 namespace fs = std::filesystem;
 
+//
+// Defense-in-depth: sandbox root for internal path validation
+//
+static std::string sandbox_root_;
+
+void set_sandbox_root(const std::string &root) {
+  sandbox_root_ = root;
+}
+
+static bool path_is_valid(const std::string &path) {
+  if (sandbox_root_.empty()) return true;  // not configured, skip check
+  std::error_code ec;
+  auto base   = fs::canonical(sandbox_root_, ec);
+  if (ec) return false;
+  auto target = fs::weakly_canonical(path, ec);
+  if (ec) return false;
+  std::string bstr = base.string() + "/";
+  std::string tstr = target.string();
+  return tstr == base.string() || tstr.compare(0, bstr.size(), bstr) == 0;
+}
+
 static const std::vector<std::string> cLangExtensions = {
   ".c", ".cpp", ".h", ".hpp"
 };
@@ -170,6 +191,9 @@ static std::string replaceAll(std::string text, const std::string& old_block, co
 // Similar to tool_write but uses append mode
 //
 std::string tool_append(const std::string &path, const std::string &data) {
+  if (!path_is_valid(path)) {
+    return "ERROR: path outside sandbox";
+  }
   fs::path p(path);
 
   if (isCurlyBraceLanguage(p) && !isBalanced(data)) {
@@ -230,6 +254,9 @@ std::string tool_patch_validate(const std::string& filename, const std::string& 
 // Main patch validation function
 //
 std::string tool_patch(const std::string& filename, const std::string& patch_str) {
+  if (!path_is_valid(filename)) {
+    return "ERROR: path outside sandbox";
+  }
   // Read the target file
   std::ifstream file(filename);
   if (!file) {
@@ -306,6 +333,9 @@ std::string tool_write_validate(const std::string &path, const std::string &data
 // tool_write
 //
 std::string tool_write(const std::string &path, const std::string &data) {
+  if (!path_is_valid(path)) {
+    return "ERROR: path outside sandbox";
+  }
   fs::path p(path);
 
   // Create parent directories if needed
@@ -330,6 +360,9 @@ std::string tool_write(const std::string &path, const std::string &data) {
 // e.g. backup_path="/backups/file.cpp" -> /backups/file.cpp.20260115_143022_482917
 //
 std::string tool_write_backup(const std::string &backup_path, const std::string &path) {
+  if (!path_is_valid(path)) {
+    return "ERROR: path outside sandbox";
+  }
   fs::path source(path);
 
   // Verify the source file exists

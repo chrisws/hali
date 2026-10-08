@@ -6,6 +6,8 @@ void sha1_test();
 void utf8_test();
 void agent_utils_test();
 void input_test();
+void run_allowed_test();
+void curl_test();
 
 #include "logging.h"
 
@@ -19,5 +21,7 @@ int main() {
   utf8_test();
   agent_utils_test();
   input_test();
+  run_allowed_test();
+  curl_test();
   return 0;
 }

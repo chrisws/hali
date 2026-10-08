@@ -30,6 +30,8 @@ add_executable(hali_tests
   src/sha1_test.cpp
   src/input_test.cpp
   src/agent_utils_test.cpp
+  src/run_allowed_test.cpp
+  src/curl_test.cpp
   src/main.cpp
 )
 
@@ -45,8 +47,11 @@ target_include_directories(hali_tests PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/../src
 )
 
+find_package(CURL REQUIRED)
+
 target_link_libraries(hali_tests PRIVATE
   OpenSSL::Crypto
+  CURL::libcurl
   ${NC_TARGET}
 )
 

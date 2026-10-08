@@ -39,7 +39,7 @@ class Client {
   void disconnect();
   std::vector<Tool> list_tools() const;
   std::string get_system_context(const std::vector<std::string> &filter);
-  std::string call_tool(const std::string &name, const std::string &args) const;
+  std::string call_tool(const std::string &name, const std::string &args, const std::string &sandbox) const;
 
   private:
   Settings settings_;

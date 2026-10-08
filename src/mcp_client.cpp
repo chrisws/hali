@@ -19,6 +19,7 @@
 #include "json.h"
 #include "logging.h"
 #include "string_utils.h"
+#include "agent_utils.h"
 
 // https://modelcontextprotocol.io/specification/2025-03-26/basic/lifecycle
 
@@ -464,9 +465,64 @@ std::string Client::send_request(const std::string &request_body) const {
   return body;
 }
 
-std::string Client::call_tool(const std::string &name, const std::string &args_str) const {
+//
+// Validates MCP tool call arguments before sending to the server.
+// Returns an error string if validation fails, empty string if OK.
+//
+static std::string validate_mcp_call(const std::string &name, const std::string &args, const std::string &sandbox) {
+  // 1. Tool name: only allow [a-zA-Z0-9_-]
+  if (name.empty()) {
+    return "ERROR: empty MCP tool name";
+  }
+  for (char c : name) {
+    if (!std::isalnum(static_cast<unsigned char>(c)) && c != '_' && c != '-') {
+      return "ERROR: invalid MCP tool name: [" + name + "]";
+    }
+  }
+
+  // 2. Args must be valid JSON object
+  auto doc = json::parse(args);
+  if (!doc.is_valid()) {
+    return "ERROR: invalid JSON in MCP arguments";
+  }
+  auto root = doc.get_root();
+  if (!root.is_object()) {
+    return "ERROR: MCP arguments must be a JSON object";
+  }
+
+  // 3. Reject shell metacharacters in the raw args string
+  if (has_shell_metachars(args)) {
+    return "ERROR: shell metacharacters not allowed in MCP arguments";
+  }
+
+  // 4. Validate path-like fields against sandbox
+  static const std::vector<std::string> path_fields = {
+    "path", "projectPath", "file", "filePath", "directory", "dir",
+    "rootPath", "workspacePath", "folder"
+  };
+  for (const auto &field : path_fields) {
+    std::string value;
+    if (root.get_str(field, value) && !value.empty()) {
+      const std::string resolved = resolve_path(sandbox, value);
+      if (!path_in_sandbox(sandbox, resolved)) {
+        return "ERROR: MCP field [" + field + "] points outside sandbox: [" + value + "]";
+      }
+    }
+  }
+
+  return "";
+}
+
+std::string Client::call_tool(const std::string &name, const std::string &args_str, const std::string &sandbox) const {
   if (!curl_) {
     return "Not connected to MCP server";
+  }
+
+  // Validate before sending
+  const std::string validation_error = validate_mcp_call(name, args_str, sandbox);
+  if (!validation_error.empty()) {
+    log_write(LEVEL_ERROR, "MCP validation failed: %s", validation_error.c_str());
+    return validation_error;
   }
 
   auto doc = json::parse_mutable("");

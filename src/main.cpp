@@ -222,6 +222,29 @@ static void handle_slash(const std::string &input, HaliConfig &cfg, Agent &agent
     return;
   }
 
+  // ── /revoke ─────────────────────────────────────────────────────────────
+  // Usage: /revoke <name>
+  // Removes a previously approved RUN command from the persistent list.
+  if (verb == "/revoke") {
+    if (rest.empty()) {
+      tui.append_line(ICON_ERR + "Usage: /revoke <name>");
+      tui.redraw_all();
+      return;
+    }
+    if (cfg.user_run_allowed_.remove(rest)) {
+      // Also remove from the active run_allowed_ list if present
+      cfg.run_allowed_.erase(
+        std::remove(cfg.run_allowed_.begin(), cfg.run_allowed_.end(), rest),
+        cfg.run_allowed_.end());
+      cfg.user_run_allowed_.save(RunAllowed::default_path());
+      tui.append_line(ICON_SYS + "Revoked: " + rest);
+    } else {
+      tui.append_line(ICON_ERR + "Not found in approved list: " + rest);
+    }
+    tui.redraw_all();
+    return;
+  }
+
   tui.append_line(ICON_ERR + "Unknown command: " + verb + "  (try /help)");
   tui.redraw_all();
 }
