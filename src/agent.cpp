@@ -32,7 +32,17 @@
 //
 constexpr std::string SESSION_MD = "SESSION.md";
 
+static constexpr size_t MAX_READ_SIZE = 32 * 1024; // 32 KB
+
 static std::string read_file(const std::string &path) {
+  std::error_code ec;
+  auto size = fs::file_size(path, ec);
+  if (ec) {
+    return "ERROR: cannot open [" + path + "]";
+  }
+  if (size > MAX_READ_SIZE) {
+    return std::format("ERROR: file too large (%zu bytes). Use TOOL:SEARCH to read specific sections.", size);
+  }
   std::ifstream f(path, std::ios::binary);
   if (!f) {
     return "ERROR: cannot open [" + path + "]";
@@ -414,7 +424,7 @@ std::string Agent::process_tool(const std::string &cmd) {
     return read_file(p);
   }
   if (op == "TOOL:SEARCH") {
-    tui_.show_tool("search: " + arg1);
+    tui_.show_tool("search: " + arg1 + arg2);
     std::string path_part, flags_part;
     auto space_pos = arg2.find(' ');
     if (space_pos != std::string::npos) {

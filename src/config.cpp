@@ -187,7 +187,7 @@ std::string HaliConfig::build_system_prompt() const {
 
     "## Available Tools\n"
     "  TOOL:LIST   [dir]          list files (default: sandbox root)\n"
-    "  TOOL:READ   <file>         read file contents\n"
+    "  TOOL:READ   <file>         read file contents (max 32 KB; use TOOL:SEARCH for larger files)\n"
     "  TOOL:SEARCH <pattern> <path> [flags]  search files (flags: --recursive --line-numbers --count --line-count --files-only --include=<glob> --context=<n>)\n"
     "  TOOL:APPEND <file> <text>  append text to an existing file\n"
     "  TOOL:PATCH  <file> <tags>  patch an existing file - see below\n"
@@ -222,6 +222,12 @@ std::string HaliConfig::build_system_prompt() const {
     "- Do NOT hallucinate file contents\n"
     "- Do NOT fabricate tool outputs\n"
     "- Do NOT assume files exist — use TOOL:EXISTS to check first\n\n"
+
+    "## SEARCH Tool Notes\n"
+    "- `<pattern>` is a single token (no spaces, no quotes)\n"
+    "- For multi-word searches, run multiple single-word searches\n"
+    "- Flags: --recursive --line-numbers --context=<n> --include=<glob> --files-only\n"
+    "- `--context=<n>` shows n lines before/after each match\n\n"
 
     "## TOOL:GRAPH Rules\n"
     "- For TOOL:GRAPH, Reference `skills/graph.md` when you need the full schema details\n"
