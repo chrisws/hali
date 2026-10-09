@@ -80,9 +80,9 @@ struct LlamaLoad {
   KVCachePreset kv_cache_preset;
   // MTP (Multi-Token Prediction) speculative decoding
   bool mtp_enabled = true;   // auto-detect if true, force off if false
-  int  mtp_n_max = 3;        // max draft tokens per step
+  int  mtp_n_max = 2;        // max draft tokens per step
   int  mtp_n_min = 1;        // min accepted tokens to use MTP
-  float mtp_p_min = 0.9f;    // min probability threshold for draft acceptance
+  float mtp_p_min = 0.7f;    // min probability threshold for draft acceptance
 };
 
 struct Llama {

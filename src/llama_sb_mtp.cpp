@@ -247,6 +247,44 @@ bool Llama::verify_and_accept(llama_token anchor, const vector<llama_token> &dra
   for (int j = 0; j <= k; ++j) {
     sampled = llama_sampler_sample(_sampler, _ctx, j);
     if (j == k || sampled != drafts[j]) {
+      if (j < k) {
+        char dt[64] = {0}, st[64] = {0};
+        llama_token_to_piece(_vocab, drafts[j], dt, sizeof(dt) - 1, 0, false);
+        llama_token_to_piece(_vocab, sampled, st, sizeof(st) - 1, 0, false);
+        const float *row = llama_get_logits_ith(_ctx, j);
+        if (row) {
+          const int nv = llama_vocab_n_tokens(_vocab);
+          int top[5] = {0,0,0,0,0};
+          float tv[5] = {-1e30f,-1e30f,-1e30f,-1e30f,-1e30f};
+          int rank = 0;
+          for (int t = 0; t < nv; ++t) {
+            if (t != (int)drafts[j] && row[t] > row[drafts[j]]) {
+              ++rank;
+            }
+            for (int s = 0; s < 5; ++s) {
+              if (row[t] > tv[s]) {
+                for (int m = 4; m > s; --m) {
+                  tv[m] = tv[m-1];
+                  top[m] = top[m-1];
+                }
+                tv[s] = row[t];
+                top[s] = t;
+                break;
+              }
+            }
+          }
+          log_write(LEVEL_DEBUG,
+            "HALI: MTP reject j=%d: draft=%d(\"%s\") sampled=%d(\"%s\") "
+            "draft_logit=%.3f rank=%d "
+            "top5=[%d:%.3f %d:%.3f %d:%.3f %d:%.3f %d:%.3f]",
+            j, (int)drafts[j], dt, (int)sampled, st,
+            row[drafts[j]], rank,
+            top[0], tv[0], top[1], tv[1], top[2], tv[2], top[3], tv[3], top[4], tv[4]);
+        } else {
+          log_write(LEVEL_DEBUG, "HALI: MTP reject j=%d: draft=%d sampled=%d (no logits)",
+                    j, (int)drafts[j], (int)sampled);
+        }
+      }
       break;
     }
     accepted.push_back(drafts[j]);
@@ -300,7 +338,7 @@ bool Llama::verify_and_accept(llama_token anchor, const vector<llama_token> &dra
   // ---- resync the MTP context for the committed positions -------------------
   // draft-time MTP entries (built from MTP's own hidden states) are replaced by ones
   // built from the target's hidden states, which keeps later acceptance high.
-  if (_mtp_enabled) {
+  if (_mtp_enabled && n_acc < k) {
     llama_memory_seq_rm(llama_get_memory(_ctx_mtp), 0, P, -1);
     vector<llama_token> committed;
     committed.reserve(n_acc + 1);

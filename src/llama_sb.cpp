@@ -76,7 +76,7 @@ Llama::Llama() :
   _ctx_mtp(nullptr),
   _n_mtp_layers(0),
   _mtp_enabled(false),
-  _mtp_n_max(3),
+  _mtp_n_max(1),
   _mtp_n_min(1),
   _mtp_p_min(0.9f),
   _n_embd(0),
@@ -267,6 +267,11 @@ bool Llama::load_model(const LlamaLoad &load) {
       cparams.n_threads_batch = load.n_threads_batch;
     }
 
+    // enable native recurrent-state rollback for MTP (must be set before context creation)
+    if (load.mtp_enabled && llama_model_n_layer_nextn(_model) > 0) {
+      cparams.n_rs_seq = (uint32_t)load.mtp_n_max;
+    }
+
     _ctx = llama_init_from_model(_model, cparams);
     if (!_ctx) {
       set_last_error("Create context");
@@ -287,6 +292,7 @@ bool Llama::load_model(const LlamaLoad &load) {
         llama_context_params mtp_cparams = cparams;
         mtp_cparams.ctx_type = LLAMA_CONTEXT_TYPE_MTP;
         mtp_cparams.n_ctx = llama_n_ctx(_ctx);
+        mtp_cparams.n_rs_seq = 0;
         _ctx_mtp = llama_init_from_model(_model, mtp_cparams);
         if (_ctx_mtp) {
           _mtp_enabled = true;
