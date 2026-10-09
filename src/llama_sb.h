@@ -155,9 +155,14 @@ struct Llama {
 private:
   bool batch_decode_tokens(vector<llama_token> &tokens);
   bool configure_sampler();
-  void sync_and_capture_mtp(const llama_token * tokens, int n_tokens, llama_pos pos_start);
-  vector<llama_token> generate_draft_tokens(llama_token last_token, llama_pos pos);
-  vector<llama_token> verify_and_accept(vector<llama_token> &drafts);
+  void sync_and_capture_mtp(const llama_token *tokens, int n_tokens, llama_pos pos_start);
+  vector<llama_token> generate_draft_tokens(llama_token anchor, llama_pos pos, int n_max);
+  bool verify_and_accept(llama_token anchor, const vector<llama_token> &drafts,
+                         vector<llama_token> &accepted, llama_token &next);
+  bool mtp_round(llama_token anchor, vector<llama_token> &accepted, llama_token &next);
+  void mtp_reset_state();
+  bool decode_anchor(llama_token tok);
+  string emit_token(LlamaIter &iter, llama_token tok);
   void dirty() {_sampler_dirty = true; }
   bool full_flush_except_system();
   bool make_space_for_tokens(int n_tokens);
@@ -208,4 +213,8 @@ private:
   llama_batch_ext *_batch_mtp;
   llama_sampler *_sampler_mtp;
   vector<llama_token> _mtp_buffer; // tokens accepted by speculative decoding, pending return
+  llama_token _anchor;        // last token handed to the caller but not yet decoded
+  bool _has_pending;          // _anchor is valid
+  int _rollback_mode;         // 0 unknown, 1 seq_rm rewinds everything, 2 snapshot/restore
+  vector<uint8_t> _ckpt;      // recurrent-state snapshot taken before a verify pass
 };

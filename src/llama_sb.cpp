@@ -82,7 +82,10 @@ Llama::Llama() :
   _n_embd(0),
   _verify_h_rows(0),
   _batch_mtp(nullptr),
-  _sampler_mtp(nullptr) {
+  _sampler_mtp(nullptr),
+  _anchor(LLAMA_TOKEN_NULL),
+  _has_pending(false),
+  _rollback_mode(0) {
   llama_log_set([](enum ggml_log_level level, const char *text, void *user_data) {
     Llama *llama = static_cast<Llama *>(user_data);
     if (level == GGML_LOG_LEVEL_ERROR && llama->_last_error.empty()) {
@@ -138,7 +141,11 @@ Llama::Llama(Llama &&other) noexcept
   , _verify_h_rows(other._verify_h_rows)
   , _batch_mtp(std::exchange(other._batch_mtp, nullptr))
   , _sampler_mtp(std::exchange(other._sampler_mtp, nullptr))
-  , _mtp_buffer(std::move(other._mtp_buffer)) {
+  , _mtp_buffer(std::move(other._mtp_buffer))
+  , _anchor(other._anchor)
+  , _has_pending(other._has_pending)
+  , _rollback_mode(other._rollback_mode)
+  , _ckpt(std::move(other._ckpt)) {
 }
 
 Llama::~Llama() {
@@ -183,6 +190,7 @@ void Llama::reset() {
   _verify_h.clear();
   _verify_h_rows = 0;
   _mtp_buffer.clear();
+  _has_pending = false;
   if (_ctx) {
     llama_memory_clear(llama_get_memory(_ctx), true);
   }
@@ -282,7 +290,7 @@ bool Llama::load_model(const LlamaLoad &load) {
         _ctx_mtp = llama_init_from_model(_model, mtp_cparams);
         if (_ctx_mtp) {
           _mtp_enabled = true;
-          _mtp_n_max = std::min(load.mtp_n_max, _n_mtp_layers);
+          _mtp_n_max = load.mtp_n_max;
           _mtp_n_min = load.mtp_n_min;
           _mtp_p_min = load.mtp_p_min;
 
@@ -355,6 +363,8 @@ bool Llama::add_message(LlamaIter &iter, const string &role, const string &conte
   int32_t n = 0;
 
   _last_error.clear();
+  _mtp_buffer.clear();
+  _has_pending = false;
   if (_template.empty()) {
     set_last_error("Chat template availability test");
     return false;
@@ -436,6 +446,37 @@ bool Llama::add_message(LlamaIter &iter, const string &role, const string &conte
   return true;
 }
 
+bool Llama::decode_anchor(llama_token tok) {
+  llama_batch batch = llama_batch_get_one(&tok, 1);
+  if (llama_decode(_ctx, batch)) {
+    return false;
+  }
+  _tokens_physically_used += 1;
+  sync_and_capture_mtp(&tok, 1, (llama_pos)(_tokens_physically_used - 1));
+  return true;
+}
+
+string Llama::emit_token(LlamaIter &iter, llama_token tok) {
+  if (llama_vocab_is_eog(_vocab, tok)) {
+    iter._has_next = false;
+    _mtp_buffer.clear();
+    _has_pending = false;
+    return "";
+  }
+  string result = token_to_string(iter, tok);
+  if (!iter._has_next) {
+    // iteration over (stop word / max tokens): the last emitted token is the undecoded anchor,
+    // put it in the KV so the conversation continues from a consistent state
+    const bool is_anchor = _has_pending && _mtp_buffer.empty() && tok == _anchor;
+    _mtp_buffer.clear();
+    _has_pending = false;
+    if (is_anchor) {
+      decode_anchor(tok);
+    }
+  }
+  return result;
+}
+
 string Llama::next(LlamaIter &iter) {
   _last_error.clear();
   if (!iter._has_next) {
@@ -443,120 +484,119 @@ string Llama::next(LlamaIter &iter) {
     return "";
   }
 
-  // if we have buffered tokens from speculative decoding, return the next one
+  // tokens left over from the last speculative round
   if (!_mtp_buffer.empty()) {
     llama_token tok = _mtp_buffer.front();
     _mtp_buffer.erase(_mtp_buffer.begin());
-
-    if (llama_vocab_is_eog(_vocab, tok)) {
-      iter._has_next = false;
-      _mtp_buffer.clear();
-      return "";
-    }
-
-    string result = token_to_string(iter, tok);
-    if (!iter._has_next) {
-      _mtp_buffer.clear();
-    }
-    return result;
+    return emit_token(iter, tok);
   }
 
-  // sample the anchor token from the current logits
-  llama_token tok = llama_sampler_sample(_sampler, _ctx, -1);
+  // the previous round ended with an anchor that was returned but not decoded: run the next round
+  if (_has_pending) {
+    _has_pending = false;
+    vector<llama_token> accepted;
+    llama_token nxt = LLAMA_TOKEN_NULL;
+    if (_mtp_enabled && mtp_round(_anchor, accepted, nxt)) {
+      _mtp_buffer.assign(accepted.begin(), accepted.end());
+      _mtp_buffer.push_back(nxt);
+      _anchor = nxt;
+      _has_pending = true;
+      llama_token tok = _mtp_buffer.front();
+      _mtp_buffer.erase(_mtp_buffer.begin());
+      return emit_token(iter, tok);
+    }
+    // MTP failed or got disabled: decode the anchor normally and carry on
+    if (!decode_anchor(_anchor)) {
+      iter._has_next = false;
+      set_last_error("Failed to evaluate token during generation");
+      return "";
+    }
+  }
 
-  // end-of-generation check
+  llama_token tok = llama_sampler_sample(_sampler, _ctx, -1);
   if (llama_vocab_is_eog(_vocab, tok)) {
     iter._has_next = false;
     return "";
   }
 
-  // decode the anchor token on the target
-  llama_batch batch = llama_batch_get_one(&tok, 1);
-  if (llama_decode(_ctx, batch)) {
+  if (_mtp_enabled) {
+    // do NOT decode yet: the token heads the next verify batch
+    _anchor = tok;
+    _has_pending = true;
+    return emit_token(iter, tok);
+  }
+
+  if (!decode_anchor(tok)) {
     iter._has_next = false;
     set_last_error("Failed to evaluate token during generation");
     return "";
   }
-
-  _tokens_physically_used += 1;
-
-  // MTP speculative decoding
-  if (_mtp_enabled) {
-    sync_and_capture_mtp(&tok, 1, (llama_pos)(_tokens_physically_used - 1));
-    vector<llama_token> drafts = generate_draft_tokens(tok, (llama_pos)_tokens_physically_used);
-    vector<llama_token> accepted = verify_and_accept(drafts);
-    for (auto t : accepted) {
-      _mtp_buffer.push_back(t);
-    }
-  }
-
-  string result = token_to_string(iter, tok);
-  if (!iter._has_next) {
-    _mtp_buffer.clear();
-  }
-  return result;
+  return emit_token(iter, tok);
 }
 
 string Llama::all(LlamaIter &iter) {
   string out;
-
   vector<llama_token> decoded;
   decoded.reserve(_max_tokens);
 
   int generated = 0;
+  llama_token anchor = LLAMA_TOKEN_NULL;
+  bool has_anchor = false;  // anchor was emitted but is not decoded yet
 
   _last_error.clear();
   while (generated < _max_tokens) {
-    // sample the anchor token from the current logits
-    llama_token tok = llama_sampler_sample(_sampler, _ctx, -1);
-
-    // end-of-generation check
-    if (llama_vocab_is_eog(_vocab, tok)) {
-      break;
-    }
-
-    // append anchor to decoded list
-    decoded.push_back(tok);
-    ++generated;
-
-    // decode the anchor token on the target
-    llama_batch batch = llama_batch_get_one(&tok, 1);
-    if (llama_decode(_ctx, batch)) {
-      set_last_error("Failed to evaluate token during generation");
-      break;
-    }
-
-    _tokens_physically_used += 1;
-
-    // MTP speculative decoding
-    if (_mtp_enabled) {
-      sync_and_capture_mtp(&tok, 1, (llama_pos)(_tokens_physically_used - 1));
-      vector<llama_token> drafts = generate_draft_tokens(tok, (llama_pos)_tokens_physically_used);
-      vector<llama_token> accepted = verify_and_accept(drafts);
-
-      for (auto t : accepted) {
-        if (llama_vocab_is_eog(_vocab, t)) {
-          break;
-        }
-        decoded.push_back(t);
-        ++generated;
-        if (generated >= _max_tokens) {
-          break;
-        }
+    if (!has_anchor) {
+      llama_token tok = llama_sampler_sample(_sampler, _ctx, -1);
+      if (llama_vocab_is_eog(_vocab, tok)) {
+        break;
       }
+      decoded.push_back(tok);
+      ++generated;
+      if (_mtp_enabled) {
+        anchor = tok;
+        has_anchor = true;
+      } else if (!decode_anchor(tok)) {
+        set_last_error("Failed to evaluate token during generation");
+        break;
+      }
+      continue;
     }
+
+    vector<llama_token> accepted;
+    llama_token nxt = LLAMA_TOKEN_NULL;
+    if (!_mtp_enabled || !mtp_round(anchor, accepted, nxt)) {
+      has_anchor = false;
+      if (!decode_anchor(anchor)) {
+        set_last_error("Failed to evaluate token during generation");
+        break;
+      }
+      continue;
+    }
+
+    for (llama_token t : accepted) {
+      if (generated >= _max_tokens) {
+        break;
+      }
+      decoded.push_back(t);
+      ++generated;
+    }
+    if (generated >= _max_tokens || llama_vocab_is_eog(_vocab, nxt)) {
+      has_anchor = false;
+      break;
+    }
+    decoded.push_back(nxt);
+    ++generated;
+    anchor = nxt;
   }
 
-  // tokens exhausted - call add_message to continue
+  if (has_anchor) {
+    decode_anchor(anchor);  // keep the KV consistent for the next message
+  }
+
   iter._has_next = false;
-
-  // detokenize sequentially
-  if (!decoded.empty()) {
-    for (llama_token tok : decoded) {
-      out.append(token_to_string(iter, tok));
-    }
+  for (llama_token tok : decoded) {
+    out.append(token_to_string(iter, tok));
   }
-
   return out;
 }
 
@@ -774,6 +814,7 @@ bool Llama::make_space_for_tokens(int n_tokens) {
             _tokens_physically_used, n_tokens, n_ctx, _can_shift ? 1 : 0);
 
   llama_memory_clear(llama_get_memory(_ctx), true);
+  mtp_reset_state();   // the MTP KV still held the old positions
   _tokens_physically_used = 0;
   _n_system_tokens = 0;
   _memory_flush = true;
