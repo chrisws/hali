@@ -43,9 +43,29 @@ void Llama::sync_and_capture_mtp(const llama_token *tokens, int n_tokens, llama_
   if (!_mtp_enabled || !_spec || n_tokens <= 0) {
     return;
   }
+  mtp_trim_draft(pos_start);
   common_batch batch = make_common_batch(_ctx, tokens, n_tokens, pos_start);
   if (!common_speculative_process(_spec.get(), batch)) {
-    log_write(LEVEL_INFO, "HALI: MTP: speculative process failed");
+    log_write(LEVEL_INFO, "HALI: MTP: speculative process failed: %s", _last_error.c_str());
+    auto * ctx_dft = _spec_init ? _spec_init->context() : nullptr;
+    if (ctx_dft) {
+      const llama_pos dft_pos_min = llama_memory_seq_pos_min(llama_get_memory(ctx_dft), 0);
+      const llama_pos dft_pos_max = llama_memory_seq_pos_max(llama_get_memory(ctx_dft), 0);
+      log_write(LEVEL_INFO, "HALI: MTP: ctx_dft pos range [%d, %d], batch pos [%d, %d]",
+                (int)dft_pos_min, (int)dft_pos_max, (int)pos_start, (int)(pos_start + n_tokens - 1));
+    }
+    _last_error.clear();
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Drop draft-context KV entries at positions >= from, so process()/draft()
+// can rewrite them (llama requires strictly increasing positions per sequence)
+// ---------------------------------------------------------------------------
+void Llama::mtp_trim_draft(llama_pos from) {
+  auto *ctx_dft = _spec_init ? _spec_init->context() : nullptr;
+  if (ctx_dft) {
+    llama_memory_seq_rm(llama_get_memory(ctx_dft), 0, from, -1);
   }
 }
 
@@ -76,6 +96,9 @@ bool Llama::mtp_round(llama_token anchor, vector<llama_token> &accepted, llama_t
   const int k = (int)draft.size();
   if (k == 0) {
     // no drafts generated: just decode the anchor normally
+    // (drafting may have left speculative entries in ctx_dft, clear them
+    // so the decode_anchor -> process() call can write position P)
+    mtp_trim_draft(P);
     return false;
   }
 
@@ -113,11 +136,15 @@ bool Llama::mtp_round(llama_token anchor, vector<llama_token> &accepted, llama_t
     if (rc != 0) {
       log_write(LEVEL_INFO, "HALI: MTP: verify decode failed rc=%d (k=%d pos=%d)", rc, k, (int)P);
       llama_memory_seq_rm(llama_get_memory(_ctx), 0, P, -1);
+      mtp_trim_draft(P);
       return false;
     }
   }
 
   // ---- 3. feed the verify batch to the speculative context ----------------
+  // drafting wrote speculative entries at P.. into ctx_dft: remove them first,
+  // otherwise process() fails with "inconsistent sequence positions"
+  mtp_trim_draft(P);
   {
     common_batch batch_tgt(_ctx);
     batch_tgt.add(anchor, P, 0, true);
@@ -125,19 +152,20 @@ bool Llama::mtp_round(llama_token anchor, vector<llama_token> &accepted, llama_t
       batch_tgt.add(draft[i], P + 1 + i, 0, true);
     }
     if (!common_speculative_process(_spec.get(), batch_tgt)) {
-      log_write(LEVEL_INFO, "HALI: MTP: speculative process (verify) failed");
+      log_write(LEVEL_INFO, "HALI: MTP: speculative process (verify) failed: %s, disabling MTP", _last_error.c_str());
+      _last_error.clear();
+      // the draft head is now out of sync with the target: stop using it.
+      // this round's verify results are still valid, so finish it below.
+      _mtp_enabled = false;
     }
   }
 
   // ---- 4. sample and accept ------------------------------------------------
   // common_sampler_sample_and_accept_n returns at least 1 token, up to k+1.
-  // The first token is the sampled result of the anchor row (predicts P+1).
-  // If it matches draft[0], the second token is the sampled result of row 1, etc.
+  // ids[0..n_acc-1] are the accepted draft tokens, ids.back() is the next token
+  // (either the mismatch correction or the bonus token after a full accept).
   auto ids = common_sampler_sample_and_accept_n(_smpl_mtp, _ctx, draft);
 
-  // ids[0] is the first accepted token (from the anchor row)
-  // ids[1..n-1] are the accepted draft tokens
-  // The last element is always the "next" token (either a mismatch or the bonus)
   const int n_acc = (int)ids.size() - 1;  // number of draft tokens accepted
   next = ids.back();
 
@@ -151,6 +179,7 @@ bool Llama::mtp_round(llama_token anchor, vector<llama_token> &accepted, llama_t
   // ---- 6. rollback rejected positions --------------------------------------
   if (n_acc < k) {
     const llama_pos keep_end = P + n_acc + 1;  // [P, keep_end) stays committed
+    mtp_trim_draft(keep_end);  // drop rejected rows from the draft cache too
     if (!llama_memory_seq_rm(llama_get_memory(_ctx), 0, keep_end, -1)) {
       log_write(LEVEL_INFO, "HALI: MTP: seq_rm failed, disabling MTP");
       _mtp_enabled = false;
@@ -198,3 +227,4 @@ void Llama::mtp_reset_state() {
   _mtp_buffer.clear();
   _has_pending = false;
 }
+

@@ -160,6 +160,7 @@ private:
   void sync_and_capture_mtp(const llama_token *tokens, int n_tokens, llama_pos pos_start);
   bool mtp_round(llama_token anchor, vector<llama_token> &accepted, llama_token &next);
   void mtp_reset_state();
+  void mtp_trim_draft(llama_pos from);
   bool decode_anchor(llama_token tok);
   string emit_token(LlamaIter &iter, llama_token tok);
   void dirty() {_sampler_dirty = true; }
