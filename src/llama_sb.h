@@ -12,6 +12,8 @@
 #include <string>
 #include <vector>
 #include "llama.h"
+#include "speculative.h"
+#include "sampling.h"
 
 using namespace std;
 
@@ -156,9 +158,6 @@ private:
   bool batch_decode_tokens(vector<llama_token> &tokens);
   bool configure_sampler();
   void sync_and_capture_mtp(const llama_token *tokens, int n_tokens, llama_pos pos_start);
-  vector<llama_token> generate_draft_tokens(llama_token anchor, llama_pos pos, int n_max);
-  bool verify_and_accept(llama_token anchor, const vector<llama_token> &drafts,
-                         vector<llama_token> &accepted, llama_token &next);
   bool mtp_round(llama_token anchor, vector<llama_token> &accepted, llama_token &next);
   void mtp_reset_state();
   bool decode_anchor(llama_token tok);
@@ -199,22 +198,17 @@ private:
   bool _memory_flush;
   unsigned int _seed;
 
-  // MTP (Multi-Token Prediction) state
-  llama_context *_ctx_mtp;
+  // MTP (Multi-Token Prediction) speculative decoding state
   int _n_mtp_layers;
   bool _mtp_enabled;
   int _mtp_n_max;
   int _mtp_n_min;
   float _mtp_p_min;
-  int _n_embd;
-  vector<float> _pending_h;       // hidden state carryover from last target process
-  vector<float> _verify_h;        // hidden states from last verification batch
-  int _verify_h_rows;
-  llama_batch_ext *_batch_mtp;
-  llama_sampler *_sampler_mtp;
+  common_speculative_init_result_ptr _spec_init;
+  common_speculative_ptr _spec;
+  common_params _spec_params;
+  common_sampler *_smpl_mtp;
   vector<llama_token> _mtp_buffer; // tokens accepted by speculative decoding, pending return
   llama_token _anchor;        // last token handed to the caller but not yet decoded
   bool _has_pending;          // _anchor is valid
-  int _rollback_mode;         // 0 unknown, 1 seq_rm rewinds everything, 2 snapshot/restore
-  vector<uint8_t> _ckpt;      // recurrent-state snapshot taken before a verify pass
 };

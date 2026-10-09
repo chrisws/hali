@@ -18,6 +18,7 @@
 #include "llama-ext.h"
 #include "logging.h"
 #include "string_utils.h"
+#include "log.h"
 
 constexpr int MAX_REPEAT = 50;
 
@@ -73,19 +74,14 @@ Llama::Llama() :
   _can_shift(false),
   _memory_flush(false),
   _seed(LLAMA_DEFAULT_SEED),
-  _ctx_mtp(nullptr),
   _n_mtp_layers(0),
   _mtp_enabled(false),
   _mtp_n_max(1),
   _mtp_n_min(1),
   _mtp_p_min(0.9f),
-  _n_embd(0),
-  _verify_h_rows(0),
-  _batch_mtp(nullptr),
-  _sampler_mtp(nullptr),
+  _smpl_mtp(nullptr),
   _anchor(LLAMA_TOKEN_NULL),
-  _has_pending(false),
-  _rollback_mode(0) {
+  _has_pending(false) {
   llama_log_set([](enum ggml_log_level level, const char *text, void *user_data) {
     Llama *llama = static_cast<Llama *>(user_data);
     if (level == GGML_LOG_LEVEL_ERROR && llama->_last_error.empty()) {
@@ -97,6 +93,7 @@ Llama::Llama() :
       log_write(LEVEL_INFO, "LLAMA: %s", utils::trim(text).c_str());
     }
   }, this);
+  common_log_set_verbosity_thold(0);
   reset();
   llama_backend_init();
 }
@@ -129,37 +126,28 @@ Llama::Llama(Llama &&other) noexcept
   , _can_shift(other._can_shift)
   , _memory_flush(other._memory_flush)
   , _seed(other._seed)
-  , _ctx_mtp(std::exchange(other._ctx_mtp, nullptr))
   , _n_mtp_layers(other._n_mtp_layers)
   , _mtp_enabled(other._mtp_enabled)
   , _mtp_n_max(other._mtp_n_max)
   , _mtp_n_min(other._mtp_n_min)
   , _mtp_p_min(other._mtp_p_min)
-  , _n_embd(other._n_embd)
-  , _pending_h(std::move(other._pending_h))
-  , _verify_h(std::move(other._verify_h))
-  , _verify_h_rows(other._verify_h_rows)
-  , _batch_mtp(std::exchange(other._batch_mtp, nullptr))
-  , _sampler_mtp(std::exchange(other._sampler_mtp, nullptr))
+  , _spec_init(std::move(other._spec_init))
+  , _spec(std::move(other._spec))
+  , _spec_params(std::move(other._spec_params))
+  , _smpl_mtp(std::exchange(other._smpl_mtp, nullptr))
   , _mtp_buffer(std::move(other._mtp_buffer))
   , _anchor(other._anchor)
-  , _has_pending(other._has_pending)
-  , _rollback_mode(other._rollback_mode)
-  , _ckpt(std::move(other._ckpt)) {
+  , _has_pending(other._has_pending) {
 }
 
 Llama::~Llama() {
-  if (_sampler_mtp) {
-    llama_sampler_free(_sampler_mtp);
+  if (_smpl_mtp) {
+    common_sampler_free(_smpl_mtp);
   }
-  if (_batch_mtp) {
-    llama_batch_ext_free(_batch_mtp);
-  }
+  _spec.reset();
+  _spec_init.reset();
   if (_sampler) {
     llama_sampler_free(_sampler);
-  }
-  if (_ctx_mtp) {
-    llama_free(_ctx_mtp);
   }
   if (_ctx) {
     llama_free(_ctx);
@@ -186,17 +174,12 @@ void Llama::reset() {
   _tokens_physically_used = 0;
   _seed = LLAMA_DEFAULT_SEED;
   _sampler_dirty = true;
-  _pending_h.clear();
-  _verify_h.clear();
-  _verify_h_rows = 0;
   _mtp_buffer.clear();
   _has_pending = false;
   if (_ctx) {
     llama_memory_clear(llama_get_memory(_ctx), true);
   }
-  if (_ctx_mtp) {
-    llama_memory_clear(llama_get_memory(_ctx_mtp), true);
-  }
+  mtp_reset_state();
 }
 
 bool Llama::is_memory_flush() {
@@ -280,42 +263,30 @@ bool Llama::load_model(const LlamaLoad &load) {
       _template = llama_model_chat_template(_model, nullptr);
       _is_gemma4 = (_template.find("<|turn>model") != string::npos);
       _can_shift = llama_memory_can_shift(llama_get_memory(_ctx));
-      _n_embd = llama_model_n_embd(_model);
       log_write(LEVEL_INFO, "HALI: can_shift=%d, is_gemma4=%d n_swa=%d", _can_shift, _is_gemma4, llama_model_n_swa(_model));
 
-      // MTP detection & context setup
+      // MTP detection & speculative context setup
       _n_mtp_layers = llama_model_n_layer_nextn(_model);
       if (load.mtp_enabled && _n_mtp_layers > 0) {
         log_write(LEVEL_INFO, "HALI: MTP detected: %d nextn layers", _n_mtp_layers);
 
-        // create MTP draft context (reuses the same model)
-        llama_context_params mtp_cparams = cparams;
-        mtp_cparams.ctx_type = LLAMA_CONTEXT_TYPE_MTP;
-        mtp_cparams.n_ctx = llama_n_ctx(_ctx);
-        mtp_cparams.n_rs_seq = 0;
-        _ctx_mtp = llama_init_from_model(_model, mtp_cparams);
-        if (_ctx_mtp) {
+        _spec_params.speculative.types = {COMMON_SPECULATIVE_TYPE_DRAFT_MTP};
+        _spec_params.speculative.draft.n_max = load.mtp_n_max;
+        _spec_params.speculative.draft.n_min = load.mtp_n_min;
+        _spec_params.speculative.draft.p_min = load.mtp_p_min;
+        _spec_params.speculative.draft.ctx_tgt = _ctx;
+
+        _spec_init = common_speculative_init_from_params(_spec_params, _model, _ctx);
+        if (_spec_init) {
+          _spec_params.speculative.draft.ctx_dft = _spec_init->context();
+          _spec.reset(common_speculative_init(_spec_params.speculative, 1));
           _mtp_enabled = true;
           _mtp_n_max = load.mtp_n_max;
           _mtp_n_min = load.mtp_n_min;
           _mtp_p_min = load.mtp_p_min;
-
-          // enable nextn hidden-state output on both contexts
-          // target: masked=false → embeddings for ALL tokens in the batch
-          // draft:  masked=true  → embeddings only for tokens with logits!=0
-          llama_set_embeddings_nextn(_ctx, true, false);
-          llama_set_embeddings_nextn(_ctx_mtp, true, true);
-
-          // create the MTP batch and sampler
-          _batch_mtp = llama_batch_ext_init(_ctx_mtp);
-          auto sparams = llama_sampler_chain_default_params();
-          sparams.no_perf = true;
-          _sampler_mtp = llama_sampler_chain_init(sparams);
-          llama_sampler_chain_add(_sampler_mtp, llama_sampler_init_top_k(10));
-
           log_write(LEVEL_INFO, "HALI: MTP ready: n_max=%d n_min=%d p_min=%.2f", _mtp_n_max, _mtp_n_min, _mtp_p_min);
         } else {
-          log_write(LEVEL_INFO, "HALI: MTP context creation failed, continuing without speculative decoding");
+          log_write(LEVEL_INFO, "HALI: MTP speculative init failed, continuing without speculative decoding");
           _n_mtp_layers = 0;
         }
       } else if (_n_mtp_layers > 0) {
@@ -785,6 +756,16 @@ bool Llama::configure_sampler() {
     llama_sampler_free(_sampler);
   }
   _sampler = chain;
+
+  if (_mtp_enabled) {
+    if (_smpl_mtp) {
+      common_sampler_free(_smpl_mtp);
+    }
+    common_params_sampling mtp_sparams;
+    mtp_sparams.top_k = 10;
+    mtp_sparams.temp = 0.0f;
+    _smpl_mtp = common_sampler_init(_model, mtp_sparams);
+  }
   return true;
 }
 
