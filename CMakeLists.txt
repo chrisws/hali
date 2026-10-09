@@ -196,6 +196,7 @@ add_executable(hali
   src/input.cpp
   src/llama_sb_rag.cpp
   src/llama_sb.cpp
+  src/llama_sb_mtp.cpp
   src/file.cpp
   src/agent.cpp
   src/agent_utils.cpp
@@ -211,6 +212,7 @@ add_executable(hali
 target_include_directories(hali PRIVATE
   ${LLAMA_DIR}/include
   ${LLAMA_DIR}/ggml/include
+  ${LLAMA_DIR}/src
   ${CMAKE_CURRENT_SOURCE_DIR}/src
   ${CMAKE_CURRENT_SOURCE_DIR}/yyjson/src
 )

@@ -9,11 +9,13 @@
 #include <format>
 #include <span>
 #include <cmath>
+#include <cstring>
 #include <utility>
 #include "ggml-cuda.h"
 #include "llama.h"
 
 #include "llama_sb.h"
+#include "llama-ext.h"
 #include "logging.h"
 #include "string_utils.h"
 
@@ -70,7 +72,17 @@ Llama::Llama() :
   _sampler_dirty(false),
   _can_shift(false),
   _memory_flush(false),
-  _seed(LLAMA_DEFAULT_SEED) {
+  _seed(LLAMA_DEFAULT_SEED),
+  _ctx_mtp(nullptr),
+  _n_mtp_layers(0),
+  _mtp_enabled(false),
+  _mtp_n_max(3),
+  _mtp_n_min(1),
+  _mtp_p_min(0.9f),
+  _n_embd(0),
+  _verify_h_rows(0),
+  _batch_mtp(nullptr),
+  _sampler_mtp(nullptr) {
   llama_log_set([](enum ggml_log_level level, const char *text, void *user_data) {
     Llama *llama = static_cast<Llama *>(user_data);
     if (level == GGML_LOG_LEVEL_ERROR && llama->_last_error.empty()) {
@@ -113,12 +125,34 @@ Llama::Llama(Llama &&other) noexcept
   , _sampler_dirty(other._sampler_dirty)
   , _can_shift(other._can_shift)
   , _memory_flush(other._memory_flush)
-  , _seed(other._seed) {
+  , _seed(other._seed)
+  , _ctx_mtp(std::exchange(other._ctx_mtp, nullptr))
+  , _n_mtp_layers(other._n_mtp_layers)
+  , _mtp_enabled(other._mtp_enabled)
+  , _mtp_n_max(other._mtp_n_max)
+  , _mtp_n_min(other._mtp_n_min)
+  , _mtp_p_min(other._mtp_p_min)
+  , _n_embd(other._n_embd)
+  , _pending_h(std::move(other._pending_h))
+  , _verify_h(std::move(other._verify_h))
+  , _verify_h_rows(other._verify_h_rows)
+  , _batch_mtp(std::exchange(other._batch_mtp, nullptr))
+  , _sampler_mtp(std::exchange(other._sampler_mtp, nullptr))
+  , _mtp_buffer(std::move(other._mtp_buffer)) {
 }
 
 Llama::~Llama() {
+  if (_sampler_mtp) {
+    llama_sampler_free(_sampler_mtp);
+  }
+  if (_batch_mtp) {
+    llama_batch_ext_free(_batch_mtp);
+  }
   if (_sampler) {
     llama_sampler_free(_sampler);
+  }
+  if (_ctx_mtp) {
+    llama_free(_ctx_mtp);
   }
   if (_ctx) {
     llama_free(_ctx);
@@ -145,8 +179,15 @@ void Llama::reset() {
   _tokens_physically_used = 0;
   _seed = LLAMA_DEFAULT_SEED;
   _sampler_dirty = true;
+  _pending_h.clear();
+  _verify_h.clear();
+  _verify_h_rows = 0;
+  _mtp_buffer.clear();
   if (_ctx) {
     llama_memory_clear(llama_get_memory(_ctx), true);
+  }
+  if (_ctx_mtp) {
+    llama_memory_clear(llama_get_memory(_ctx_mtp), true);
   }
 }
 
@@ -164,6 +205,9 @@ bool Llama::load_model(const LlamaLoad &load) {
   llama_model_params mparams = llama_model_default_params();
   if (load.n_gpu_layers >= 0) {
     mparams.n_gpu_layers = load.n_gpu_layers;
+  }
+  if (load.mtp_enabled) {
+    mparams.load_mtp = true;
   }
 
   _last_error.clear();
@@ -223,7 +267,47 @@ bool Llama::load_model(const LlamaLoad &load) {
       _template = llama_model_chat_template(_model, nullptr);
       _is_gemma4 = (_template.find("<|turn>model") != string::npos);
       _can_shift = llama_memory_can_shift(llama_get_memory(_ctx));
+      _n_embd = llama_model_n_embd(_model);
       log_write(LEVEL_INFO, "HALI: can_shift=%d, is_gemma4=%d n_swa=%d", _can_shift, _is_gemma4, llama_model_n_swa(_model));
+
+      // MTP detection & context setup
+      _n_mtp_layers = llama_model_n_layer_nextn(_model);
+      if (load.mtp_enabled && _n_mtp_layers > 0) {
+        log_write(LEVEL_INFO, "HALI: MTP detected: %d nextn layers", _n_mtp_layers);
+
+        // create MTP draft context (reuses the same model)
+        llama_context_params mtp_cparams = cparams;
+        mtp_cparams.ctx_type = LLAMA_CONTEXT_TYPE_MTP;
+        mtp_cparams.n_ctx = llama_n_ctx(_ctx);
+        _ctx_mtp = llama_init_from_model(_model, mtp_cparams);
+        if (_ctx_mtp) {
+          _mtp_enabled = true;
+          _mtp_n_max = std::min(load.mtp_n_max, _n_mtp_layers);
+          _mtp_n_min = load.mtp_n_min;
+          _mtp_p_min = load.mtp_p_min;
+
+          // enable nextn hidden-state output on both contexts
+          // target: masked=false → embeddings for ALL tokens in the batch
+          // draft:  masked=true  → embeddings only for tokens with logits!=0
+          llama_set_embeddings_nextn(_ctx, true, false);
+          llama_set_embeddings_nextn(_ctx_mtp, true, true);
+
+          // create the MTP batch and sampler
+          _batch_mtp = llama_batch_ext_init(_ctx_mtp);
+          auto sparams = llama_sampler_chain_default_params();
+          sparams.no_perf = true;
+          _sampler_mtp = llama_sampler_chain_init(sparams);
+          llama_sampler_chain_add(_sampler_mtp, llama_sampler_init_top_k(10));
+
+          log_write(LEVEL_INFO, "HALI: MTP ready: n_max=%d n_min=%d p_min=%.2f", _mtp_n_max, _mtp_n_min, _mtp_p_min);
+        } else {
+          log_write(LEVEL_INFO, "HALI: MTP context creation failed, continuing without speculative decoding");
+          _n_mtp_layers = 0;
+        }
+      } else if (_n_mtp_layers > 0) {
+        log_write(LEVEL_INFO, "HALI: MTP available (%d layers) but disabled", _n_mtp_layers);
+        _n_mtp_layers = 0;
+      }
     }
   }
 
@@ -359,7 +443,25 @@ string Llama::next(LlamaIter &iter) {
     return "";
   }
 
-  // sample the next token from the current logits
+  // if we have buffered tokens from speculative decoding, return the next one
+  if (!_mtp_buffer.empty()) {
+    llama_token tok = _mtp_buffer.front();
+    _mtp_buffer.erase(_mtp_buffer.begin());
+
+    if (llama_vocab_is_eog(_vocab, tok)) {
+      iter._has_next = false;
+      _mtp_buffer.clear();
+      return "";
+    }
+
+    string result = token_to_string(iter, tok);
+    if (!iter._has_next) {
+      _mtp_buffer.clear();
+    }
+    return result;
+  }
+
+  // sample the anchor token from the current logits
   llama_token tok = llama_sampler_sample(_sampler, _ctx, -1);
 
   // end-of-generation check
@@ -368,9 +470,7 @@ string Llama::next(LlamaIter &iter) {
     return "";
   }
 
-  string result = token_to_string(iter, tok);
-
-  // prepare the next batch with the sampled token
+  // decode the anchor token on the target
   llama_batch batch = llama_batch_get_one(&tok, 1);
   if (llama_decode(_ctx, batch)) {
     iter._has_next = false;
@@ -379,6 +479,21 @@ string Llama::next(LlamaIter &iter) {
   }
 
   _tokens_physically_used += 1;
+
+  // MTP speculative decoding
+  if (_mtp_enabled) {
+    sync_and_capture_mtp(&tok, 1, (llama_pos)(_tokens_physically_used - 1));
+    vector<llama_token> drafts = generate_draft_tokens(tok, (llama_pos)_tokens_physically_used);
+    vector<llama_token> accepted = verify_and_accept(drafts);
+    for (auto t : accepted) {
+      _mtp_buffer.push_back(t);
+    }
+  }
+
+  string result = token_to_string(iter, tok);
+  if (!iter._has_next) {
+    _mtp_buffer.clear();
+  }
   return result;
 }
 
@@ -392,7 +507,7 @@ string Llama::all(LlamaIter &iter) {
 
   _last_error.clear();
   while (generated < _max_tokens) {
-    // sample the next token from the current logits
+    // sample the anchor token from the current logits
     llama_token tok = llama_sampler_sample(_sampler, _ctx, -1);
 
     // end-of-generation check
@@ -400,11 +515,11 @@ string Llama::all(LlamaIter &iter) {
       break;
     }
 
-    // append token to decoded list
+    // append anchor to decoded list
     decoded.push_back(tok);
     ++generated;
 
-    // decode the token
+    // decode the anchor token on the target
     llama_batch batch = llama_batch_get_one(&tok, 1);
     if (llama_decode(_ctx, batch)) {
       set_last_error("Failed to evaluate token during generation");
@@ -412,6 +527,24 @@ string Llama::all(LlamaIter &iter) {
     }
 
     _tokens_physically_used += 1;
+
+    // MTP speculative decoding
+    if (_mtp_enabled) {
+      sync_and_capture_mtp(&tok, 1, (llama_pos)(_tokens_physically_used - 1));
+      vector<llama_token> drafts = generate_draft_tokens(tok, (llama_pos)_tokens_physically_used);
+      vector<llama_token> accepted = verify_and_accept(drafts);
+
+      for (auto t : accepted) {
+        if (llama_vocab_is_eog(_vocab, t)) {
+          break;
+        }
+        decoded.push_back(t);
+        ++generated;
+        if (generated >= _max_tokens) {
+          break;
+        }
+      }
+    }
   }
 
   // tokens exhausted - call add_message to continue
@@ -564,6 +697,7 @@ bool Llama::batch_decode_tokens(vector<llama_token> &tokens) {
       return false;
     }
     _tokens_physically_used += batch_size;
+    sync_and_capture_mtp(tokens.data() + i, (int)batch_size, (llama_pos)(_tokens_physically_used - batch_size));
   }
   return true;
 }

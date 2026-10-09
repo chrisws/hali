@@ -78,6 +78,11 @@ struct LlamaLoad {
   enum llama_rope_scaling_type rope_scaling_type;  // NONE / LINEAR / YARN / LONGROPE
   float rope_freq_scale;    // 0 = use model default
   KVCachePreset kv_cache_preset;
+  // MTP (Multi-Token Prediction) speculative decoding
+  bool mtp_enabled = true;   // auto-detect if true, force off if false
+  int  mtp_n_max = 3;        // max draft tokens per step
+  int  mtp_n_min = 1;        // min accepted tokens to use MTP
+  float mtp_p_min = 0.9f;    // min probability threshold for draft acceptance
 };
 
 struct Llama {
@@ -140,9 +145,19 @@ struct Llama {
   //  returns the embedding dimension for the loaded model
   int get_embed_dim() const { return _model != nullptr ? llama_model_n_embd(_model) : 0; }
 
+  // MTP (Multi-Token Prediction) speculative decoding
+  bool is_mtp_enabled() const { return _mtp_enabled; }
+  int  mtp_n_layers() const { return _n_mtp_layers; }
+  void set_mtp_n_max(int n) { _mtp_n_max = n; }
+  void set_mtp_n_min(int n) { _mtp_n_min = n; }
+  void set_mtp_p_min(float p) { _mtp_p_min = p; }
+
 private:
   bool batch_decode_tokens(vector<llama_token> &tokens);
   bool configure_sampler();
+  void sync_and_capture_mtp(const llama_token * tokens, int n_tokens, llama_pos pos_start);
+  vector<llama_token> generate_draft_tokens(llama_token last_token, llama_pos pos);
+  vector<llama_token> verify_and_accept(vector<llama_token> &drafts);
   void dirty() {_sampler_dirty = true; }
   bool full_flush_except_system();
   bool make_space_for_tokens(int n_tokens);
@@ -178,4 +193,19 @@ private:
   bool _can_shift;
   bool _memory_flush;
   unsigned int _seed;
+
+  // MTP (Multi-Token Prediction) state
+  llama_context *_ctx_mtp;
+  int _n_mtp_layers;
+  bool _mtp_enabled;
+  int _mtp_n_max;
+  int _mtp_n_min;
+  float _mtp_p_min;
+  int _n_embd;
+  vector<float> _pending_h;       // hidden state carryover from last target process
+  vector<float> _verify_h;        // hidden states from last verification batch
+  int _verify_h_rows;
+  llama_batch_ext *_batch_mtp;
+  llama_sampler *_sampler_mtp;
+  vector<llama_token> _mtp_buffer; // tokens accepted by speculative decoding, pending return
 };
