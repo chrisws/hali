@@ -77,7 +77,7 @@ Llama::Llama() :
   _mtp_enabled(false),
   _mtp_n_max(1),
   _mtp_n_min(1),
-  _mtp_p_min(0.9f),
+  _mtp_p_min(0.0f),
   _smpl_mtp(nullptr),
   _anchor(LLAMA_TOKEN_NULL),
   _has_pending(false) {

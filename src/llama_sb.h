@@ -84,7 +84,7 @@ struct LlamaLoad {
   bool mtp_enabled = true;   // auto-detect if true, force off if false
   int  mtp_n_max = 3;        // max draft tokens per step
   int  mtp_n_min = 0;        // min accepted tokens to use MTP
-  float mtp_p_min = 0.3f;    // min probability threshold for draft acceptance
+  float mtp_p_min = 0.0f;    // min probability threshold for draft acceptance
 };
 
 struct Llama {
