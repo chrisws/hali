@@ -232,8 +232,13 @@ SearchFlags parse_search_flags(const std::string &flags_str) {
       f.files_only = true;
     } else if (token.rfind("--include=", 0) == 0) {
       f.include_glob = token.substr(10);
+    } else if (token == "--include") {
+      iss >> f.include_glob;
     } else if (token.rfind("--context=", 0) == 0) {
       f.context = std::stoi(token.substr(10));
+    } else if (token == "--context") {
+      int val;
+      if (iss >> val) f.context = val;
     } else if (token.rfind("--lines=", 0) == 0) {
       std::string val = token.substr(8);
       auto comma = val.find(',');
@@ -243,6 +248,18 @@ SearchFlags parse_search_flags(const std::string &flags_str) {
       } else {
         f.lines_start = std::stoi(val);
         f.lines_end = f.lines_start;
+      }
+    } else if (token == "--lines") {
+      std::string val;
+      if (iss >> val) {
+        auto comma = val.find(',');
+        if (comma != std::string::npos) {
+          f.lines_start = std::stoi(val.substr(0, comma));
+          f.lines_end = std::stoi(val.substr(comma + 1));
+        } else {
+          f.lines_start = std::stoi(val);
+          f.lines_end = f.lines_start;
+        }
       }
     }
   }

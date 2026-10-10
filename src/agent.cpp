@@ -193,10 +193,6 @@ bool Agent::setup_model() {
   tui_.dismiss_modal_popup();
   tui_.setup_model(model_name, mem, cfg_.thinking_);
 
-  if (auto summary = cfg_.user_run_allowed_.summary(); !summary.empty()) {
-    tui_.append_line(ICON_SYS + summary);
-  }
-
   model_loaded_ = true;
   return true;
 }
@@ -424,16 +420,32 @@ std::string Agent::process_tool(const std::string &cmd) {
     return read_file(p);
   }
   if (op == "TOOL:SEARCH") {
-    tui_.show_tool("search: " + arg1 + arg2);
-    std::string path_part, flags_part;
-    auto space_pos = arg2.find(' ');
-    if (space_pos != std::string::npos) {
-      path_part = arg2.substr(0, space_pos);
-      flags_part = arg2.substr(space_pos + 1);
-    } else {
-      path_part = arg2;
+    // Handle quoted pattern with spaces: "hello world" src --recursive
+    std::string pattern = arg1;
+    std::string path_and_flags = arg2;
+    if (!pattern.empty() && (pattern.front() == '"' || pattern.front() == '\'')) {
+      char quote = pattern.front();
+      pattern = pattern.substr(1);
+      auto qpos = path_and_flags.find(quote);
+      if (qpos != std::string::npos) {
+        pattern += path_and_flags.substr(0, qpos);
+        path_and_flags = path_and_flags.substr(qpos + 1);
+        path_and_flags.erase(0, path_and_flags.find_first_not_of(" \t"));
+      } else {
+        pattern += path_and_flags;
+        path_and_flags = "";
+      }
     }
-    return tool_search(cfg_.sandbox_, arg1, path_part, flags_part);
+    tui_.show_tool("search: " + pattern + " " + path_and_flags);
+    std::string path_part, flags_part;
+    auto space_pos = path_and_flags.find(' ');
+    if (space_pos != std::string::npos) {
+      path_part = path_and_flags.substr(0, space_pos);
+      flags_part = path_and_flags.substr(space_pos + 1);
+    } else {
+      path_part = path_and_flags;
+    }
+    return tool_search(cfg_.sandbox_, pattern, path_part, flags_part);
   }
   if (op == "TOOL:WRITE") {
     tui_.show_tool("writing: " + arg1);

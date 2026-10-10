@@ -16,7 +16,7 @@
 
 static const std::vector<std::string> ALLOWED_TOOLS = {
   "wc", "stat", "tr", "cut", "sort", "uniq", "od", "xxd", "git",
-  "file", "uname", "whoami", "pwd", "id", "g++", "date",
+  "file", "uname", "whoami", "pwd", "id", "g++", "date", "make"
 };
 
 static KVCachePreset to_kv_preset(const std::string &str) {
@@ -33,10 +33,6 @@ HaliConfig::HaliConfig() {
   for (const auto &tool : ALLOWED_TOOLS) {
     run_allowed_.emplace_back(tool);
   }
-
-  // Load user-approved commands and merge into the full allow-list.
-  user_run_allowed_.load(RunAllowed::default_path());
-  user_run_allowed_.merge_into(run_allowed_);
 }
 
 std::string HaliConfig::kv_preset_to_string() const {
@@ -188,7 +184,7 @@ std::string HaliConfig::build_system_prompt() const {
     "## Available Tools\n"
     "  TOOL:LIST   [dir]          list files (default: sandbox root)\n"
     "  TOOL:READ   <file>         read file contents (max 32 KB; use TOOL:SEARCH for larger files)\n"
-    "  TOOL:SEARCH <pattern> <path> [flags]  search files (flags: --recursive --line-numbers --count --line-count --files-only --include=<glob> --context=<n>)\n"
+    "  TOOL:SEARCH <pattern> <path> [flags]  search files (flags: --recursive --line-numbers --count --line-count --files-only --include=<glob> --context=<n> --lines=<start>,<end>)\n"
     "  TOOL:APPEND <file> <text>  append text to an existing file\n"
     "  TOOL:PATCH  <file> <tags>  patch an existing file - see below\n"
     "  TOOL:WRITE  <file> <text>  write text to file\n"
@@ -224,10 +220,10 @@ std::string HaliConfig::build_system_prompt() const {
     "- Do NOT assume files exist — use TOOL:EXISTS to check first\n\n"
 
     "## SEARCH Tool Notes\n"
-    "- `<pattern>` is a single token (no spaces, no quotes)\n"
-    "- For multi-word searches, run multiple single-word searches\n"
-    "- Flags: --recursive --line-numbers --context=<n> --include=<glob> --files-only\n"
-    "- `--context=<n>` shows n lines before/after each match\n\n"
+    "- `<pattern>` is a single token; use quotes for multi-word: `\"hello world\"`\n"
+    "- Flags: --recursive --line-numbers --context=<n> --include=<glob> --files-only --lines=<start>,<end>\n"
+    "- `--context=<n>` shows n lines before/after each match\n"
+    "- `--lines=<start>,<end>` restricts search to a line range (like sed -n)\n\n"
 
     "## TOOL:GRAPH Rules\n"
     "- For TOOL:GRAPH, Reference `skills/graph.md` when you need the full schema details\n"
