@@ -382,6 +382,70 @@ static void test_search_flags() {
   cout << "test_search_flags passed" << endl;
 }
 
+static void test_search_flags_space_separated() {
+  // Space-separated --context
+  SearchFlags f1 = parse_search_flags("--context 35");
+  assert(f1.context == 35);
+
+  // Space-separated --include
+  SearchFlags f2 = parse_search_flags("--include *.cpp");
+  assert(f2.include_glob == "*.cpp");
+
+  // Space-separated --lines
+  SearchFlags f3 = parse_search_flags("--lines 2,4");
+  assert(f3.lines_start == 2);
+  assert(f3.lines_end == 4);
+
+  // Space-separated --lines single value
+  SearchFlags f4 = parse_search_flags("--lines 5");
+  assert(f4.lines_start == 5);
+  assert(f4.lines_end == 5);
+
+  // Mixed: equals and space-separated
+  SearchFlags f5 = parse_search_flags("--recursive --context 10 --include=*.h");
+  assert(f5.recursive == true);
+  assert(f5.context == 10);
+  assert(f5.include_glob == "*.h");
+
+  // Multiple space-separated flags
+  SearchFlags f6 = parse_search_flags("--line-numbers --context 5 --lines 1,10");
+  assert(f6.line_numbers == true);
+  assert(f6.context == 5);
+  assert(f6.lines_start == 1);
+  assert(f6.lines_end == 10);
+
+  cout << "test_search_flags_space_separated passed" << endl;
+}
+
+static void test_search_multiword_pattern() {
+  const string test_file = "/tmp/hali_test_multiword.txt";
+  {
+    ofstream out(test_file);
+    out << "the quick brown fox\n";
+    out << "jumps over the lazy dog\n";
+    out << "a quick movement of the fox\n";
+  }
+
+  SearchFlags f;
+  f.line_numbers = true;
+
+  // Multi-word pattern (simulates what happens after quote stripping in agent.cpp)
+  string result = search_single_file(test_file, "quick brown fox", f);
+  assert(result.find("the quick brown fox") != string::npos);
+  assert(result.find("quick movement") == string::npos);
+
+  // Multi-word pattern with count
+  SearchFlags fc;
+  fc.count = true;
+  string count_result = search_single_file(test_file, "the lazy dog", fc);
+  assert(count_result == "1");
+
+  // Clean up
+  remove(test_file.c_str());
+
+  cout << "test_search_multiword_pattern passed" << endl;
+}
+
 static void test_has_shell_metachars() {
   assert(has_shell_metachars("foo; rm -rf /") == true);
   assert(has_shell_metachars("foo | grep bar") == true);
@@ -607,6 +671,8 @@ void agent_utils_test() {
   RUN_TEST(test_strip_code_fences_non_code_file);
   RUN_TEST(test_strip_code_fences_edge_cases);
   RUN_TEST(test_search_flags);
+  RUN_TEST(test_search_flags_space_separated);
+  RUN_TEST(test_search_multiword_pattern);
   RUN_TEST(test_has_shell_metachars);
   RUN_TEST(test_search_single_file);
   RUN_TEST(test_search_lines_flag);
