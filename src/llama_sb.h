@@ -176,6 +176,19 @@ private:
 
   // MTP (Multi-Token Prediction) speculative decoding - in llama_sb_mtp.cpp
   bool configure_mtp_sampler() ;
+
+  // ring-buffer helpers for _mtp_buf
+  void mtp_buf_clear() { _mtp_buf_head = 0; _mtp_buf_len = 0; }
+  bool mtp_buf_empty() const { return _mtp_buf_len == 0; }
+  int  mtp_buf_size()  const { return _mtp_buf_len; }
+  llama_token mtp_buf_front() const { return _mtp_buf[_mtp_buf_head]; }
+  void mtp_buf_pop_front() { _mtp_buf_head = (_mtp_buf_head + 1) % MTP_BUF_MAX; _mtp_buf_len--; }
+  void mtp_buf_push_back(llama_token tok) { _mtp_buf[(_mtp_buf_head + _mtp_buf_len) % MTP_BUF_MAX] = tok; _mtp_buf_len++; }
+  void mtp_buf_assign(const llama_token *src, int n) {
+    _mtp_buf_head = 0;
+    _mtp_buf_len = n;
+    for (int i = 0; i < n; ++i) { _mtp_buf[i] = src[i]; }
+  }
   
   llama_model *_model;
   llama_context *_ctx;
@@ -216,10 +229,22 @@ private:
   common_speculative_ptr _spec;
   common_params _spec_params;
   common_sampler *_smpl_mtp;
-  vector<llama_token> _mtp_buffer; // tokens accepted by speculative decoding, pending return
+  // pending-token ring buffer (O(1) pop-front, replaces vector)
+  static constexpr int MTP_BUF_MAX = 16;
+  llama_token _mtp_buf[MTP_BUF_MAX] = {};
+  int _mtp_buf_head = 0;
+  int _mtp_buf_len  = 0;
   llama_token _anchor;        // last token handed to the caller but not yet decoded
   bool _has_pending;          // _anchor is valid
   uint64_t _mtp_rounds;       // per-instance MTP stats
   uint64_t _mtp_drafted;
   uint64_t _mtp_accepted;
+  // pre-allocated buffers for the speculative round (avoid per-round heap allocs)
+  vector<llama_token>   _mtp_acc_tokens;
+  vector<llama_token>   _verify_toks;
+  vector<llama_pos>     _verify_pos;
+  vector<int32_t>       _verify_n_seq;
+  vector<llama_seq_id>  _verify_seq_ids;
+  vector<llama_seq_id*> _verify_seq_ptrs;
+  vector<int8_t>        _verify_logits;
 };

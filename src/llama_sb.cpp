@@ -83,6 +83,8 @@ Llama::Llama() :
   _mtp_n_min(1),
   _mtp_p_min(0.0f),
   _smpl_mtp(nullptr),
+  _mtp_buf_head(0),
+  _mtp_buf_len(0),
   _anchor(LLAMA_TOKEN_NULL),
   _has_pending(false),
   _mtp_rounds(0),
@@ -149,12 +151,21 @@ Llama::Llama(Llama &&other) noexcept
   , _spec(std::move(other._spec))
   , _spec_params(std::move(other._spec_params))
   , _smpl_mtp(std::exchange(other._smpl_mtp, nullptr))
-  , _mtp_buffer(std::move(other._mtp_buffer))
+  , _mtp_buf_head(other._mtp_buf_head)
+  , _mtp_buf_len(other._mtp_buf_len)
   , _anchor(other._anchor)
   , _has_pending(other._has_pending)
   , _mtp_rounds(other._mtp_rounds)
   , _mtp_drafted(other._mtp_drafted)
-  , _mtp_accepted(other._mtp_accepted) {
+  , _mtp_accepted(other._mtp_accepted)
+  , _mtp_acc_tokens(std::move(other._mtp_acc_tokens))
+  , _verify_toks(std::move(other._verify_toks))
+  , _verify_pos(std::move(other._verify_pos))
+  , _verify_n_seq(std::move(other._verify_n_seq))
+  , _verify_seq_ids(std::move(other._verify_seq_ids))
+  , _verify_seq_ptrs(std::move(other._verify_seq_ptrs))
+  , _verify_logits(std::move(other._verify_logits)) {
+  std::memcpy(_mtp_buf, other._mtp_buf, sizeof(_mtp_buf));
 }
 
 Llama::~Llama() {
@@ -191,7 +202,7 @@ void Llama::reset() {
   _tokens_physically_used = 0;
   _seed = LLAMA_DEFAULT_SEED;
   _sampler_dirty = true;
-  _mtp_buffer.clear();
+  mtp_buf_clear();
   _has_pending = false;
   _mtp_rounds = 0;
   _mtp_drafted = 0;
@@ -236,7 +247,7 @@ bool Llama::load_model(const LlamaLoad &load) {
   _n_mtp_layers = 0;
   _mtp_enabled = false;
   _mtp_disabled_permanently = false;
-  _mtp_buffer.clear();
+  mtp_buf_clear();
   _has_pending = false;
 
   llama_model_params mparams = llama_model_default_params();
@@ -336,6 +347,15 @@ bool Llama::load_model(const LlamaLoad &load) {
           _mtp_n_max = load.mtp_n_max;
           _mtp_n_min = load.mtp_n_min;
           _mtp_p_min = load.mtp_p_min;
+          // pre-allocate per-round buffers (sized to mtp_n_max + 1)
+          const int vsize = load.mtp_n_max + 1;
+          _mtp_acc_tokens.resize(vsize);
+          _verify_toks.resize(vsize);
+          _verify_pos.resize(vsize);
+          _verify_n_seq.resize(vsize, 1);
+          _verify_seq_ids.resize(vsize, 0);
+          _verify_seq_ptrs.resize(vsize);
+          _verify_logits.resize(vsize, 1);
           log_write(LEVEL_INFO, "HALI: MTP ready: n_max=%d n_min=%d p_min=%.2f", _mtp_n_max, _mtp_n_min, _mtp_p_min);
         } else {
           log_write(LEVEL_INFO, "HALI: MTP speculative init failed, continuing without speculative decoding");
@@ -392,7 +412,7 @@ bool Llama::add_message(LlamaIter &iter, const string &role, const string &conte
   int32_t n = 0;
 
   _last_error.clear();
-  _mtp_buffer.clear();
+  mtp_buf_clear();
   _has_pending = false;
   if (_template.empty()) {
     set_last_error("Chat template availability test");
@@ -484,24 +504,23 @@ string Llama::next(LlamaIter &iter) {
   }
 
   // tokens left over from the last speculative round
-  if (!_mtp_buffer.empty()) {
-    llama_token tok = _mtp_buffer.front();
-    _mtp_buffer.erase(_mtp_buffer.begin());
+  if (!mtp_buf_empty()) {
+    llama_token tok = mtp_buf_front();
+    mtp_buf_pop_front();
     return emit_token(iter, tok);
   }
 
   // the previous round ended with an anchor that was returned but not decoded: run the next round
   if (_has_pending) {
     _has_pending = false;
-    vector<llama_token> accepted;
     llama_token nxt = LLAMA_TOKEN_NULL;
-    if (_mtp_enabled && mtp_round(_anchor, accepted, nxt)) {
-      _mtp_buffer.assign(accepted.begin(), accepted.end());
-      _mtp_buffer.push_back(nxt);
+    if (_mtp_enabled && mtp_round(_anchor, _mtp_acc_tokens, nxt)) {
+      mtp_buf_assign(_mtp_acc_tokens.data(), (int)_mtp_acc_tokens.size());
+      mtp_buf_push_back(nxt);
       _anchor = nxt;
       _has_pending = true;
-      llama_token tok = _mtp_buffer.front();
-      _mtp_buffer.erase(_mtp_buffer.begin());
+      llama_token tok = mtp_buf_front();
+      mtp_buf_pop_front();
       return emit_token(iter, tok);
     }
     // MTP failed or got disabled: decode the anchor normally and carry on
@@ -788,7 +807,7 @@ bool Llama::make_space_for_tokens(int n_tokens) {
       if (ctx_dft) {
         llama_memory_clear(llama_get_memory(ctx_dft), true);
       }
-      _mtp_buffer.clear();
+      mtp_buf_clear();
       _has_pending = false;
       _anchor = LLAMA_TOKEN_NULL;
 

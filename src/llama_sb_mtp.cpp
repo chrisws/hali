@@ -26,17 +26,6 @@
 #include "sampling.h"
 
 // ---------------------------------------------------------------------------
-// Build a common_batch from a token range for use with common_speculative_process
-// ---------------------------------------------------------------------------
-static common_batch make_common_batch(llama_context *ctx, const llama_token *tokens, int n_tokens, llama_pos pos_start) {
-  common_batch batch(ctx);
-  for (int i = 0; i < n_tokens; ++i) {
-    batch.add(tokens[i], pos_start + i, 0, true);
-  }
-  return batch;
-}
-
-// ---------------------------------------------------------------------------
 // Feed a decoded batch to the speculative context (replaces sync_and_capture_mtp)
 // ---------------------------------------------------------------------------
 void Llama::sync_and_capture_mtp(const llama_token *tokens, int n_tokens, llama_pos pos_start) {
@@ -44,7 +33,10 @@ void Llama::sync_and_capture_mtp(const llama_token *tokens, int n_tokens, llama_
     return;
   }
   mtp_trim_draft(pos_start);
-  common_batch batch = make_common_batch(_ctx, tokens, n_tokens, pos_start);
+  common_batch batch(_ctx);
+  for (int i = 0; i < n_tokens; ++i) {
+    batch.add(tokens[i], pos_start + i, 0, true);
+  }
   if (!common_speculative_process(_spec.get(), batch)) {
     log_write(LEVEL_INFO, "HALI: MTP: speculative process failed: %s", _last_error.c_str());
     auto * ctx_dft = _spec_init ? _spec_init->context() : nullptr;
@@ -124,31 +116,24 @@ bool Llama::mtp_round(llama_token anchor, vector<llama_token> &accepted, llama_t
   // ---- 2. verify: single target pass over [anchor, d0..d(k-1)] ------------
   {
     const int n = 1 + k;
-    vector<llama_token>   toks(n);
-    vector<llama_pos>     pos(n);
-    vector<int32_t>       n_seq(n, 1);
-    vector<llama_seq_id>  seq_ids(n, 0);
-    vector<llama_seq_id*> seq_ptrs(n);
-    vector<int8_t>        logits(n, 1);
-
-    toks[0] = anchor;
-    pos[0]  = P;
+    _verify_toks[0] = anchor;
+    _verify_pos[0]  = P;
     for (int i = 0; i < k; ++i) {
-      toks[i + 1] = draft[i];
-      pos[i + 1]  = P + 1 + i;
+      _verify_toks[i + 1] = draft[i];
+      _verify_pos[i + 1]  = P + 1 + i;
     }
     for (int i = 0; i < n; ++i) {
-      seq_ptrs[i] = &seq_ids[i];
+      _verify_seq_ptrs[i] = &_verify_seq_ids[i];
     }
 
     llama_batch batch = {
       n,
-      toks.data(),
+      _verify_toks.data(),
       nullptr,
-      pos.data(),
-      n_seq.data(),
-      seq_ptrs.data(),
-      logits.data()
+      _verify_pos.data(),
+      _verify_n_seq.data(),
+      _verify_seq_ptrs.data(),
+      _verify_logits.data()
     };
 
     const int rc = llama_decode(_ctx, batch);
@@ -168,9 +153,9 @@ bool Llama::mtp_round(llama_token anchor, vector<llama_token> &accepted, llama_t
   mtp_trim_draft(P);
   {
     common_batch batch_tgt(_ctx);
-    batch_tgt.add(anchor, P, 0, true);
-    for (int i = 0; i < k; ++i) {
-      batch_tgt.add(draft[i], P + 1 + i, 0, true);
+    const int n = 1 + k;
+    for (int i = 0; i < n; ++i) {
+      batch_tgt.add(_verify_toks[i], _verify_pos[i], 0, true);
     }
     if (!common_speculative_process(_spec.get(), batch_tgt)) {
       log_write(LEVEL_INFO, "HALI: MTP: speculative process (verify) failed: %s, disabling MTP", _last_error.c_str());
@@ -229,7 +214,7 @@ bool Llama::mtp_round(llama_token anchor, vector<llama_token> &accepted, llama_t
 // Callers clear the target KV first, this empties the draft context to match.
 // ---------------------------------------------------------------------------
 void Llama::mtp_reset_state() {
-  _mtp_buffer.clear();
+  mtp_buf_clear();
   _has_pending = false;
   _anchor = LLAMA_TOKEN_NULL;
 
@@ -292,21 +277,21 @@ string Llama::emit_token(LlamaIter &iter, llama_token tok) {
   if (llama_vocab_is_eog(_vocab, tok)) {
     iter._has_next = false;
     // Roll back any accepted drafts still in KV but never emitted to the caller
-    int n_unemitted = _mtp_buffer.empty() ? 0 : (int)_mtp_buffer.size() - 1;
+    int n_unemitted = mtp_buf_empty() ? 0 : mtp_buf_size() - 1;
     mtp_rollback_unemitted(n_unemitted);
-    _mtp_buffer.clear();
+    mtp_buf_clear();
     _has_pending = false;
     return "";
   }
   string result = token_to_string(iter, tok);
   if (!iter._has_next) {
     // Early termination (stop word / max tokens).
-    // The last element in _mtp_buffer is always the anchor (not yet in KV);
+    // The last element in the buffer is always the anchor (not yet in KV);
     // all others are accepted drafts that ARE in KV and must be rolled back.
-    const bool is_anchor = _has_pending && _mtp_buffer.empty() && tok == _anchor;
-    int n_unemitted = _mtp_buffer.empty() ? 0 : (int)_mtp_buffer.size() - 1;
+    const bool is_anchor = _has_pending && mtp_buf_empty() && tok == _anchor;
+    int n_unemitted = mtp_buf_empty() ? 0 : mtp_buf_size() - 1;
     mtp_rollback_unemitted(n_unemitted);
-    _mtp_buffer.clear();
+    mtp_buf_clear();
     _has_pending = false;
     if (is_anchor) {
       // The anchor was never decoded into KV; do it now so the
