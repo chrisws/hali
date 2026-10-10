@@ -252,6 +252,7 @@ bool Llama::load_model(const LlamaLoad &load) {
     // enable native recurrent-state rollback for MTP (must be set before context creation)
     if (load.mtp_enabled && llama_model_n_layer_nextn(_model) > 0) {
       cparams.n_rs_seq = (uint32_t)load.mtp_n_max;
+      cparams.n_outputs_max = cparams.n_outputs_max_per_seq = (uint32_t)load.mtp_n_max + 1;
     }
 
     _ctx = llama_init_from_model(_model, cparams);
@@ -274,9 +275,14 @@ bool Llama::load_model(const LlamaLoad &load) {
         _spec_params.speculative.draft.n_min = load.mtp_n_min;
         _spec_params.speculative.draft.p_min = load.mtp_p_min;
         _spec_params.speculative.draft.ctx_tgt = _ctx;
+        _spec_params.n_batch  = load.n_batch;   // must be >= your largest process() batch
+        _spec_params.n_ubatch = load.n_batch;
+        _spec_params.n_outputs_max = _spec_params.n_outputs_max_per_seq = load.mtp_n_max + 1;
+        _spec_params.speculative.draft.backend_sampling = true;  // draft top-k on GPU
 
         _spec_init = common_speculative_init_from_params(_spec_params, _model, _ctx);
         if (_spec_init) {
+
           _spec_params.speculative.draft.ctx_dft = _spec_init->context();
           _spec.reset(common_speculative_init(_spec_params.speculative, 1));
           _mtp_enabled = true;

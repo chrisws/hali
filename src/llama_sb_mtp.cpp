@@ -55,6 +55,7 @@ void Llama::sync_and_capture_mtp(const llama_token *tokens, int n_tokens, llama_
                 (int)dft_pos_min, (int)dft_pos_max, (int)pos_start, (int)(pos_start + n_tokens - 1));
     }
     _last_error.clear();
+    _mtp_enabled = false;
   }
 }
 
@@ -203,37 +204,33 @@ bool Llama::mtp_round(llama_token anchor, vector<llama_token> &accepted, llama_t
 }
 
 // ---------------------------------------------------------------------------
-// wipe everything MTP related (after a context flush / reset)
+// wipe everything MTP related (after a context flush / reset).
+// Callers clear the target KV first, this empties the draft context to match.
 // ---------------------------------------------------------------------------
 void Llama::mtp_reset_state() {
-  if (!_spec) {
-    _mtp_buffer.clear();
-    _has_pending = false;
-    return;
-  }
-
-  // free the speculative context and its draft context
-  _spec.reset();
-  _spec_init.reset();
-
-  // re-create
-  _spec_params.speculative.draft.ctx_tgt = _ctx;
-  _spec_init = common_speculative_init_from_params(_spec_params, _model, _ctx);
-  if (_spec_init) {
-    _spec_params.speculative.draft.ctx_dft = _spec_init->context();
-    _spec.reset(common_speculative_init(_spec_params.speculative, 1));
-  }
-
   _mtp_buffer.clear();
   _has_pending = false;
+  _anchor = LLAMA_TOKEN_NULL;
+
+  auto *ctx_dft = _spec_init ? _spec_init->context() : nullptr;
+  if (!_spec || !ctx_dft) {
+    return;  // MTP not set up (e.g. the call from the constructor)
+  }
+
+  // reuse the speculative object and draft context, only empty the draft KV
+  llama_memory_clear(llama_get_memory(ctx_dft), true);
+
+  // a failed round may have switched MTP off; the draft cache is clean again,
+  // so give it another chance (drop this if you didn't add the disable-on-failure change)
+  _mtp_enabled = true;
 }
 
 bool Llama::configure_mtp_sampler() {
   if (_mtp_enabled) {
     if (_smpl_mtp) {
       common_sampler_free(_smpl_mtp);
+      _smpl_mtp = nullptr;
     }
-
     const bool greedy = _temperature <= 0.0f;
     // defaults are NOT neutral (top_k=40, top_p=0.95, ...)
     common_params_sampling sp;
@@ -246,7 +243,9 @@ bool Llama::configure_mtp_sampler() {
     sp.penalty_repeat   = _penalty_repeat;
     sp.penalty_freq     = _penalty_freq;
     sp.penalty_present  = _penalty_present;
-    //sp.grammar          = _grammar_src.c_str();
+    if (!_grammar_src.empty()) {
+      sp.grammar = common_grammar(COMMON_GRAMMAR_TYPE_USER, _grammar_src);
+    }
     _smpl_mtp = common_sampler_init(_model, sp);
     if (!_smpl_mtp) {
       set_last_error("failed to initialize MTP sampler");
