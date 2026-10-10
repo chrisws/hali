@@ -20,7 +20,10 @@ set(LLAMA_BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 set(LLAMA_BUILD_LLAMA_SHARED OFF CACHE BOOL "" FORCE)
 set(LLAMA_BUILD_GGML_SHARED OFF CACHE BOOL "" FORCE)
 set(LLAMA_SERVER_BUILD OFF CACHE BOOL "" FORCE)
+set(LLAMA_BUILD_TOOLS OFF CACHE BOOL "" FORCE)
+set(LLAMA_BUILD_SERVER OFF CACHE BOOL "" FORCE)
 set(LLAMA_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(LLAMA_BUILD_MTMD ON CACHE BOOL "" FORCE)
 set(LLAMA_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(LLAMA_BUILD_COMMON ON CACHE BOOL "" FORCE)
 set(GGML_STATIC ON CACHE BOOL "" FORCE)
@@ -97,6 +100,33 @@ endif()
 # -----------------------------
 add_subdirectory(${LLAMA_DIR}/ggml)
 add_subdirectory(${LLAMA_DIR})
+
+# -----------------------------
+# server-context (vendored from llama.cpp/tools/server)
+# -----------------------------
+add_library(server-context STATIC
+  ${LLAMA_DIR}/tools/server/server-chat.cpp
+  ${LLAMA_DIR}/tools/server/server-task.cpp
+  ${LLAMA_DIR}/tools/server/server-queue.cpp
+  ${LLAMA_DIR}/tools/server/server-common.cpp
+  ${LLAMA_DIR}/tools/server/server-decision.cpp
+  ${LLAMA_DIR}/tools/server/server-context.cpp
+  ${LLAMA_DIR}/tools/server/server-stream.cpp
+  ${LLAMA_DIR}/tools/server/server-tools.cpp
+  ${LLAMA_DIR}/tools/server/server-schema.cpp
+)
+
+target_include_directories(server-context PUBLIC
+  ${LLAMA_DIR}/tools/server
+  ${LLAMA_DIR}/tools/mtmd
+  ${LLAMA_DIR}
+)
+
+target_link_libraries(server-context PUBLIC
+  llama-common
+  mtmd
+  ${CMAKE_THREAD_LIBS_INIT}
+)
 
 # -----------------------------
 # Dependency discovery
@@ -196,8 +226,7 @@ add_executable(hali
   src/json.cpp
   src/input.cpp
   src/llama_sb_rag.cpp
-  src/llama_sb.cpp
-  src/llama_sb_mtp.cpp
+  src/llama_hali.cpp
   src/file.cpp
   src/agent.cpp
   src/agent_utils.cpp
@@ -215,6 +244,7 @@ target_include_directories(hali PRIVATE
   ${LLAMA_DIR}/ggml/include
   ${LLAMA_DIR}/src
   ${LLAMA_DIR}/common
+  ${LLAMA_DIR}/tools/server
   ${CMAKE_CURRENT_SOURCE_DIR}/src
   ${CMAKE_CURRENT_SOURCE_DIR}/yyjson/src
 )
@@ -222,6 +252,7 @@ target_include_directories(hali PRIVATE
 target_link_libraries(hali PRIVATE
   llama
   llama-common
+  server-context
   ggml
   ${NC_TARGET}
 )

@@ -9,10 +9,11 @@
 #pragma once
 
 #include <chrono>
+#include <memory>
 #include <string>
+#include <thread>
 #include <vector>
 #include "llama.h"
-#include "speculative.h"
 #include "sampling.h"
 
 using namespace std;
@@ -20,6 +21,8 @@ using namespace std;
 struct Llama;
 struct RagDB;
 struct RagSession;
+struct server_context;
+struct server_response_reader;
 
 enum class KVCachePreset {
   F16,       // ggml_type F16/F16, flash attn on - max quality, most VRAM
@@ -50,7 +53,7 @@ struct LlamaMemoryInfo {
 
 struct LlamaIter {
   explicit LlamaIter();
-  ~LlamaIter() = default;
+  ~LlamaIter();
 
   // move constructor
   LlamaIter(LlamaIter &&other) noexcept;
@@ -66,6 +69,7 @@ struct LlamaIter {
   int _repetition_count;
   int _tokens_generated;
   bool _has_next;
+  std::unique_ptr<server_response_reader> _reader;
 };
 
 struct LlamaLoad {
@@ -146,7 +150,7 @@ struct Llama {
   bool rag_index(RagDB &db, const std::string &filepath);
 
   //  returns the embedding dimension for the loaded model
-  int get_embed_dim() const { return _model != nullptr ? llama_model_n_embd(_model) : 0; }
+  int get_embed_dim() const { return _emb_model != nullptr ? llama_model_n_embd(_emb_model) : 0; }
 
   // MTP (Multi-Token Prediction) speculative decoding
   bool is_mtp_enabled() const { return _mtp_enabled; }
@@ -156,49 +160,30 @@ struct Llama {
   void set_mtp_p_min(float p) { _mtp_p_min = p; }
 
 private:
-  bool batch_decode_tokens(vector<llama_token> &tokens);
-  bool configure_sampler();
-  void sync_and_capture_mtp(const llama_token *tokens, int n_tokens, llama_pos pos_start);
-  bool mtp_round(llama_token anchor, vector<llama_token> &accepted, llama_token &next);
-  void mtp_reset_state();
-  void mtp_trim_draft(llama_pos from);
-  bool decode_anchor(llama_token tok);
-  string emit_token(LlamaIter &iter, llama_token tok);
-  void mtp_rollback_unemitted(int n_unemitted);
   void dirty() {_sampler_dirty = true; }
-  bool full_flush_except_system();
-  bool make_space_for_tokens(int n_tokens);
   vector<llama_token> tokenize(const string &prompt);
   string token_to_string(LlamaIter &iter, llama_token tok) const;
   void set_last_error(const string &message);
   void set_decode_error(int32_t error, int index, int num_tokens);
-  llama_token sample_next();
+  string process_text_chunk(LlamaIter &iter, const string &text);
+  void stop_server();
 
-  // MTP (Multi-Token Prediction) speculative decoding - in llama_sb_mtp.cpp
-  bool configure_mtp_sampler() ;
+  // generation via upstream server_context
+  std::unique_ptr<server_context> _server_ctx;
+  std::thread _server_thread;
+  bool _server_running = false;
 
-  // ring-buffer helpers for _mtp_buf
-  void mtp_buf_clear() { _mtp_buf_head = 0; _mtp_buf_len = 0; }
-  bool mtp_buf_empty() const { return _mtp_buf_len == 0; }
-  int  mtp_buf_size()  const { return _mtp_buf_len; }
-  llama_token mtp_buf_front() const { return _mtp_buf[_mtp_buf_head]; }
-  void mtp_buf_pop_front() { _mtp_buf_head = (_mtp_buf_head + 1) % MTP_BUF_MAX; _mtp_buf_len--; }
-  void mtp_buf_push_back(llama_token tok) { _mtp_buf[(_mtp_buf_head + _mtp_buf_len) % MTP_BUF_MAX] = tok; _mtp_buf_len++; }
-  void mtp_buf_assign(const llama_token *src, int n) {
-    _mtp_buf_head = 0;
-    _mtp_buf_len = n;
-    for (int i = 0; i < n; ++i) { _mtp_buf[i] = src[i]; }
-  }
-  
-  llama_model *_model;
-  llama_context *_ctx;
-  llama_sampler *_sampler;
+  // embedding model (independent of generation context)
+  llama_model *_emb_model;
+  llama_context *_emb_ctx;
+
+  // shared state
   const llama_vocab *_vocab;
+  string _template;
   vector<string> _stop_sequences;
   string _grammar_src;
   string _grammar_root;
   string _last_error;
-  string _template;
   int32_t _penalty_last_n;
   float _penalty_repeat;
   float _penalty_freq;
@@ -210,41 +195,16 @@ private:
   int _max_tokens;
   int _log_level;
   int _n_gpu_layers;
-  int _n_system_tokens;
-  int _tokens_physically_used;
   bool _is_gemma4;
   bool _sampler_dirty;
   bool _can_shift;
   bool _memory_flush;
   unsigned int _seed;
 
-  // MTP (Multi-Token Prediction) speculative decoding state
+  // MTP configuration (read from server context after load)
   int _n_mtp_layers;
   bool _mtp_enabled;
-  bool _mtp_disabled_permanently;
   int _mtp_n_max;
   int _mtp_n_min;
   float _mtp_p_min;
-  common_speculative_init_result_ptr _spec_init;
-  common_speculative_ptr _spec;
-  common_params _spec_params;
-  common_sampler *_smpl_mtp;
-  // pending-token ring buffer (O(1) pop-front, replaces vector)
-  static constexpr int MTP_BUF_MAX = 16;
-  llama_token _mtp_buf[MTP_BUF_MAX] = {};
-  int _mtp_buf_head = 0;
-  int _mtp_buf_len  = 0;
-  llama_token _anchor;        // last token handed to the caller but not yet decoded
-  bool _has_pending;          // _anchor is valid
-  uint64_t _mtp_rounds;       // per-instance MTP stats
-  uint64_t _mtp_drafted;
-  uint64_t _mtp_accepted;
-  // pre-allocated buffers for the speculative round (avoid per-round heap allocs)
-  vector<llama_token>   _mtp_acc_tokens;
-  vector<llama_token>   _verify_toks;
-  vector<llama_pos>     _verify_pos;
-  vector<int32_t>       _verify_n_seq;
-  vector<llama_seq_id>  _verify_seq_ids;
-  vector<llama_seq_id*> _verify_seq_ptrs;
-  vector<int8_t>        _verify_logits;
 };
