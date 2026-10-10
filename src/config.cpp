@@ -16,7 +16,7 @@
 
 static const std::vector<std::string> ALLOWED_TOOLS = {
   "wc", "stat", "tr", "cut", "sort", "uniq", "od", "xxd", "git",
-  "file", "uname", "whoami", "pwd", "id", "g++", "date", "make"
+  "file", "uname", "whoami", "pwd", "id", "g++", "date", "make", "maintenance.sh"
 };
 
 static KVCachePreset to_kv_preset(const std::string &str) {
