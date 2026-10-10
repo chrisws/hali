@@ -208,6 +208,7 @@ private:
   // MTP (Multi-Token Prediction) speculative decoding state
   int _n_mtp_layers;
   bool _mtp_enabled;
+  bool _mtp_disabled_permanently;
   int _mtp_n_max;
   int _mtp_n_min;
   float _mtp_p_min;

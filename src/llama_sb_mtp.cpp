@@ -56,6 +56,7 @@ void Llama::sync_and_capture_mtp(const llama_token *tokens, int n_tokens, llama_
     }
     _last_error.clear();
     _mtp_enabled = false;
+    _mtp_disabled_permanently = true;
   }
 }
 
@@ -155,6 +156,8 @@ bool Llama::mtp_round(llama_token anchor, vector<llama_token> &accepted, llama_t
       log_write(LEVEL_INFO, "HALI: MTP: verify decode failed rc=%d (k=%d pos=%d)", rc, k, (int)P);
       llama_memory_seq_rm(llama_get_memory(_ctx), 0, P, -1);
       mtp_trim_draft(P);
+      _mtp_enabled = false;
+      _mtp_disabled_permanently = true;
       return false;
     }
   }
@@ -175,6 +178,7 @@ bool Llama::mtp_round(llama_token anchor, vector<llama_token> &accepted, llama_t
       // the draft head is now out of sync with the target: stop using it.
       // this round's verify results are still valid, so finish it below.
       _mtp_enabled = false;
+      _mtp_disabled_permanently = true;
     }
   }
 
@@ -201,6 +205,7 @@ bool Llama::mtp_round(llama_token anchor, vector<llama_token> &accepted, llama_t
     if (!llama_memory_seq_rm(llama_get_memory(_ctx), 0, keep_end, -1)) {
       log_write(LEVEL_INFO, "HALI: MTP: seq_rm failed, disabling MTP");
       _mtp_enabled = false;
+      _mtp_disabled_permanently = true;
       return false;
     }
   }
@@ -236,9 +241,11 @@ void Llama::mtp_reset_state() {
   // reuse the speculative object and draft context, only empty the draft KV
   llama_memory_clear(llama_get_memory(ctx_dft), true);
 
-  // a failed round may have switched MTP off; the draft cache is clean again,
-  // so give it another chance (drop this if you didn't add the disable-on-failure change)
-  _mtp_enabled = true;
+  // re-enable MTP after a context reset, unless it was disabled due to a
+  // permanent failure (e.g. speculative process or verify decode error)
+  if (!_mtp_disabled_permanently) {
+    _mtp_enabled = true;
+  }
 }
 
 bool Llama::configure_mtp_sampler() {

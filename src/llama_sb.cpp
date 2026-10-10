@@ -78,6 +78,7 @@ Llama::Llama() :
   _seed(LLAMA_DEFAULT_SEED),
   _n_mtp_layers(0),
   _mtp_enabled(false),
+  _mtp_disabled_permanently(false),
   _mtp_n_max(1),
   _mtp_n_min(1),
   _mtp_p_min(0.0f),
@@ -140,6 +141,7 @@ Llama::Llama(Llama &&other) noexcept
   , _seed(other._seed)
   , _n_mtp_layers(other._n_mtp_layers)
   , _mtp_enabled(other._mtp_enabled)
+  , _mtp_disabled_permanently(other._mtp_disabled_permanently)
   , _mtp_n_max(other._mtp_n_max)
   , _mtp_n_min(other._mtp_n_min)
   , _mtp_p_min(other._mtp_p_min)
@@ -210,6 +212,32 @@ bool Llama::is_memory_flush() {
 
 bool Llama::load_model(const LlamaLoad &load) {
   ggml_backend_load_all();
+
+  // free any previously loaded model to avoid leaks on reload
+  if (_smpl_mtp) {
+    common_sampler_free(_smpl_mtp);
+    _smpl_mtp = nullptr;
+  }
+  _spec.reset();
+  _spec_init.reset();
+  if (_sampler) {
+    llama_sampler_free(_sampler);
+    _sampler = nullptr;
+  }
+  if (_ctx) {
+    llama_free(_ctx);
+    _ctx = nullptr;
+  }
+  if (_model) {
+    llama_model_free(_model);
+    _model = nullptr;
+  }
+  _vocab = nullptr;
+  _n_mtp_layers = 0;
+  _mtp_enabled = false;
+  _mtp_disabled_permanently = false;
+  _mtp_buffer.clear();
+  _has_pending = false;
 
   llama_model_params mparams = llama_model_default_params();
   if (load.n_gpu_layers >= 0) {
@@ -668,6 +696,7 @@ bool Llama::configure_sampler() {
   if (!_grammar_src.empty()) {
     llama_sampler *grammar = llama_sampler_init_grammar(_vocab, _grammar_src.c_str(), _grammar_root.c_str());
     if (!grammar) {
+      llama_sampler_free(chain);
       set_last_error("failed to initialize grammar sampler");
       return false;
     }
@@ -736,6 +765,38 @@ bool Llama::make_space_for_tokens(int n_tokens) {
     return true;
   }
 
+  // Try context shift: keep system tokens, discard middle, shift remaining left
+  if (_can_shift && _n_system_tokens > 0) {
+    int n_keep    = _n_system_tokens;
+    int n_left    = (int)_tokens_physically_used - n_keep;
+    int n_discard = n_left / 2;
+
+    int new_used = n_keep + n_left - n_discard;
+    if (n_discard > 0 && new_used + n_tokens <= n_ctx) {
+      log_write(LEVEL_DEBUG,
+                "HALI: context shift: keep=%d discard=%d new_used=%d requested=%d n_ctx=%d",
+                n_keep, n_discard, new_used, n_tokens, n_ctx);
+
+      llama_memory_t mem = llama_get_memory(_ctx);
+      llama_memory_seq_rm(mem, 0, n_keep, n_keep + n_discard);
+      llama_memory_seq_add(mem, 0, n_keep + n_discard, -1, -n_discard);
+
+      _tokens_physically_used = new_used;
+
+      // MTP draft context positions are now invalid; clear it
+      auto *ctx_dft = _spec_init ? _spec_init->context() : nullptr;
+      if (ctx_dft) {
+        llama_memory_clear(llama_get_memory(ctx_dft), true);
+      }
+      _mtp_buffer.clear();
+      _has_pending = false;
+      _anchor = LLAMA_TOKEN_NULL;
+
+      return true;
+    }
+  }
+
+  // Fall back to full clear
   log_write(LEVEL_DEBUG,
             "HALI: capacity exhausted, forcing full reset: "
             "used=%zu requested=%d n_ctx=%d can_shift=%d",
