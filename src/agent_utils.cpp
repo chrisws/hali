@@ -215,6 +215,35 @@ bool path_in_sandbox(const std::string &sandbox, const std::string &path) {
 //
 // TOOL:SEARCH
 //
+SearchArgs parse_search_args(const std::string &arg1, const std::string &arg2) {
+  SearchArgs result;
+  result.pattern = arg1;
+  result.path_and_flags = arg2;
+
+  if (!result.pattern.empty() &&
+      (result.pattern.front() == '"' || result.pattern.front() == '\'')) {
+    char quote = result.pattern.front();
+    result.pattern = result.pattern.substr(1);
+
+    // closing quote may still be in pattern (single-token: "struct")
+    if (!result.pattern.empty() && result.pattern.back() == quote) {
+      result.pattern = result.pattern.substr(0, result.pattern.size() - 1);
+    } else {
+      auto qpos = result.path_and_flags.find(quote);
+      if (qpos != std::string::npos) {
+        result.pattern += result.path_and_flags.substr(0, qpos);
+        result.path_and_flags = result.path_and_flags.substr(qpos + 1);
+        result.path_and_flags.erase(0, result.path_and_flags.find_first_not_of(" \t"));
+      } else {
+        result.pattern += result.path_and_flags;
+        result.path_and_flags = "";
+      }
+    }
+  }
+
+  return result;
+}
+
 SearchFlags parse_search_flags(const std::string &flags_str) {
   SearchFlags f;
   std::istringstream iss(flags_str);

@@ -37,6 +37,12 @@ struct SearchFlags {
   int lines_end = 0;
 };
 
+struct SearchArgs {
+  std::string pattern;
+  std::string path_and_flags;
+};
+
+SearchArgs parse_search_args(const std::string &arg1, const std::string &arg2);
 SearchFlags parse_search_flags(const std::string &flags_str);
 bool matches_include(const std::string &filename, const std::string &glob);
 bool has_shell_metachars(const std::string &pattern);

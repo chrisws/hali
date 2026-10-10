@@ -646,6 +646,91 @@ static void test_tool_search() {
 }
 
 //
+// parse_search_args tests
+//
+
+static void test_parse_search_args() {
+  // 1. Single-token double-quoted: "struct"
+  {
+    SearchArgs r = parse_search_args("\"struct\"", "src/");
+    assert(r.pattern == "struct");
+    assert(r.path_and_flags == "src/");
+  }
+
+  // 2. Multi-word double-quoted: "hello world"
+  {
+    SearchArgs r = parse_search_args("\"hello world\"", "src/");
+    assert(r.pattern == "hello world");
+    assert(r.path_and_flags == "src/");
+  }
+
+  // 3. Unquoted pattern
+  {
+    SearchArgs r = parse_search_args("struct", "src/");
+    assert(r.pattern == "struct");
+    assert(r.path_and_flags == "src/");
+  }
+
+  // 4. Single-quote variant: 'struct'
+  {
+    SearchArgs r = parse_search_args("'struct'", "src/");
+    assert(r.pattern == "struct");
+    assert(r.path_and_flags == "src/");
+  }
+
+  // 5. Single-quote multi-word: 'hello world'
+  {
+    SearchArgs r = parse_search_args("'hello world'", "src/");
+    assert(r.pattern == "hello world");
+    assert(r.path_and_flags == "src/");
+  }
+
+  // 6. Closing quote in arg2 (split across args)
+  {
+    SearchArgs r = parse_search_args("\"hello world", "\" src/");
+    assert(r.pattern == "hello world");
+    assert(r.path_and_flags == "src/");
+  }
+
+  // 7. Empty arg1
+  {
+    SearchArgs r = parse_search_args("", "src/");
+    assert(r.pattern == "");
+    assert(r.path_and_flags == "src/");
+  }
+
+  // 8. No closing quote anywhere (direct concat, no space)
+  {
+    SearchArgs r = parse_search_args("\"hello", "src/");
+    assert(r.pattern == "hellosrc/");
+    assert(r.path_and_flags == "");
+  }
+
+  // 9. Empty arg2 with quoted arg1
+  {
+    SearchArgs r = parse_search_args("\"struct\"", "");
+    assert(r.pattern == "struct");
+    assert(r.path_and_flags == "");
+  }
+
+  // 10. Flags preserved in arg2
+  {
+    SearchArgs r = parse_search_args("\"struct\"", "src/ --recursive");
+    assert(r.pattern == "struct");
+    assert(r.path_and_flags == "src/ --recursive");
+  }
+
+  // 11. Single-quote with closing quote in arg2
+  {
+    SearchArgs r = parse_search_args("'hello world", "' src/");
+    assert(r.pattern == "hello world");
+    assert(r.path_and_flags == "src/");
+  }
+
+  cout << "test_parse_search_args passed" << endl;
+}
+
+//
 // Top-level test entry point
 //
 
@@ -677,6 +762,7 @@ void agent_utils_test() {
   RUN_TEST(test_search_single_file);
   RUN_TEST(test_search_lines_flag);
   RUN_TEST(test_tool_search);
+  RUN_TEST(test_parse_search_args);
 
   cout << "\n=== All agent_utils tests completed ===\n";
 }
