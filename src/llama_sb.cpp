@@ -18,7 +18,6 @@
 #include "llama-ext.h"
 #include "logging.h"
 #include "string_utils.h"
-#include "log.h"
 
 constexpr int MAX_REPEAT = 50;
 
@@ -88,12 +87,12 @@ Llama::Llama() :
       // remember the first error message
       llama->_last_error = text;
     }
-    if (level > llama->_log_level) {
-      std::string log_text(text);
+    // always log errors; log others if above threshold
+    if (level == GGML_LOG_LEVEL_ERROR || level > llama->_log_level) {
       log_write(LEVEL_INFO, "LLAMA: %s", utils::trim(text).c_str());
     }
   }, this);
-  common_log_set_verbosity_thold(0);
+
   reset();
   llama_backend_init();
 }
@@ -423,37 +422,6 @@ bool Llama::add_message(LlamaIter &iter, const string &role, const string &conte
   return true;
 }
 
-bool Llama::decode_anchor(llama_token tok) {
-  llama_batch batch = llama_batch_get_one(&tok, 1);
-  if (llama_decode(_ctx, batch)) {
-    return false;
-  }
-  _tokens_physically_used += 1;
-  sync_and_capture_mtp(&tok, 1, (llama_pos)(_tokens_physically_used - 1));
-  return true;
-}
-
-string Llama::emit_token(LlamaIter &iter, llama_token tok) {
-  if (llama_vocab_is_eog(_vocab, tok)) {
-    iter._has_next = false;
-    _mtp_buffer.clear();
-    _has_pending = false;
-    return "";
-  }
-  string result = token_to_string(iter, tok);
-  if (!iter._has_next) {
-    // iteration over (stop word / max tokens): the last emitted token is the undecoded anchor,
-    // put it in the KV so the conversation continues from a consistent state
-    const bool is_anchor = _has_pending && _mtp_buffer.empty() && tok == _anchor;
-    _mtp_buffer.clear();
-    _has_pending = false;
-    if (is_anchor) {
-      decode_anchor(tok);
-    }
-  }
-  return result;
-}
-
 string Llama::next(LlamaIter &iter) {
   _last_error.clear();
   if (!iter._has_next) {
@@ -490,7 +458,7 @@ string Llama::next(LlamaIter &iter) {
     }
   }
 
-  llama_token tok = llama_sampler_sample(_sampler, _ctx, -1);
+  llama_token tok = sample_next();
   if (llama_vocab_is_eog(_vocab, tok)) {
     iter._has_next = false;
     return "";
@@ -523,7 +491,7 @@ string Llama::all(LlamaIter &iter) {
   _last_error.clear();
   while (generated < _max_tokens) {
     if (!has_anchor) {
-      llama_token tok = llama_sampler_sample(_sampler, _ctx, -1);
+      llama_token tok = sample_next();
       if (llama_vocab_is_eog(_vocab, tok)) {
         break;
       }
@@ -567,7 +535,8 @@ string Llama::all(LlamaIter &iter) {
   }
 
   if (has_anchor) {
-    decode_anchor(anchor);  // keep the KV consistent for the next message
+    // keep the KV consistent for the next message
+    decode_anchor(anchor);
   }
 
   iter._has_next = false;
@@ -756,17 +725,17 @@ bool Llama::configure_sampler() {
     llama_sampler_free(_sampler);
   }
   _sampler = chain;
+  return configure_mtp_sampler();
+}
 
-  if (_mtp_enabled) {
-    if (_smpl_mtp) {
-      common_sampler_free(_smpl_mtp);
-    }
-    common_params_sampling mtp_sparams;
-    mtp_sparams.top_k = 10;
-    mtp_sparams.temp = 0.0f;
-    _smpl_mtp = common_sampler_init(_model, mtp_sparams);
+// one place for "sample the next anchor", so sampler state never diverges
+llama_token Llama::sample_next() {
+  if (_smpl_mtp) {
+    llama_token tok = common_sampler_sample(_smpl_mtp, _ctx, -1);
+    common_sampler_accept(_smpl_mtp, tok, true);
+    return tok;
   }
-  return true;
+  return llama_sampler_sample(_sampler, _ctx, -1);
 }
 
 bool Llama::full_flush_except_system() {

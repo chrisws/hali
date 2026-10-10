@@ -228,3 +228,62 @@ void Llama::mtp_reset_state() {
   _has_pending = false;
 }
 
+bool Llama::configure_mtp_sampler() {
+  if (_mtp_enabled) {
+    if (_smpl_mtp) {
+      common_sampler_free(_smpl_mtp);
+    }
+
+    const bool greedy = _temperature <= 0.0f;
+    // defaults are NOT neutral (top_k=40, top_p=0.95, ...)
+    common_params_sampling sp;
+    sp.seed             = _seed;
+    sp.temp             = _temperature;
+    sp.top_k            = greedy ? 0 : _top_k;
+    sp.top_p            = greedy ? 1.0f : _top_p;
+    sp.min_p            = greedy ? 0.0f : _min_p;
+    sp.penalty_last_n   = _penalty_last_n;
+    sp.penalty_repeat   = _penalty_repeat;
+    sp.penalty_freq     = _penalty_freq;
+    sp.penalty_present  = _penalty_present;
+    //sp.grammar          = _grammar_src.c_str();
+    _smpl_mtp = common_sampler_init(_model, sp);
+    if (!_smpl_mtp) {
+      set_last_error("failed to initialize MTP sampler");
+      return false;
+    }
+  }
+  return true;
+}
+
+bool Llama::decode_anchor(llama_token tok) {
+  llama_batch batch = llama_batch_get_one(&tok, 1);
+  if (llama_decode(_ctx, batch)) {
+    return false;
+  }
+  _tokens_physically_used += 1;
+  sync_and_capture_mtp(&tok, 1, (llama_pos)(_tokens_physically_used - 1));
+  return true;
+}
+
+string Llama::emit_token(LlamaIter &iter, llama_token tok) {
+  if (llama_vocab_is_eog(_vocab, tok)) {
+    iter._has_next = false;
+    _mtp_buffer.clear();
+    _has_pending = false;
+    return "";
+  }
+  string result = token_to_string(iter, tok);
+  if (!iter._has_next) {
+    // iteration over (stop word / max tokens): the last emitted token is the undecoded anchor,
+    // put it in the KV so the conversation continues from a consistent state
+    const bool is_anchor = _has_pending && _mtp_buffer.empty() && tok == _anchor;
+    _mtp_buffer.clear();
+    _has_pending = false;
+    if (is_anchor) {
+      decode_anchor(tok);
+    }
+  }
+  return result;
+}
+

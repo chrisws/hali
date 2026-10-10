@@ -82,9 +82,9 @@ struct LlamaLoad {
   KVCachePreset kv_cache_preset;
   // MTP (Multi-Token Prediction) speculative decoding
   bool mtp_enabled = true;   // auto-detect if true, force off if false
-  int  mtp_n_max = 2;        // max draft tokens per step
-  int  mtp_n_min = 1;        // min accepted tokens to use MTP
-  float mtp_p_min = 0.7f;    // min probability threshold for draft acceptance
+  int  mtp_n_max = 3;        // max draft tokens per step
+  int  mtp_n_min = 0;        // min accepted tokens to use MTP
+  float mtp_p_min = 0.3f;    // min probability threshold for draft acceptance
 };
 
 struct Llama {
@@ -170,7 +170,11 @@ private:
   string token_to_string(LlamaIter &iter, llama_token tok) const;
   void set_last_error(const string &message);
   void set_decode_error(int32_t error, int index, int num_tokens);
+  llama_token sample_next();
 
+  // MTP (Multi-Token Prediction) speculative decoding - in llama_sb_mtp.cpp
+  bool configure_mtp_sampler() ;
+  
   llama_model *_model;
   llama_context *_ctx;
   llama_sampler *_sampler;
