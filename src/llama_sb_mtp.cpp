@@ -71,6 +71,23 @@ void Llama::mtp_trim_draft(llama_pos from) {
 }
 
 // ---------------------------------------------------------------------------
+// Roll back target and draft KV entries for tokens that were committed by
+// mtp_round but never emitted to the caller (early termination).
+// n_unemitted = number of trailing KV positions to remove.
+// ---------------------------------------------------------------------------
+void Llama::mtp_rollback_unemitted(int n_unemitted) {
+  if (n_unemitted <= 0) {
+    return;
+  }
+  const llama_pos keep_end = (llama_pos)(_tokens_physically_used - n_unemitted);
+  llama_memory_seq_rm(llama_get_memory(_ctx), 0, keep_end, -1);
+  mtp_trim_draft(keep_end);
+  _tokens_physically_used -= n_unemitted;
+  log_write(LEVEL_DEBUG, "HALI: MTP: rolled back %d unemitted KV tokens (keep_end=%d)",
+            n_unemitted, (int)keep_end);
+}
+
+// ---------------------------------------------------------------------------
 // One speculative round: draft + verify + accept
 // ---------------------------------------------------------------------------
 bool Llama::mtp_round(llama_token anchor, vector<llama_token> &accepted, llama_token &next) {
@@ -190,15 +207,14 @@ bool Llama::mtp_round(llama_token anchor, vector<llama_token> &accepted, llama_t
 
   _tokens_physically_used += n_acc + 1;
 
-  static uint64_t s_rounds = 0, s_drafted = 0, s_accepted = 0;
-  ++s_rounds;
-  s_drafted += k;
-  s_accepted += n_acc;
+  ++_mtp_rounds;
+  _mtp_drafted += k;
+  _mtp_accepted += n_acc;
   log_write(LEVEL_DEBUG, "HALI: MTP: %d/%d accepted", n_acc, k);
-  if (s_rounds % 128 == 0) {
+  if (_mtp_rounds % 128 == 0) {
     log_write(LEVEL_INFO, "HALI: MTP: %llu rounds, %.2f tokens/round, draft acceptance %.0f%%",
-              (unsigned long long)s_rounds, 1.0 + (double)s_accepted / s_rounds,
-              s_drafted ? 100.0 * s_accepted / s_drafted : 0.0);
+              (unsigned long long)_mtp_rounds, 1.0 + (double)_mtp_accepted / (double)_mtp_rounds,
+              _mtp_drafted ? 100.0 * (double)_mtp_accepted / (double)_mtp_drafted : 0.0);
   }
   return true;
 }
@@ -244,7 +260,7 @@ bool Llama::configure_mtp_sampler() {
     sp.penalty_freq     = _penalty_freq;
     sp.penalty_present  = _penalty_present;
     if (!_grammar_src.empty()) {
-      sp.grammar = common_grammar(COMMON_GRAMMAR_TYPE_USER, _grammar_src);
+      sp.grammar = common_grammar(COMMON_GRAMMAR_TYPE_USER, _grammar_src, _grammar_root);
     }
     _smpl_mtp = common_sampler_init(_model, sp);
     if (!_smpl_mtp) {
@@ -268,18 +284,26 @@ bool Llama::decode_anchor(llama_token tok) {
 string Llama::emit_token(LlamaIter &iter, llama_token tok) {
   if (llama_vocab_is_eog(_vocab, tok)) {
     iter._has_next = false;
+    // Roll back any accepted drafts still in KV but never emitted to the caller
+    int n_unemitted = _mtp_buffer.empty() ? 0 : (int)_mtp_buffer.size() - 1;
+    mtp_rollback_unemitted(n_unemitted);
     _mtp_buffer.clear();
     _has_pending = false;
     return "";
   }
   string result = token_to_string(iter, tok);
   if (!iter._has_next) {
-    // iteration over (stop word / max tokens): the last emitted token is the undecoded anchor,
-    // put it in the KV so the conversation continues from a consistent state
+    // Early termination (stop word / max tokens).
+    // The last element in _mtp_buffer is always the anchor (not yet in KV);
+    // all others are accepted drafts that ARE in KV and must be rolled back.
     const bool is_anchor = _has_pending && _mtp_buffer.empty() && tok == _anchor;
+    int n_unemitted = _mtp_buffer.empty() ? 0 : (int)_mtp_buffer.size() - 1;
+    mtp_rollback_unemitted(n_unemitted);
     _mtp_buffer.clear();
     _has_pending = false;
     if (is_anchor) {
+      // The anchor was never decoded into KV; do it now so the
+      // conversation continues from a consistent state.
       decode_anchor(tok);
     }
   }

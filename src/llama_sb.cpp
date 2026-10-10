@@ -11,8 +11,10 @@
 #include <cmath>
 #include <cstring>
 #include <utility>
+
 #include "ggml-cuda.h"
 #include "llama.h"
+#include "log.h"
 
 #include "llama_sb.h"
 #include "llama-ext.h"
@@ -44,6 +46,7 @@ LlamaIter::LlamaIter() :
 LlamaIter::LlamaIter(LlamaIter &&other) noexcept
   : _llama(std::exchange(other._llama, nullptr))
   , _last_word(std::move(other._last_word))
+  , _tail(std::move(other._tail))
   , _t_start(std::move(other._t_start))
   , _repetition_count(other._repetition_count)
   , _tokens_generated(other._tokens_generated)
@@ -80,7 +83,10 @@ Llama::Llama() :
   _mtp_p_min(0.0f),
   _smpl_mtp(nullptr),
   _anchor(LLAMA_TOKEN_NULL),
-  _has_pending(false) {
+  _has_pending(false),
+  _mtp_rounds(0),
+  _mtp_drafted(0),
+  _mtp_accepted(0) {
   llama_log_set([](enum ggml_log_level level, const char *text, void *user_data) {
     Llama *llama = static_cast<Llama *>(user_data);
     if (level == GGML_LOG_LEVEL_ERROR && llama->_last_error.empty()) {
@@ -92,6 +98,13 @@ Llama::Llama() :
       log_write(LEVEL_INFO, "LLAMA: %s", utils::trim(text).c_str());
     }
   }, this);
+
+  //
+  // capture logging from the llama.cpp's common module
+  //
+  const char *home = getenv("HOME");
+  const auto path = std::string(home ? home : ".") + "/.config/hali/hali-common.log";
+  common_log_set_file(common_log_main(), path.c_str());
 
   reset();
   llama_backend_init();
@@ -136,7 +149,10 @@ Llama::Llama(Llama &&other) noexcept
   , _smpl_mtp(std::exchange(other._smpl_mtp, nullptr))
   , _mtp_buffer(std::move(other._mtp_buffer))
   , _anchor(other._anchor)
-  , _has_pending(other._has_pending) {
+  , _has_pending(other._has_pending)
+  , _mtp_rounds(other._mtp_rounds)
+  , _mtp_drafted(other._mtp_drafted)
+  , _mtp_accepted(other._mtp_accepted) {
 }
 
 Llama::~Llama() {
@@ -175,6 +191,9 @@ void Llama::reset() {
   _sampler_dirty = true;
   _mtp_buffer.clear();
   _has_pending = false;
+  _mtp_rounds = 0;
+  _mtp_drafted = 0;
+  _mtp_accepted = 0;
   if (_ctx) {
     llama_memory_clear(llama_get_memory(_ctx), true);
   }
@@ -422,6 +441,7 @@ bool Llama::add_message(LlamaIter &iter, const string &role, const string &conte
   }
 
   iter._tokens_generated = 0;
+  iter._tail.clear();
   iter._t_start = std::chrono::high_resolution_clock::now();
   iter._llama = this;
   iter._has_next = true;
@@ -487,67 +507,13 @@ string Llama::next(LlamaIter &iter) {
 
 string Llama::all(LlamaIter &iter) {
   string out;
-  vector<llama_token> decoded;
-  decoded.reserve(_max_tokens);
-
-  int generated = 0;
-  llama_token anchor = LLAMA_TOKEN_NULL;
-  bool has_anchor = false;  // anchor was emitted but is not decoded yet
-
   _last_error.clear();
-  while (generated < _max_tokens) {
-    if (!has_anchor) {
-      llama_token tok = sample_next();
-      if (llama_vocab_is_eog(_vocab, tok)) {
-        break;
-      }
-      decoded.push_back(tok);
-      ++generated;
-      if (_mtp_enabled) {
-        anchor = tok;
-        has_anchor = true;
-      } else if (!decode_anchor(tok)) {
-        set_last_error("Failed to evaluate token during generation");
-        break;
-      }
-      continue;
-    }
-
-    vector<llama_token> accepted;
-    llama_token nxt = LLAMA_TOKEN_NULL;
-    if (!_mtp_enabled || !mtp_round(anchor, accepted, nxt)) {
-      has_anchor = false;
-      if (!decode_anchor(anchor)) {
-        set_last_error("Failed to evaluate token during generation");
-        break;
-      }
-      continue;
-    }
-
-    for (llama_token t : accepted) {
-      if (generated >= _max_tokens) {
-        break;
-      }
-      decoded.push_back(t);
-      ++generated;
-    }
-    if (generated >= _max_tokens || llama_vocab_is_eog(_vocab, nxt)) {
-      has_anchor = false;
+  while (iter._has_next) {
+    string tok = next(iter);
+    if (tok.empty() && !_last_error.empty()) {
       break;
     }
-    decoded.push_back(nxt);
-    ++generated;
-    anchor = nxt;
-  }
-
-  if (has_anchor) {
-    // keep the KV consistent for the next message
-    decode_anchor(anchor);
-  }
-
-  iter._has_next = false;
-  for (llama_token tok : decoded) {
-    out.append(token_to_string(iter, tok));
+    out.append(tok);
   }
   return out;
 }
@@ -780,7 +746,7 @@ bool Llama::make_space_for_tokens(int n_tokens) {
   _tokens_physically_used = 0;
   _n_system_tokens = 0;
   _memory_flush = true;
-  return false;
+  return true;  // room is now available; _memory_flush signals replay
 }
 
 vector<llama_token> Llama::tokenize(const string &prompt) {
@@ -822,21 +788,41 @@ string Llama::token_to_string(LlamaIter &iter, llama_token tok) const {
 
     result.append(buf, n);
 
-    // detect end of max-tokens
-    if (++iter._tokens_generated > _max_tokens) {
+    // detect end of max-tokens (emit at most _max_tokens tokens)
+    if (++iter._tokens_generated >= _max_tokens) {
       iter._has_next = false;
     }
 
-    // detect stop words
-    if (iter._has_next) {
+    // detect stop words (check accumulated tail to catch cross-token boundaries)
+    if (iter._has_next && !_stop_sequences.empty()) {
+      iter._tail.append(buf, n);
+
+      size_t max_stop_len = 0;
       for (const auto &stop : _stop_sequences) {
-        size_t pos = result.find(stop);
+        if (stop.size() > max_stop_len) {
+          max_stop_len = stop.size();
+        }
+      }
+
+      for (const auto &stop : _stop_sequences) {
+        size_t pos = iter._tail.find(stop);
         if (pos != std::string::npos) {
-          // found stop sequence - truncate and signal end
-          result = result.substr(0, pos);
+          size_t token_start = iter._tail.size() - result.size();
+          if (pos >= token_start) {
+            // stop sequence starts within the current token
+            result = result.substr(0, pos - token_start);
+          } else {
+            // stop sequence started in a previous token
+            result.clear();
+          }
           iter._has_next = false;
           break;
         }
+      }
+
+      // trim tail to avoid unbounded growth
+      if (max_stop_len > 0 && iter._tail.size() > max_stop_len) {
+        iter._tail = iter._tail.substr(iter._tail.size() - max_stop_len);
       }
     }
   }

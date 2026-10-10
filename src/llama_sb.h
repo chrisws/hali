@@ -61,6 +61,7 @@ struct LlamaIter {
 
   Llama *_llama;
   string _last_word;
+  string _tail;
   chrono::high_resolution_clock::time_point _t_start;
   int _repetition_count;
   int _tokens_generated;
@@ -163,6 +164,7 @@ private:
   void mtp_trim_draft(llama_pos from);
   bool decode_anchor(llama_token tok);
   string emit_token(LlamaIter &iter, llama_token tok);
+  void mtp_rollback_unemitted(int n_unemitted);
   void dirty() {_sampler_dirty = true; }
   bool full_flush_except_system();
   bool make_space_for_tokens(int n_tokens);
@@ -216,4 +218,7 @@ private:
   vector<llama_token> _mtp_buffer; // tokens accepted by speculative decoding, pending return
   llama_token _anchor;        // last token handed to the caller but not yet decoded
   bool _has_pending;          // _anchor is valid
+  uint64_t _mtp_rounds;       // per-instance MTP stats
+  uint64_t _mtp_drafted;
+  uint64_t _mtp_accepted;
 };
