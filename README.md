@@ -8,7 +8,7 @@ Hali is a local-first agentic coding/chat shell built on [llama.cpp](https://git
 
 ## Why
 
-Most agentic shells assume a hosted API and treat context as free. Hali assumes neither: it's built for consumer GPUs (developed against an 8GB RTX 5060) where the KV cache is a scarce resource and every tool call has to earn its place in the context window.
+Most agentic shells assume a hosted API and treat context as free. Hali assumes neither: it's built for consumer GPUs (developed against a 16GB RTX 5060 Ti) where the KV cache is a scarce resource and every tool call has to earn its place in the context window.
 
 ## Features
 
@@ -17,11 +17,13 @@ Most agentic shells assume a hosted API and treat context as free. Hali assumes 
 - **Fragmentation-aware KV cache management** — `full_flush_except_system()` as a graceful recovery path when sequence removal fragments the cache instead of compacting it; a `KVCachePreset` enum (`F16` / `Balanced` / `Compact`) coupled to flash-attention settings.
 - **Dynamic tool-result budgeting** — `max_tool_result_size()` targets ~75% of remaining context so a single large tool result can't blow the budget.
 - **Unambiguous tool-call protocol** — an explicit `HALI_END_TOOL` terminator so tool boundaries never get confused with model chatter.
+- **Multi-Token Prediction (MTP)** — optional speculative decoding via MTP-capable GGUF models. Configurable with `mtp_enabled`, `mtp_n_max`, `mtp_n_min`, and `mtp_p_min` settings to control how many draft tokens are proposed and the acceptance threshold.
 - **A full sandboxed tool suite** — every file operation is scoped to a sandbox root (the directory Hali is launched in, or an explicit path argument):
 
   | Tool | Purpose |
   | --- | --- |
   | `TOOL:LIST`, `TOOL:READ`, `TOOL:EXISTS` | Inspect files inside the sandbox |
+  | `TOOL:SEARCH` | Search file contents by pattern with rich flags: `--recursive`, `--line-numbers`, `--count`, `--line-count`, `--files-only`, `--name` (match filenames), `--include=<glob>`, `--context=<n>` (surrounding lines), `--lines=<start>,<end>` (line range) |
   | `TOOL:WRITE`, `TOOL:APPEND`, `TOOL:PATCH`, `TOOL:MKDIR` | Modify files inside the sandbox |
   | `TOOL:RUN` | Run a program inside the sandbox, gated by an optional `run_allowed` allowlist |
   | `TOOL:CURL` | HTTP GET via libcurl, with HTML-to-text stripping and a response size cap |
@@ -58,18 +60,38 @@ Inside the TUI, type a leading `/` to run a built-in command:
 | `/help` | Show this command list |
 | `exit` / `quit` | Leave Hali |
 
-Settable keys via `/set`: `temperature`, `top_p`, `top_k`, `min_p`, `penalty_repeat`, `penalty_last_n`, `rag_top_k`, `n_gpu_layers`, `offload_kqv`, `run_allowed` (comma-separated list of allowed program basenames, or `none` to clear).
+Settable keys via `/set`: `temperature`, `top_p`, `top_k`, `min_p`, `penalty_repeat`, `penalty_last_n`, `rag_top_k`, `n_gpu_layers`, `offload_kqv`, `run_allowed` (comma-separated list of allowed program basenames, or `none` to clear), `mtp_enabled`, `mtp_n_max`, `mtp_n_min`, `mtp_p_min`.
 
 ## Building
 
 Hali vendors llama.cpp as a submodule and links everything statically.
 
+### Quick start
+
 ```
 git clone --recurse-submodules https://github.com/chrisws/hali.git
 cd hali
+./setup.sh              # submodules, deps, build, smoke test — one shot
+./build/bin/hali
+```
+
+`setup.sh` checks for required dependencies (cmake, g++, make, notcurses), initialises submodules, builds the project, and runs a `--help` smoke test. Pass `--test` to also build and run the unit test suite.
+
+### Manual build
+
+```
 cmake -B build -DLLAMA_BACKEND=AUTO
 cmake --build build -j
 ./build/bin/hali
+```
+
+### Day-to-day maintenance
+
+```
+./maintain.sh           # build + test (default)
+./maintain.sh build     # build only
+./maintain.sh test      # run tests only
+./maintain.sh clean     # clean build artifacts
 ```
 
 ### Running tests
@@ -128,6 +150,8 @@ hali/
 ├── CMakeLists.txt
 ├── mcp.json                # MCP server connection config
 ├── hali.config.json        # example runtime settings
+├── setup.sh                # one-shot setup: submodules, deps, build, smoke test
+├── maintain.sh             # day-to-day build / test / clean runner
 ├── skills/                 # markdown skill files, loaded via --skill
 ├── src/
 │   ├── main.cpp            # entry point, CLI parsing, slash commands
