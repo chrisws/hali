@@ -31,6 +31,7 @@ struct SearchFlags {
   bool count = false;
   bool line_count = false;
   bool files_only = false;
+  bool name = false;
   std::string include_glob;
   int context = 0;
   int lines_start = 0;

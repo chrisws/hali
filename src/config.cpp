@@ -16,7 +16,7 @@
 
 static const std::vector<std::string> ALLOWED_TOOLS = {
   "wc", "stat", "tr", "cut", "sort", "uniq", "od", "xxd", "git",
-  "file", "uname", "whoami", "pwd", "id", "g++", "date", "make", "maintenance.sh"
+  "file", "uname", "whoami", "pwd", "id", "g++", "date", "make", "./maintain.sh"
 };
 
 static KVCachePreset to_kv_preset(const std::string &str) {
@@ -184,7 +184,7 @@ std::string HaliConfig::build_system_prompt() const {
     "## Available Tools\n"
     "  TOOL:LIST   [dir]          list files (default: sandbox root)\n"
     "  TOOL:READ   <file>         read file contents (max 32 KB; use TOOL:SEARCH for larger files)\n"
-    "  TOOL:SEARCH <pattern> <path> [flags]  search files (flags: --recursive --line-numbers --count --line-count --files-only --include=<glob> --context=<n> --lines=<start>,<end>)\n"
+    "  TOOL:SEARCH <pattern> <path> [flags]  search files (flags: --recursive --line-numbers --count --line-count --files-only --name --include=<glob> --context=<n> --lines=<start>,<end>)\n"
     "  TOOL:APPEND <file> <text>  append text to an existing file\n"
     "  TOOL:PATCH  <file> <tags>  patch an existing file - see below\n"
     "  TOOL:WRITE  <file> <text>  write text to file\n"
@@ -221,9 +221,10 @@ std::string HaliConfig::build_system_prompt() const {
 
     "## SEARCH Tool Notes\n"
     "- `<pattern>` is a single token; use quotes for multi-word: `\"hello world\"`\n"
-    "- Flags: --recursive --line-numbers --context=<n> --include=<glob> --files-only --lines=<start>,<end>\n"
+    "- Flags: --recursive --line-numbers --context=<n> --include=<glob> --files-only --name --lines=<start>,<end>\n"
     "- `--context=<n>` shows n lines before/after each match\n"
-    "- `--lines=<start>,<end>` restricts search to a line range (like sed -n)\n\n"
+    "- `--lines=<start>,<end>` restricts search to a line range (like sed -n)\n"
+    "- `--name` matches the pattern against filenames (glob) instead of file content\n\n"
 
     "## TOOL:GRAPH Rules\n"
     "- For TOOL:GRAPH, Reference `skills/graph.md` when you need the full schema details\n"

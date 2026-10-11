@@ -372,6 +372,9 @@ static void test_search_flags() {
   SearchFlags f4 = parse_search_flags("--files-only");
   assert(f4.files_only == true);
 
+  SearchFlags f4b = parse_search_flags("--name");
+  assert(f4b.name == true);
+
   SearchFlags f5 = parse_search_flags("--include=*.cpp");
   assert(f5.include_glob == "*.cpp");
 
@@ -731,6 +734,57 @@ static void test_parse_search_args() {
 }
 
 //
+// TOOL:SEARCH --name tests
+//
+
+static void test_tool_search_name() {
+  const string sandbox = "/tmp/hali_test_search_name_sandbox";
+  fs::create_directories(sandbox + "/src");
+
+  // Create test files
+  {
+    ofstream out(sandbox + "/hali.config.json");
+    out << "{\"model\": \"test\"}\n";
+  }
+  {
+    ofstream out(sandbox + "/hali.config-mtp.json");
+    out << "{\"model\": \"test\", \"temp\": 0}\n";
+  }
+  {
+    ofstream out(sandbox + "/other.txt");
+    out << "just a plain file\n";
+  }
+  {
+    ofstream out(sandbox + "/src/main.cpp");
+    out << "int main() { return 0; }\n";
+  }
+  {
+    ofstream out(sandbox + "/src/util.cpp");
+    out << "int helper() { return 1; }\n";
+  }
+
+  // --name with glob pattern matching filenames
+  string result = tool_search(sandbox, "hali.config*", ".", "--name");
+  assert(result.find("hali.config.json") != string::npos);
+  assert(result.find("hali.config-mtp.json") != string::npos);
+  assert(result.find("other.txt") == string::npos);
+
+  // --name --recursive with glob for .cpp files
+  string rec_result = tool_search(sandbox, "*.cpp", "src/", "--name --recursive");
+  assert(rec_result.find("main.cpp") != string::npos);
+  assert(rec_result.find("util.cpp") != string::npos);
+
+  // --name with no match
+  string no_match = tool_search(sandbox, "*.py", ".", "--name");
+  assert(no_match == "no matches");
+
+  // Clean up
+  fs::remove_all(sandbox);
+
+  cout << "test_tool_search_name passed" << endl;
+}
+
+//
 // Top-level test entry point
 //
 
@@ -762,6 +816,7 @@ void agent_utils_test() {
   RUN_TEST(test_search_single_file);
   RUN_TEST(test_search_lines_flag);
   RUN_TEST(test_tool_search);
+  RUN_TEST(test_tool_search_name);
   RUN_TEST(test_parse_search_args);
 
   cout << "\n=== All agent_utils tests completed ===\n";

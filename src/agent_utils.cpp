@@ -259,6 +259,8 @@ SearchFlags parse_search_flags(const std::string &flags_str) {
       f.line_count = true;
     } else if (token == "--files-only") {
       f.files_only = true;
+    } else if (token == "--name") {
+      f.name = true;
     } else if (token.rfind("--include=", 0) == 0) {
       f.include_glob = token.substr(10);
     } else if (token == "--include") {
@@ -479,12 +481,19 @@ std::string tool_search(const std::string &sandbox, const std::string &pattern, 
   }
 
   for (const auto &file : files) {
-    std::string result = search_single_file(file, pattern, flags);
-    if (!result.empty()) {
-      if (flags.files_only || flags.count) {
-        oss << result;
-      } else {
-        oss << file << ":\n" << result;
+    if (flags.name) {
+      std::string filename = fs::path(file).filename().string();
+      if (glob_match(filename, pattern)) {
+        oss << file << "\n";
+      }
+    } else {
+      std::string result = search_single_file(file, pattern, flags);
+      if (!result.empty()) {
+        if (flags.files_only || flags.count) {
+          oss << result;
+        } else {
+          oss << file << ":\n" << result;
+        }
       }
     }
   }
