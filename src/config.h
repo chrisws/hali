@@ -58,7 +58,11 @@ struct HaliConfig {
   int   rag_top_k_      = 5;
   int   top_k_          = 20;
   int   web_port_       = -1;
-  
+  int   mtp_n_max_      = 3;
+  int   mtp_n_min_      = 0;
+  float mtp_p_min_      = 0.0f;
+  bool  mtp_enabled_    = true;
+
   KVCachePreset kv_preset_ = KVCachePreset::Compact;
 
   // Context extension (relevant when VRAM caps n_ctx)

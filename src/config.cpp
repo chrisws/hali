@@ -110,6 +110,12 @@ void HaliConfig::load_settings() {
 
   // bool fields
   root.get_bool("offload_kqv", offload_kqv_);
+  root.get_bool("mtp_enabled", mtp_enabled_);
+
+  // MTP (Multi-Token Prediction) fields
+  root.get_int("mtp_n_max", mtp_n_max_);
+  root.get_int("mtp_n_min", mtp_n_min_);
+  root.get_float("mtp_p_min", mtp_p_min_);
 }
 
 // Persist the current cfg to ~/.config/hali/settings.json.
@@ -328,7 +334,11 @@ std::string HaliConfig::introspect() const {
     "  \"penalty_last_n\": {},\n"
     "  \"offload_kqv\":    {},\n"
     "  \"kv_cache_preset\":{},\n"
-    "  \"rag_top_k\":      {}\n"
+    "  \"rag_top_k\":      {},\n"
+    "  \"mtp_enabled\":    {},\n"
+    "  \"mtp_n_max\":      {},\n"
+    "  \"mtp_n_min\":      {},\n"
+    "  \"mtp_p_min\":      {}\n"
     "}}\n";
   return std::format(tmpl,
                      model_path_,
@@ -348,6 +358,10 @@ std::string HaliConfig::introspect() const {
                      penalty_last_n_,
                      offload_kqv_,
                      kv_preset_to_string(),
-                     rag_top_k_);
+                     rag_top_k_,
+                     mtp_enabled_,
+                     mtp_n_max_,
+                     mtp_n_min_,
+                     mtp_p_min_);
 }
 

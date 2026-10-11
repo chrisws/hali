@@ -181,6 +181,10 @@ bool Agent::setup_model() {
   load.log_level = cfg_.log_level_;
   load.offload_kqv = cfg_.offload_kqv_;
   load.kv_cache_preset = cfg_.kv_preset_;
+  load.mtp_enabled = cfg_.mtp_enabled_;
+  load.mtp_n_max = cfg_.mtp_n_max_;
+  load.mtp_n_min = cfg_.mtp_n_min_;
+  load.mtp_p_min = cfg_.mtp_p_min_;
 
   if (!llama_->load_model(load)) {
     tui_.dismiss_modal_popup();
