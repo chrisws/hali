@@ -154,9 +154,12 @@ bool Llama::mtp_round(llama_token anchor, vector<llama_token> &accepted, llama_t
       std::chrono::high_resolution_clock::now() - t1).count();
 
   // ---- 3. feed the verify batch to the speculative context ----------------
-  // process() internally trims the draft KV, so no explicit mtp_trim_draft needed
+  // drafting wrote speculative entries at P.. into ctx_dft: remove them first,
+  // otherwise process() fails with "inconsistent sequence positions"
+  // (process() only trims internally when chain_heads=true, i.e. n_mtp_layers>1)
   auto t2 = std::chrono::high_resolution_clock::now();
   {
+    mtp_trim_draft(P);
     _spec_batch.clear();
     const int n = 1 + k;
     for (int i = 0; i < n; ++i) {
