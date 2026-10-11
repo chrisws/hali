@@ -340,51 +340,7 @@ bool Llama::load_model(const LlamaLoad &load) {
       _is_gemma4 = (_template.find("<|turn>model") != string::npos);
       _can_shift = llama_memory_can_shift(llama_get_memory(_ctx));
       log_write(LEVEL_INFO, "HALI: can_shift=%d, is_gemma4=%d n_swa=%d", _can_shift, _is_gemma4, llama_model_n_swa(_model));
-
-      // MTP detection & speculative context setup
-      _n_mtp_layers = llama_model_n_layer_nextn(_model);
-      if (load.mtp_enabled && _n_mtp_layers > 0) {
-        log_write(LEVEL_INFO, "HALI: MTP detected: %d nextn layers", _n_mtp_layers);
-
-        _spec_params.speculative.types = {COMMON_SPECULATIVE_TYPE_DRAFT_MTP};
-        _spec_params.speculative.draft.n_max = load.mtp_n_max;
-        _spec_params.speculative.draft.n_min = load.mtp_n_min;
-        _spec_params.speculative.draft.p_min = load.mtp_p_min;
-        _spec_params.speculative.draft.ctx_tgt = _ctx;
-        _spec_params.n_batch  = load.n_batch;   // must be >= your largest process() batch
-        _spec_params.n_ubatch = load.n_batch;
-        _spec_params.n_outputs_max = _spec_params.n_outputs_max_per_seq = load.mtp_n_max + 1;
-        _spec_params.speculative.draft.backend_sampling = true;  // draft top-k on GPU
-
-        _spec_init = common_speculative_init_from_params(_spec_params, _model, _ctx);
-        if (_spec_init) {
-
-          _spec_params.speculative.draft.ctx_dft = _spec_init->context();
-          _spec.reset(common_speculative_init(_spec_params.speculative, 1));
-          _mtp_enabled = true;
-          _mtp_n_max = load.mtp_n_max;
-          _mtp_n_min = load.mtp_n_min;
-          _mtp_p_min = load.mtp_p_min;
-          // pre-allocate per-round buffers (sized to mtp_n_max + 1)
-          const int vsize = load.mtp_n_max + 1;
-          _mtp_acc_tokens.resize(vsize);
-          _verify_toks.resize(vsize);
-          _verify_pos.resize(vsize);
-          _verify_n_seq.resize(vsize, 1);
-          _verify_seq_ids.resize(vsize, 0);
-          _verify_seq_ptrs.resize(vsize);
-          _verify_logits.resize(vsize, 1);
-          _draft_toks.resize(vsize);
-          _spec_batch = common_batch(_ctx);
-          log_write(LEVEL_INFO, "HALI: MTP ready: n_max=%d n_min=%d p_min=%.2f", _mtp_n_max, _mtp_n_min, _mtp_p_min);
-        } else {
-          log_write(LEVEL_INFO, "HALI: MTP speculative init failed, continuing without speculative decoding");
-          _n_mtp_layers = 0;
-        }
-      } else if (_n_mtp_layers > 0) {
-        log_write(LEVEL_INFO, "HALI: MTP available (%d layers) but disabled", _n_mtp_layers);
-        _n_mtp_layers = 0;
-      }
+      mtp_init(load);
     }
   }
 

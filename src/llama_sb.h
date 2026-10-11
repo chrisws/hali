@@ -159,6 +159,7 @@ private:
   bool batch_decode_tokens(vector<llama_token> &tokens);
   bool configure_sampler();
   void sync_and_capture_mtp(const llama_token *tokens, int n_tokens, llama_pos pos_start);
+  void mtp_init(const LlamaLoad &load);
   bool mtp_round(llama_token anchor, vector<llama_token> &accepted, llama_token &next);
   void mtp_reset_state();
   void mtp_trim_draft(llama_pos from);
@@ -258,4 +259,5 @@ private:
   uint64_t _mtp_time_process  = 0;
   uint64_t _mtp_time_sample   = 0;
   uint64_t _mtp_time_rollback = 0;
+  uint64_t _mtp_time_anchor   = 0;
 };

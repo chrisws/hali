@@ -26,6 +26,52 @@
 #include "sampling.h"
 
 // ---------------------------------------------------------------------------
+// MTP detection & speculative context setup
+// ---------------------------------------------------------------------------
+void Llama::mtp_init(const LlamaLoad &load) {
+  _n_mtp_layers = llama_model_n_layer_nextn(_model);
+  if (load.mtp_enabled && _n_mtp_layers > 0) {
+    log_write(LEVEL_INFO, "HALI: MTP detected: %d nextn layers", _n_mtp_layers);
+    _spec_params.speculative.types = {COMMON_SPECULATIVE_TYPE_DRAFT_MTP};
+    _spec_params.speculative.draft.n_max = load.mtp_n_max;
+    _spec_params.speculative.draft.n_min = load.mtp_n_min;
+    _spec_params.speculative.draft.p_min = load.mtp_p_min;
+    _spec_params.speculative.draft.ctx_tgt = _ctx;
+    _spec_params.n_batch  = load.n_batch;   // must be >= your largest process() batch
+    _spec_params.n_ubatch = load.n_batch;
+    _spec_params.n_outputs_max = _spec_params.n_outputs_max_per_seq = load.mtp_n_max + 1;
+    _spec_params.speculative.draft.backend_sampling = true;  // draft top-k on GPU
+    _spec_init = common_speculative_init_from_params(_spec_params, _model, _ctx);
+    if (_spec_init) {
+      _spec_params.speculative.draft.ctx_dft = _spec_init->context();
+      _spec.reset(common_speculative_init(_spec_params.speculative, 1));
+      _mtp_enabled = true;
+      _mtp_n_max = load.mtp_n_max;
+      _mtp_n_min = load.mtp_n_min;
+      _mtp_p_min = load.mtp_p_min;
+      // pre-allocate per-round buffers (sized to mtp_n_max + 1)
+      const int vsize = load.mtp_n_max + 1;
+      _mtp_acc_tokens.resize(vsize);
+      _verify_toks.resize(vsize);
+      _verify_pos.resize(vsize);
+      _verify_n_seq.resize(vsize, 1);
+      _verify_seq_ids.resize(vsize, 0);
+      _verify_seq_ptrs.resize(vsize);
+      _verify_logits.resize(vsize, 1);
+      _draft_toks.resize(vsize);
+      _spec_batch = common_batch(_ctx);
+      log_write(LEVEL_INFO, "HALI: MTP ready: n_max=%d n_min=%d p_min=%.2f", _mtp_n_max, _mtp_n_min, _mtp_p_min);
+    } else {
+      log_write(LEVEL_INFO, "HALI: MTP speculative init failed, continuing without speculative decoding");
+      _n_mtp_layers = 0;
+    }
+  } else if (_n_mtp_layers > 0) {
+    log_write(LEVEL_INFO, "HALI: MTP available (%d layers) but disabled", _n_mtp_layers);
+    _n_mtp_layers = 0;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Feed a decoded batch to the speculative context (replaces sync_and_capture_mtp)
 // ---------------------------------------------------------------------------
 void Llama::sync_and_capture_mtp(const llama_token *tokens, int n_tokens, llama_pos pos_start) {
@@ -33,11 +79,11 @@ void Llama::sync_and_capture_mtp(const llama_token *tokens, int n_tokens, llama_
     return;
   }
   mtp_trim_draft(pos_start);
-  common_batch batch(_ctx);
+  _spec_batch.clear();
   for (int i = 0; i < n_tokens; ++i) {
-    batch.add(tokens[i], pos_start + i, 0, true);
+    _spec_batch.add(tokens[i], pos_start + i, 0, true);
   }
-  if (!common_speculative_process(_spec.get(), batch)) {
+  if (!common_speculative_process(_spec.get(), _spec_batch)) {
     log_write(LEVEL_INFO, "HALI: MTP: speculative process failed: %s", _last_error.c_str());
     auto * ctx_dft = _spec_init ? _spec_init->context() : nullptr;
     if (ctx_dft) {
@@ -105,7 +151,7 @@ bool Llama::mtp_round(llama_token anchor, vector<llama_token> &accepted, llama_t
     common_speculative_draft(_spec.get());
   }
   _mtp_time_draft += std::chrono::duration_cast<std::chrono::microseconds>(
-      std::chrono::high_resolution_clock::now() - t0).count();
+                                                                           std::chrono::high_resolution_clock::now() - t0).count();
 
   const int k = (int)_draft_toks.size();
   if (k == 0) {
@@ -151,7 +197,7 @@ bool Llama::mtp_round(llama_token anchor, vector<llama_token> &accepted, llama_t
     }
   }
   _mtp_time_verify += std::chrono::duration_cast<std::chrono::microseconds>(
-      std::chrono::high_resolution_clock::now() - t1).count();
+                                                                            std::chrono::high_resolution_clock::now() - t1).count();
 
   // ---- 3. feed the verify batch to the speculative context ----------------
   // drafting wrote speculative entries at P.. into ctx_dft: remove them first,
@@ -175,7 +221,7 @@ bool Llama::mtp_round(llama_token anchor, vector<llama_token> &accepted, llama_t
     }
   }
   _mtp_time_process += std::chrono::duration_cast<std::chrono::microseconds>(
-      std::chrono::high_resolution_clock::now() - t2).count();
+                                                                             std::chrono::high_resolution_clock::now() - t2).count();
 
   // ---- 4. sample and accept ------------------------------------------------
   // common_sampler_sample_and_accept_n returns at least 1 token, up to k+1.
@@ -191,7 +237,7 @@ bool Llama::mtp_round(llama_token anchor, vector<llama_token> &accepted, llama_t
     accepted.push_back(ids[i]);
   }
   _mtp_time_sample += std::chrono::duration_cast<std::chrono::microseconds>(
-      std::chrono::high_resolution_clock::now() - t3).count();
+                                                                            std::chrono::high_resolution_clock::now() - t3).count();
 
   // ---- 5. inform the speculative context of the acceptance ----------------
   common_speculative_accept(_spec.get(), 0, (uint16_t)n_acc);
@@ -209,7 +255,7 @@ bool Llama::mtp_round(llama_token anchor, vector<llama_token> &accepted, llama_t
     }
   }
   _mtp_time_rollback += std::chrono::duration_cast<std::chrono::microseconds>(
-      std::chrono::high_resolution_clock::now() - t4).count();
+                                                                              std::chrono::high_resolution_clock::now() - t4).count();
 
   _tokens_physically_used += n_acc + 1;
 
@@ -221,7 +267,7 @@ bool Llama::mtp_round(llama_token anchor, vector<llama_token> &accepted, llama_t
     const double r = (double)_mtp_rounds;
     log_write(LEVEL_INFO,
               "HALI: MTP: %llu rounds, %.2f tok/rnd, accept %.0f%% | "
-              "draft %.1f verify %.1f process %.1f sample %.1f rollback %.1f (us)",
+              "draft %.1f verify %.1f process %.1f sample %.1f rollback %.1f anchor %.1f (us)",
               (unsigned long long)_mtp_rounds,
               1.0 + (double)_mtp_accepted / r,
               _mtp_drafted ? 100.0 * (double)_mtp_accepted / (double)_mtp_drafted : 0.0,
@@ -229,7 +275,8 @@ bool Llama::mtp_round(llama_token anchor, vector<llama_token> &accepted, llama_t
               (double)_mtp_time_verify   / r,
               (double)_mtp_time_process  / r,
               (double)_mtp_time_sample   / r,
-              (double)_mtp_time_rollback / r);
+              (double)_mtp_time_rollback / r,
+              (double)_mtp_time_anchor   / r);
   }
   return true;
 }
@@ -289,12 +336,15 @@ bool Llama::configure_mtp_sampler() {
 }
 
 bool Llama::decode_anchor(llama_token tok) {
+  auto t0 = std::chrono::high_resolution_clock::now();
   llama_batch batch = llama_batch_get_one(&tok, 1);
   if (llama_decode(_ctx, batch)) {
     return false;
   }
   _tokens_physically_used += 1;
   sync_and_capture_mtp(&tok, 1, (llama_pos)(_tokens_physically_used - 1));
+  _mtp_time_anchor += std::chrono::duration_cast<std::chrono::microseconds>(
+                                                                            std::chrono::high_resolution_clock::now() - t0).count();
   return true;
 }
 
