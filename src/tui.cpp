@@ -783,8 +783,13 @@ bool Tui::is_escape() {
     set_thinking(false);
     append_line(ICON_ERR + "Generation cancelled by user (Escape)");
     redraw_all();
+    return true;
   }
-  return ni.id == NCKEY_ESC;
+  if (ni.id == NCKEY_RESIZE) {
+    resize();
+    redraw_all();
+  }
+  return false;
 }
 
 void Tui::setup_model(const std::string &model_name, const LlamaMemoryInfo &mem, bool thinking) {
