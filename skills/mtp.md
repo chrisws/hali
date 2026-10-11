@@ -31,16 +31,17 @@ MTP-specific log lines (all prefixed `HALI: MTP`):
 
 | Pattern | Level | Meaning |
 |---------|-------|---------|
-| `MTP detected: N nextn layers` | INFO | Model has MTP head |
-| `MTP ready: n_max=N n_min=N p_min=N.NN` | INFO | Speculative context initialised |
-| `MTP available (N layers) but disabled` | INFO | MTP present but not enabled in config |
-| `MTP speculative init failed, continuing without speculative decoding` | INFO | `common_speculative_init` returned null |
+| `MTP detected: N nextn layers` | DEBUG | Model has MTP head |
+| `MTP ready: n_max=N n_min=N p_min=N.NN` | DEBUG | Speculative context initialised |
+| `MTP available (N layers) but disabled` | DEBUG | MTP present but not enabled in config |
+| `MTP speculative init failed, continuing without speculative decoding` | DEBUG | `common_speculative_init` returned null |
 | `MTP: N/N accepted (limit=L) gpu=NNNN cpu=NNNN` | DEBUG | Per-round acceptance, adaptive limit, and phase timing (µs) |
-| `MTP: NNN rounds, X.XX tok/rnd, accept NN% \| draft NNNNN.N verify NNNNNNN.N process NNNNN.N sample NNNNN.N rollback NNN.N anchor NNN.N (us)` | INFO | Summary every 128 rounds |
-| `MTP: verify decode failed rc=N (k=N pos=N)` | INFO | Target decode error |
-| `MTP: speculative process (verify) failed: ..., disabling MTP` | INFO | Draft/target KV desync |
-| `MTP: speculative process failed: ...` | INFO | `sync_and_capture_mtp` failure |
-| `MTP: seq_rm failed, disabling MTP` | INFO | KV rollback failure |
+| `MTP: NNN rounds, X.XX tok/rnd, accept NN% \| gpu NNN.N cpu NNN.N (us)` | DEBUG | Summary every 128 rounds |
+| `MTP: verify decode failed rc=N (k=N pos=N)` | DEBUG | Target decode error |
+| `MTP: speculative process (verify) failed: ..., disabling MTP` | DEBUG | Draft/target KV desync |
+| `MTP: speculative process failed: ...` | DEBUG | `sync_and_capture_mtp` failure |
+| `MTP: ctx_dft pos range [A, B], batch pos [C, D]` | DEBUG | Diagnostic: draft context vs batch position range (on process failure) |
+| `MTP: seq_rm failed, disabling MTP` | DEBUG | KV rollback failure |
 | `MTP: rolled back N unemitted KV tokens (keep_end=N)` | DEBUG | Early-termination rollback |
 
 ## Log Analysis Script
@@ -57,7 +58,7 @@ python3 scripts/mtp_log_summary.py hali.log
 1. **Session overview** — MTP detected/ready lines, config (n_max, n_min, p_min)
 2. **Per-round acceptance histogram** — distribution of `N/N accepted` values
 3. **Cumulative stats** — total rounds, total drafted, total accepted, overall acceptance %
-4. **Phase timing** — parsed from the 128-round summary lines (draft, verify, process, sample, rollback, anchor in µs)
+4. **Phase timing** — parsed from the 128-round summary lines (gpu, cpu in µs)
 5. **Errors and disables** — any lines indicating MTP was disabled or a decode/process failed
 6. **Throughput estimate** — tokens/round and approximate tokens/sec from timestamps
 
@@ -79,7 +80,7 @@ LOG_RE = re.compile(r'^\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\] \[(\w+)\] (.*)$
 ACCEPT_RE = re.compile(r'HALI: MTP: (\d+)/(\d+) accepted')
 SUMMARY_RE = re.compile(
     r'HALI: MTP: (\d+) rounds, ([\d.]+) tok/rnd, accept (\d+)% \| '
-    r'draft ([\d.]+) verify ([\d.]+) process ([\d.]+) sample ([\d.]+) rollback ([\d.]+) anchor ([\d.]+) \(us\)'
+    r'gpu ([\d.]+) cpu ([\d.]+) \(us\)'
 )
 ERROR_RE = re.compile(r'(failed|disabling|disabled)')
 
@@ -112,7 +113,7 @@ def main():
                 summaries.append(sm.groups())
                 continue
 
-            if 'HALI: MTP' in msg and (level == 'INFO' or ERROR_RE.search(msg)):
+            if 'HALI: MTP' in msg and (level == 'DEBUG' or ERROR_RE.search(msg)):
                 if 'accepted' not in msg:
                     mtp_info.append((ts, level, msg))
 
@@ -146,7 +147,7 @@ def main():
     if summaries:
         print("Phase timing (avg µs, from 128-round summaries):")
         last = summaries[-1]
-        labels = ['rounds', 'tok/rnd', 'accept%', 'draft', 'verify', 'process', 'sample', 'rollback', 'anchor']
+        labels = ['rounds', 'tok/rnd', 'accept%', 'gpu', 'cpu']
         for label, val in zip(labels, last):
             print(f"  {label:>10}: {val}")
         print()
