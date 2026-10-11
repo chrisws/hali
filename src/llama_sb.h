@@ -254,10 +254,6 @@ private:
   int _n_ctx   = 0;
   int _n_batch = 0;
   // phase timers: cumulative microseconds, logged as averages every 128 rounds
-  uint64_t _mtp_time_draft    = 0;
-  uint64_t _mtp_time_verify   = 0;
-  uint64_t _mtp_time_process  = 0;
-  uint64_t _mtp_time_sample   = 0;
-  uint64_t _mtp_time_rollback = 0;
-  uint64_t _mtp_time_anchor   = 0;
+  uint64_t _mtp_time_gpu = 0;  // draft + verify (GPU fwd passes)
+  uint64_t _mtp_time_cpu = 0;  // sync + sample + rollback (KV mgmt + sampling)
 };

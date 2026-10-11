@@ -92,11 +92,8 @@ Llama::Llama() :
   _mtp_accepted(0),
   _n_ctx(0),
   _n_batch(0),
-  _mtp_time_draft(0),
-  _mtp_time_verify(0),
-  _mtp_time_process(0),
-  _mtp_time_sample(0),
-  _mtp_time_rollback(0) {
+  _mtp_time_gpu(0),
+  _mtp_time_cpu(0) {
   llama_log_set([](enum ggml_log_level level, const char *text, void *user_data) {
     Llama *llama = static_cast<Llama *>(user_data);
     if (level == GGML_LOG_LEVEL_ERROR && llama->_last_error.empty()) {
@@ -176,11 +173,8 @@ Llama::Llama(Llama &&other) noexcept
   , _spec_batch(std::move(other._spec_batch))
   , _n_ctx(other._n_ctx)
   , _n_batch(other._n_batch)
-  , _mtp_time_draft(other._mtp_time_draft)
-  , _mtp_time_verify(other._mtp_time_verify)
-  , _mtp_time_process(other._mtp_time_process)
-  , _mtp_time_sample(other._mtp_time_sample)
-  , _mtp_time_rollback(other._mtp_time_rollback) {
+  , _mtp_time_gpu(other._mtp_time_gpu)
+  , _mtp_time_cpu(other._mtp_time_cpu) {
   std::memcpy(_mtp_buf, other._mtp_buf, sizeof(_mtp_buf));
 }
 

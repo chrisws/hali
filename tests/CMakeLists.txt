@@ -32,6 +32,7 @@ add_executable(hali_tests
   src/agent_utils_test.cpp
   src/run_allowed_test.cpp
   src/curl_test.cpp
+  src/mtp_adaptive_test.cpp
   src/main.cpp
 )
 

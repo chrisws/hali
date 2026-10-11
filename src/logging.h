@@ -18,6 +18,7 @@ enum LogLevel {
   LEVEL_ERROR = 3
 };
 
+bool log_is_enabled(LogLevel level);
 void log_write(LogLevel level, const char* format, ...);
 void log_open(const std::string& level);
 void log_open_console();

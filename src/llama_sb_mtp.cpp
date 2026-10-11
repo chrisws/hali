@@ -31,7 +31,9 @@
 void Llama::mtp_init(const LlamaLoad &load) {
   _n_mtp_layers = llama_model_n_layer_nextn(_model);
   if (load.mtp_enabled && _n_mtp_layers > 0) {
-    log_write(LEVEL_INFO, "HALI: MTP detected: %d nextn layers", _n_mtp_layers);
+    if (log_is_enabled(LEVEL_DEBUG)) {
+      log_write(LEVEL_DEBUG, "HALI: MTP detected: %d nextn layers", _n_mtp_layers);
+    }
     _spec_params.speculative.types = {COMMON_SPECULATIVE_TYPE_DRAFT_MTP};
     _spec_params.speculative.draft.n_max = load.mtp_n_max;
     _spec_params.speculative.draft.n_min = load.mtp_n_min;
@@ -57,16 +59,25 @@ void Llama::mtp_init(const LlamaLoad &load) {
       _verify_n_seq.resize(vsize, 1);
       _verify_seq_ids.resize(vsize, 0);
       _verify_seq_ptrs.resize(vsize);
+      for (int i = 0; i < vsize; ++i) {
+        _verify_seq_ptrs[i] = &_verify_seq_ids[i];
+      }
       _verify_logits.resize(vsize, 1);
       _draft_toks.resize(vsize);
       _spec_batch = common_batch(_ctx);
-      log_write(LEVEL_INFO, "HALI: MTP ready: n_max=%d n_min=%d p_min=%.2f", _mtp_n_max, _mtp_n_min, _mtp_p_min);
+      if (log_is_enabled(LEVEL_DEBUG)) {
+        log_write(LEVEL_DEBUG, "HALI: MTP ready: n_max=%d n_min=%d p_min=%.2f", _mtp_n_max, _mtp_n_min, _mtp_p_min);
+      }
     } else {
-      log_write(LEVEL_INFO, "HALI: MTP speculative init failed, continuing without speculative decoding");
+      if (log_is_enabled(LEVEL_DEBUG)) {
+        log_write(LEVEL_DEBUG, "HALI: MTP speculative init failed, continuing without speculative decoding");
+      }
       _n_mtp_layers = 0;
     }
   } else if (_n_mtp_layers > 0) {
-    log_write(LEVEL_INFO, "HALI: MTP available (%d layers) but disabled", _n_mtp_layers);
+    if (log_is_enabled(LEVEL_DEBUG)) {
+      log_write(LEVEL_DEBUG, "HALI: MTP available (%d layers) but disabled", _n_mtp_layers);
+    }
     _n_mtp_layers = 0;
   }
 }
@@ -84,13 +95,15 @@ void Llama::sync_and_capture_mtp(const llama_token *tokens, int n_tokens, llama_
     _spec_batch.add(tokens[i], pos_start + i, 0, true);
   }
   if (!common_speculative_process(_spec.get(), _spec_batch)) {
-    log_write(LEVEL_INFO, "HALI: MTP: speculative process failed: %s", _last_error.c_str());
-    auto * ctx_dft = _spec_init ? _spec_init->context() : nullptr;
-    if (ctx_dft) {
-      const llama_pos dft_pos_min = llama_memory_seq_pos_min(llama_get_memory(ctx_dft), 0);
-      const llama_pos dft_pos_max = llama_memory_seq_pos_max(llama_get_memory(ctx_dft), 0);
-      log_write(LEVEL_INFO, "HALI: MTP: ctx_dft pos range [%d, %d], batch pos [%d, %d]",
-                (int)dft_pos_min, (int)dft_pos_max, (int)pos_start, (int)(pos_start + n_tokens - 1));
+    if (log_is_enabled(LEVEL_DEBUG)) {
+      log_write(LEVEL_DEBUG, "HALI: MTP: speculative process failed: %s", _last_error.c_str());
+      auto * ctx_dft = _spec_init ? _spec_init->context() : nullptr;
+      if (ctx_dft) {
+        const llama_pos dft_pos_min = llama_memory_seq_pos_min(llama_get_memory(ctx_dft), 0);
+        const llama_pos dft_pos_max = llama_memory_seq_pos_max(llama_get_memory(ctx_dft), 0);
+        log_write(LEVEL_DEBUG, "HALI: MTP: ctx_dft pos range [%d, %d], batch pos [%d, %d]",
+                  (int)dft_pos_min, (int)dft_pos_max, (int)pos_start, (int)(pos_start + n_tokens - 1));
+      }
     }
     _last_error.clear();
     _mtp_enabled = false;
@@ -133,7 +146,17 @@ bool Llama::mtp_round(llama_token anchor, vector<llama_token> &accepted, llama_t
   accepted.clear();
   const llama_pos P = (llama_pos)_tokens_physically_used;
   const int room = _n_ctx - (int)P - 1;
-  const int limit = std::min({_mtp_n_max, _n_batch - 1, room});
+  int limit = std::min({_mtp_n_max, _n_batch - 1, room});
+  if (_mtp_rounds >= 16 && _mtp_drafted > 0) {
+    const double rate = (double)_mtp_accepted / (double)_mtp_drafted;
+    if (rate < 0.25) {
+      limit = 1;
+    } else if (rate < 0.50) {
+      limit = 2;
+    } else if (rate < 0.75) {
+      limit = std::min(limit, 3);
+    }
+  }
   if (limit <= 0) {
     return false;
   }
@@ -150,8 +173,6 @@ bool Llama::mtp_round(llama_token anchor, vector<llama_token> &accepted, llama_t
     dp.result = &_draft_toks;
     common_speculative_draft(_spec.get());
   }
-  _mtp_time_draft += std::chrono::duration_cast<std::chrono::microseconds>(
-                                                                           std::chrono::high_resolution_clock::now() - t0).count();
 
   const int k = (int)_draft_toks.size();
   if (k == 0) {
@@ -163,7 +184,6 @@ bool Llama::mtp_round(llama_token anchor, vector<llama_token> &accepted, llama_t
   }
 
   // ---- 2. verify: single target pass over [anchor, d0..d(k-1)] ------------
-  auto t1 = std::chrono::high_resolution_clock::now();
   {
     const int n = 1 + k;
     _verify_toks[0] = anchor;
@@ -171,9 +191,6 @@ bool Llama::mtp_round(llama_token anchor, vector<llama_token> &accepted, llama_t
     for (int i = 0; i < k; ++i) {
       _verify_toks[i + 1] = _draft_toks[i];
       _verify_pos[i + 1]  = P + 1 + i;
-    }
-    for (int i = 0; i < n; ++i) {
-      _verify_seq_ptrs[i] = &_verify_seq_ids[i];
     }
 
     llama_batch batch = {
@@ -188,7 +205,9 @@ bool Llama::mtp_round(llama_token anchor, vector<llama_token> &accepted, llama_t
 
     const int rc = llama_decode(_ctx, batch);
     if (rc != 0) {
-      log_write(LEVEL_INFO, "HALI: MTP: verify decode failed rc=%d (k=%d pos=%d)", rc, k, (int)P);
+      if (log_is_enabled(LEVEL_DEBUG)) {
+        log_write(LEVEL_DEBUG, "HALI: MTP: verify decode failed rc=%d (k=%d pos=%d)", rc, k, (int)P);
+      }
       llama_memory_seq_rm(llama_get_memory(_ctx), 0, P, -1);
       mtp_trim_draft(P);
       _mtp_enabled = false;
@@ -196,14 +215,12 @@ bool Llama::mtp_round(llama_token anchor, vector<llama_token> &accepted, llama_t
       return false;
     }
   }
-  _mtp_time_verify += std::chrono::duration_cast<std::chrono::microseconds>(
-                                                                            std::chrono::high_resolution_clock::now() - t1).count();
+  auto t1 = std::chrono::high_resolution_clock::now();
 
   // ---- 3. feed the verify batch to the speculative context ----------------
   // drafting wrote speculative entries at P.. into ctx_dft: remove them first,
   // otherwise process() fails with "inconsistent sequence positions"
   // (process() only trims internally when chain_heads=true, i.e. n_mtp_layers>1)
-  auto t2 = std::chrono::high_resolution_clock::now();
   {
     mtp_trim_draft(P);
     _spec_batch.clear();
@@ -212,7 +229,9 @@ bool Llama::mtp_round(llama_token anchor, vector<llama_token> &accepted, llama_t
       _spec_batch.add(_verify_toks[i], _verify_pos[i], 0, true);
     }
     if (!common_speculative_process(_spec.get(), _spec_batch)) {
-      log_write(LEVEL_INFO, "HALI: MTP: speculative process (verify) failed: %s, disabling MTP", _last_error.c_str());
+      if (log_is_enabled(LEVEL_DEBUG)) {
+        log_write(LEVEL_DEBUG, "HALI: MTP: speculative process (verify) failed: %s, disabling MTP", _last_error.c_str());
+      }
       _last_error.clear();
       // the draft head is now out of sync with the target: stop using it.
       // this round's verify results are still valid, so finish it below.
@@ -220,14 +239,11 @@ bool Llama::mtp_round(llama_token anchor, vector<llama_token> &accepted, llama_t
       _mtp_disabled_permanently = true;
     }
   }
-  _mtp_time_process += std::chrono::duration_cast<std::chrono::microseconds>(
-                                                                             std::chrono::high_resolution_clock::now() - t2).count();
 
   // ---- 4. sample and accept ------------------------------------------------
   // common_sampler_sample_and_accept_n returns at least 1 token, up to k+1.
   // ids[0..n_acc-1] are the accepted draft tokens, ids.back() is the next token
   // (either the mismatch correction or the bonus token after a full accept).
-  auto t3 = std::chrono::high_resolution_clock::now();
   auto ids = common_sampler_sample_and_accept_n(_smpl_mtp, _ctx, _draft_toks);
 
   const int n_acc = (int)ids.size() - 1;  // number of draft tokens accepted
@@ -236,47 +252,52 @@ bool Llama::mtp_round(llama_token anchor, vector<llama_token> &accepted, llama_t
   for (int i = 0; i < n_acc; ++i) {
     accepted.push_back(ids[i]);
   }
-  _mtp_time_sample += std::chrono::duration_cast<std::chrono::microseconds>(
-                                                                            std::chrono::high_resolution_clock::now() - t3).count();
 
   // ---- 5. inform the speculative context of the acceptance ----------------
   common_speculative_accept(_spec.get(), 0, (uint16_t)n_acc);
 
   // ---- 6. rollback rejected positions --------------------------------------
-  auto t4 = std::chrono::high_resolution_clock::now();
   if (n_acc < k) {
     const llama_pos keep_end = P + n_acc + 1;  // [P, keep_end) stays committed
     mtp_trim_draft(keep_end);  // drop rejected rows from the draft cache too
     if (!llama_memory_seq_rm(llama_get_memory(_ctx), 0, keep_end, -1)) {
-      log_write(LEVEL_INFO, "HALI: MTP: seq_rm failed, disabling MTP");
+      if (log_is_enabled(LEVEL_DEBUG)) {
+        log_write(LEVEL_DEBUG, "HALI: MTP: seq_rm failed, disabling MTP");
+      }
       _mtp_enabled = false;
       _mtp_disabled_permanently = true;
       return false;
     }
   }
-  _mtp_time_rollback += std::chrono::duration_cast<std::chrono::microseconds>(
-                                                                              std::chrono::high_resolution_clock::now() - t4).count();
 
   _tokens_physically_used += n_acc + 1;
+
+  // ---- timing: gpu = draft+verify, cpu = process+sample+rollback -----------
+  auto t_end = std::chrono::high_resolution_clock::now();
+  _mtp_time_gpu += std::chrono::duration_cast<std::chrono::microseconds>(t1 - t0).count();
+  _mtp_time_cpu += std::chrono::duration_cast<std::chrono::microseconds>(t_end - t1).count();
 
   ++_mtp_rounds;
   _mtp_drafted += k;
   _mtp_accepted += n_acc;
-  log_write(LEVEL_DEBUG, "HALI: MTP: %d/%d accepted", n_acc, k);
+  if (log_is_enabled(LEVEL_DEBUG)) {
+    const long gpu_us = std::chrono::duration_cast<std::chrono::microseconds>(t1 - t0).count();
+    const long cpu_us = std::chrono::duration_cast<std::chrono::microseconds>(t_end - t1).count();
+    log_write(LEVEL_DEBUG, "HALI: MTP: %d/%d accepted (limit=%d) gpu=%ld cpu=%ld",
+              n_acc, k, limit, gpu_us, cpu_us);
+  }
   if (_mtp_rounds % 128 == 0) {
-    const double r = (double)_mtp_rounds;
-    log_write(LEVEL_INFO,
-              "HALI: MTP: %llu rounds, %.2f tok/rnd, accept %.0f%% | "
-              "draft %.1f verify %.1f process %.1f sample %.1f rollback %.1f anchor %.1f (us)",
-              (unsigned long long)_mtp_rounds,
-              1.0 + (double)_mtp_accepted / r,
-              _mtp_drafted ? 100.0 * (double)_mtp_accepted / (double)_mtp_drafted : 0.0,
-              (double)_mtp_time_draft    / r,
-              (double)_mtp_time_verify   / r,
-              (double)_mtp_time_process  / r,
-              (double)_mtp_time_sample   / r,
-              (double)_mtp_time_rollback / r,
-              (double)_mtp_time_anchor   / r);
+    if (log_is_enabled(LEVEL_DEBUG)) {
+      const double r = (double)_mtp_rounds;
+      log_write(LEVEL_DEBUG,
+                "HALI: MTP: %llu rounds, %.2f tok/rnd, accept %.0f%% | "
+                "gpu %.1f cpu %.1f (us)",
+                (unsigned long long)_mtp_rounds,
+                1.0 + (double)_mtp_accepted / r,
+                _mtp_drafted ? 100.0 * (double)_mtp_accepted / (double)_mtp_drafted : 0.0,
+                (double)_mtp_time_gpu / r,
+                (double)_mtp_time_cpu / r);
+    }
   }
   return true;
 }
@@ -343,7 +364,7 @@ bool Llama::decode_anchor(llama_token tok) {
   }
   _tokens_physically_used += 1;
   sync_and_capture_mtp(&tok, 1, (llama_pos)(_tokens_physically_used - 1));
-  _mtp_time_anchor += std::chrono::duration_cast<std::chrono::microseconds>(
+  _mtp_time_cpu += std::chrono::duration_cast<std::chrono::microseconds>(
                                                                             std::chrono::high_resolution_clock::now() - t0).count();
   return true;
 }

@@ -8,6 +8,7 @@ void agent_utils_test();
 void input_test();
 void run_allowed_test();
 void curl_test();
+void mtp_adaptive_test();
 
 #include "logging.h"
 
@@ -23,5 +24,6 @@ int main() {
   input_test();
   run_allowed_test();
   curl_test();
+  mtp_adaptive_test();
   return 0;
 }

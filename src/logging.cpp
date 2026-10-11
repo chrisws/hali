@@ -12,6 +12,7 @@
 #include <ctime>
 #include <cstdarg>
 #include <mutex>
+#include <atomic>
 #include <string>
 #include <unordered_map>
 #include <filesystem>
@@ -19,7 +20,7 @@
 namespace fs = std::filesystem;
 
 static FILE *g_logfile = nullptr;
-static LogLevel g_level = LEVEL_DEBUG;
+static std::atomic<LogLevel> g_level{LEVEL_DEBUG};
 static bool g_log_console = false;
 static std::mutex g_log_mutex;
 
@@ -43,7 +44,7 @@ static LogLevel get_level(const std::string& level) {
 
 void log_open(const std::string& level) {
   std::lock_guard<std::mutex> lock(g_log_mutex);
-  g_level = get_level(level);
+  g_level.store(get_level(level));
   if (g_logfile == nullptr) {
     const char *home = getenv("HOME");
     const auto path = std::string(home ? home : ".") + "/.config/hali/hali.log";
@@ -57,7 +58,7 @@ void log_open(const std::string& level) {
 void log_open_console() {
   std::lock_guard<std::mutex> lock(g_log_mutex);
   g_logfile = nullptr;
-  g_level = LEVEL_ERROR;
+  g_level.store(LEVEL_ERROR);
   g_log_console = true;
 }
 
@@ -67,6 +68,10 @@ void log_close() {
     fclose(g_logfile);
     g_logfile = nullptr;
   }
+}
+
+bool log_is_enabled(LogLevel level) {
+  return level >= g_level.load();
 }
 
 void log_write(LogLevel level, const char* format, ...) {
@@ -82,7 +87,7 @@ void log_write(LogLevel level, const char* format, ...) {
     return;
   }
 
-  if (!g_logfile || level < g_level) {
+  if (!g_logfile || level < g_level.load()) {
     return;
   }
 
