@@ -89,7 +89,14 @@ Llama::Llama() :
   _has_pending(false),
   _mtp_rounds(0),
   _mtp_drafted(0),
-  _mtp_accepted(0) {
+  _mtp_accepted(0),
+  _n_ctx(0),
+  _n_batch(0),
+  _mtp_time_draft(0),
+  _mtp_time_verify(0),
+  _mtp_time_process(0),
+  _mtp_time_sample(0),
+  _mtp_time_rollback(0) {
   llama_log_set([](enum ggml_log_level level, const char *text, void *user_data) {
     Llama *llama = static_cast<Llama *>(user_data);
     if (level == GGML_LOG_LEVEL_ERROR && llama->_last_error.empty()) {
@@ -164,7 +171,16 @@ Llama::Llama(Llama &&other) noexcept
   , _verify_n_seq(std::move(other._verify_n_seq))
   , _verify_seq_ids(std::move(other._verify_seq_ids))
   , _verify_seq_ptrs(std::move(other._verify_seq_ptrs))
-  , _verify_logits(std::move(other._verify_logits)) {
+  , _verify_logits(std::move(other._verify_logits))
+  , _draft_toks(std::move(other._draft_toks))
+  , _spec_batch(std::move(other._spec_batch))
+  , _n_ctx(other._n_ctx)
+  , _n_batch(other._n_batch)
+  , _mtp_time_draft(other._mtp_time_draft)
+  , _mtp_time_verify(other._mtp_time_verify)
+  , _mtp_time_process(other._mtp_time_process)
+  , _mtp_time_sample(other._mtp_time_sample)
+  , _mtp_time_rollback(other._mtp_time_rollback) {
   std::memcpy(_mtp_buf, other._mtp_buf, sizeof(_mtp_buf));
 }
 
@@ -318,6 +334,8 @@ bool Llama::load_model(const LlamaLoad &load) {
       set_last_error("Create context");
     } else {
       _vocab = llama_model_get_vocab(_model);
+      _n_ctx   = llama_n_ctx(_ctx);
+      _n_batch = llama_n_batch(_ctx);
       _template = llama_model_chat_template(_model, nullptr);
       _is_gemma4 = (_template.find("<|turn>model") != string::npos);
       _can_shift = llama_memory_can_shift(llama_get_memory(_ctx));
@@ -356,6 +374,8 @@ bool Llama::load_model(const LlamaLoad &load) {
           _verify_seq_ids.resize(vsize, 0);
           _verify_seq_ptrs.resize(vsize);
           _verify_logits.resize(vsize, 1);
+          _draft_toks.resize(vsize);
+          _spec_batch = common_batch(_ctx);
           log_write(LEVEL_INFO, "HALI: MTP ready: n_max=%d n_min=%d p_min=%.2f", _mtp_n_max, _mtp_n_min, _mtp_p_min);
         } else {
           log_write(LEVEL_INFO, "HALI: MTP speculative init failed, continuing without speculative decoding");

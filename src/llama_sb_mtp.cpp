@@ -86,25 +86,28 @@ void Llama::mtp_rollback_unemitted(int n_unemitted) {
 bool Llama::mtp_round(llama_token anchor, vector<llama_token> &accepted, llama_token &next) {
   accepted.clear();
   const llama_pos P = (llama_pos)_tokens_physically_used;
-  const int room = (int)llama_n_ctx(_ctx) - (int)P - 1;
-  const int limit = std::min({_mtp_n_max, (int)llama_n_batch(_ctx) - 1, room});
+  const int room = _n_ctx - (int)P - 1;
+  const int limit = std::min({_mtp_n_max, _n_batch - 1, room});
   if (limit <= 0) {
     return false;
   }
 
   // ---- 1. generate draft tokens -------------------------------------------
-  llama_tokens draft;
+  auto t0 = std::chrono::high_resolution_clock::now();
+  _draft_toks.clear();
   {
     auto &dp = common_speculative_get_draft_params(_spec.get(), 0);
     dp.drafting = true;
     dp.n_max = limit;
     dp.pos0 = P;
     dp.id_last = anchor;
-    dp.result = &draft;
+    dp.result = &_draft_toks;
     common_speculative_draft(_spec.get());
   }
+  _mtp_time_draft += std::chrono::duration_cast<std::chrono::microseconds>(
+      std::chrono::high_resolution_clock::now() - t0).count();
 
-  const int k = (int)draft.size();
+  const int k = (int)_draft_toks.size();
   if (k == 0) {
     // no drafts generated: just decode the anchor normally
     // (drafting may have left speculative entries in ctx_dft, clear them
@@ -114,12 +117,13 @@ bool Llama::mtp_round(llama_token anchor, vector<llama_token> &accepted, llama_t
   }
 
   // ---- 2. verify: single target pass over [anchor, d0..d(k-1)] ------------
+  auto t1 = std::chrono::high_resolution_clock::now();
   {
     const int n = 1 + k;
     _verify_toks[0] = anchor;
     _verify_pos[0]  = P;
     for (int i = 0; i < k; ++i) {
-      _verify_toks[i + 1] = draft[i];
+      _verify_toks[i + 1] = _draft_toks[i];
       _verify_pos[i + 1]  = P + 1 + i;
     }
     for (int i = 0; i < n; ++i) {
@@ -146,18 +150,19 @@ bool Llama::mtp_round(llama_token anchor, vector<llama_token> &accepted, llama_t
       return false;
     }
   }
+  _mtp_time_verify += std::chrono::duration_cast<std::chrono::microseconds>(
+      std::chrono::high_resolution_clock::now() - t1).count();
 
   // ---- 3. feed the verify batch to the speculative context ----------------
-  // drafting wrote speculative entries at P.. into ctx_dft: remove them first,
-  // otherwise process() fails with "inconsistent sequence positions"
-  mtp_trim_draft(P);
+  // process() internally trims the draft KV, so no explicit mtp_trim_draft needed
+  auto t2 = std::chrono::high_resolution_clock::now();
   {
-    common_batch batch_tgt(_ctx);
+    _spec_batch.clear();
     const int n = 1 + k;
     for (int i = 0; i < n; ++i) {
-      batch_tgt.add(_verify_toks[i], _verify_pos[i], 0, true);
+      _spec_batch.add(_verify_toks[i], _verify_pos[i], 0, true);
     }
-    if (!common_speculative_process(_spec.get(), batch_tgt)) {
+    if (!common_speculative_process(_spec.get(), _spec_batch)) {
       log_write(LEVEL_INFO, "HALI: MTP: speculative process (verify) failed: %s, disabling MTP", _last_error.c_str());
       _last_error.clear();
       // the draft head is now out of sync with the target: stop using it.
@@ -166,12 +171,15 @@ bool Llama::mtp_round(llama_token anchor, vector<llama_token> &accepted, llama_t
       _mtp_disabled_permanently = true;
     }
   }
+  _mtp_time_process += std::chrono::duration_cast<std::chrono::microseconds>(
+      std::chrono::high_resolution_clock::now() - t2).count();
 
   // ---- 4. sample and accept ------------------------------------------------
   // common_sampler_sample_and_accept_n returns at least 1 token, up to k+1.
   // ids[0..n_acc-1] are the accepted draft tokens, ids.back() is the next token
   // (either the mismatch correction or the bonus token after a full accept).
-  auto ids = common_sampler_sample_and_accept_n(_smpl_mtp, _ctx, draft);
+  auto t3 = std::chrono::high_resolution_clock::now();
+  auto ids = common_sampler_sample_and_accept_n(_smpl_mtp, _ctx, _draft_toks);
 
   const int n_acc = (int)ids.size() - 1;  // number of draft tokens accepted
   next = ids.back();
@@ -179,11 +187,14 @@ bool Llama::mtp_round(llama_token anchor, vector<llama_token> &accepted, llama_t
   for (int i = 0; i < n_acc; ++i) {
     accepted.push_back(ids[i]);
   }
+  _mtp_time_sample += std::chrono::duration_cast<std::chrono::microseconds>(
+      std::chrono::high_resolution_clock::now() - t3).count();
 
   // ---- 5. inform the speculative context of the acceptance ----------------
   common_speculative_accept(_spec.get(), 0, (uint16_t)n_acc);
 
   // ---- 6. rollback rejected positions --------------------------------------
+  auto t4 = std::chrono::high_resolution_clock::now();
   if (n_acc < k) {
     const llama_pos keep_end = P + n_acc + 1;  // [P, keep_end) stays committed
     mtp_trim_draft(keep_end);  // drop rejected rows from the draft cache too
@@ -194,6 +205,8 @@ bool Llama::mtp_round(llama_token anchor, vector<llama_token> &accepted, llama_t
       return false;
     }
   }
+  _mtp_time_rollback += std::chrono::duration_cast<std::chrono::microseconds>(
+      std::chrono::high_resolution_clock::now() - t4).count();
 
   _tokens_physically_used += n_acc + 1;
 
@@ -202,9 +215,18 @@ bool Llama::mtp_round(llama_token anchor, vector<llama_token> &accepted, llama_t
   _mtp_accepted += n_acc;
   log_write(LEVEL_DEBUG, "HALI: MTP: %d/%d accepted", n_acc, k);
   if (_mtp_rounds % 128 == 0) {
-    log_write(LEVEL_INFO, "HALI: MTP: %llu rounds, %.2f tokens/round, draft acceptance %.0f%%",
-              (unsigned long long)_mtp_rounds, 1.0 + (double)_mtp_accepted / (double)_mtp_rounds,
-              _mtp_drafted ? 100.0 * (double)_mtp_accepted / (double)_mtp_drafted : 0.0);
+    const double r = (double)_mtp_rounds;
+    log_write(LEVEL_INFO,
+              "HALI: MTP: %llu rounds, %.2f tok/rnd, accept %.0f%% | "
+              "draft %.1f verify %.1f process %.1f sample %.1f rollback %.1f (us)",
+              (unsigned long long)_mtp_rounds,
+              1.0 + (double)_mtp_accepted / r,
+              _mtp_drafted ? 100.0 * (double)_mtp_accepted / (double)_mtp_drafted : 0.0,
+              (double)_mtp_time_draft    / r,
+              (double)_mtp_time_verify   / r,
+              (double)_mtp_time_process  / r,
+              (double)_mtp_time_sample   / r,
+              (double)_mtp_time_rollback / r);
   }
   return true;
 }

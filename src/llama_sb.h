@@ -247,4 +247,15 @@ private:
   vector<llama_seq_id>  _verify_seq_ids;
   vector<llama_seq_id*> _verify_seq_ptrs;
   vector<int8_t>        _verify_logits;
+  vector<llama_token>   _draft_toks;
+  common_batch          _spec_batch;
+  // cached context params (avoid per-round API calls)
+  int _n_ctx   = 0;
+  int _n_batch = 0;
+  // phase timers: cumulative microseconds, logged as averages every 128 rounds
+  uint64_t _mtp_time_draft    = 0;
+  uint64_t _mtp_time_verify   = 0;
+  uint64_t _mtp_time_process  = 0;
+  uint64_t _mtp_time_sample   = 0;
+  uint64_t _mtp_time_rollback = 0;
 };
