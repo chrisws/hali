@@ -161,6 +161,7 @@ namespace Color {
     constexpr RGB POPUP_TEXT                = {230, 225, 229};  // on-surface #E6E1E5
 
     // Chat colors tuned for Material dark backgrounds
+    constexpr RGB CHAT_USER                 = {255, 183,  77};  // tertiary amber
     constexpr RGB CHAT_HALI                 = {  3, 218, 198};  // secondary teal
     constexpr RGB CHAT_SYSTEM               = {255, 180, 171};  // error/warm
     constexpr RGB CHAT_TOOL                 = {255, 204, 128};  // amber
@@ -196,7 +197,7 @@ namespace Color {
           case Color::ColorElement::COLOR_CHAT_LOGO_GRADIENT:
             return CHAT_BACKGROUND;
           case Color::ColorElement::COLOR_CHAT_USER:
-            return INPUT_PROMPT;
+            return CHAT_USER;
           case Color::ColorElement::COLOR_CHAT_HALI:
             return CHAT_HALI;
           case Color::ColorElement::COLOR_CHAT_SYSTEM:
