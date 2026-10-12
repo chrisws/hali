@@ -240,6 +240,15 @@ private:
   uint64_t _mtp_rounds;       // per-instance MTP stats
   uint64_t _mtp_drafted;
   uint64_t _mtp_accepted;
+  // sliding-window acceptance tracking for adaptive draft length
+  static constexpr int MTP_WIN = 32;
+  struct MtpWinEntry { int drafted; int accepted; };
+  MtpWinEntry _mtp_win[MTP_WIN] = {};
+  int _mtp_win_idx      = 0;
+  int _mtp_win_filled   = 0;
+  int _mtp_win_drafted  = 0;
+  int _mtp_win_accepted = 0;
+  int _mtp_last_limit   = 0;
   // pre-allocated buffers for the speculative round (avoid per-round heap allocs)
   vector<llama_token>   _mtp_acc_tokens;
   vector<llama_token>   _verify_toks;

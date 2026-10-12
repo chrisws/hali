@@ -146,17 +146,22 @@ bool Llama::mtp_round(llama_token anchor, vector<llama_token> &accepted, llama_t
   accepted.clear();
   const llama_pos P = (llama_pos)_tokens_physically_used;
   const int room = _n_ctx - (int)P - 1;
-  int limit = std::min({_mtp_n_max, _n_batch - 1, room});
-  if (_mtp_rounds >= 16 && _mtp_drafted > 0) {
-    const double rate = (double)_mtp_accepted / (double)_mtp_drafted;
+  int limit = _mtp_n_max;
+  if (_mtp_win_filled >= 16 && _mtp_win_drafted > 0) {
+    const double rate = (double)_mtp_win_accepted / (double)_mtp_win_drafted;
     if (rate < 0.25) {
       limit = 1;
     } else if (rate < 0.50) {
       limit = 2;
-    } else if (rate < 0.75) {
-      limit = std::min(limit, 3);
     }
   }
+  limit = std::min({limit, _n_batch - 1, room});
+  if (limit != _mtp_last_limit && log_is_enabled(LEVEL_DEBUG)) {
+    log_write(LEVEL_DEBUG, "HALI: MTP: adaptive limit %d -> %d (win_rate=%.2f)",
+              _mtp_last_limit, limit,
+              _mtp_win_drafted > 0 ? (double)_mtp_win_accepted / (double)_mtp_win_drafted : 0.0);
+  }
+  _mtp_last_limit = limit;
   if (limit <= 0) {
     return false;
   }
@@ -280,6 +285,16 @@ bool Llama::mtp_round(llama_token anchor, vector<llama_token> &accepted, llama_t
   ++_mtp_rounds;
   _mtp_drafted += k;
   _mtp_accepted += n_acc;
+  // update sliding window
+  if (_mtp_win_filled == MTP_WIN) {
+    _mtp_win_drafted  -= _mtp_win[_mtp_win_idx].drafted;
+    _mtp_win_accepted -= _mtp_win[_mtp_win_idx].accepted;
+  }
+  _mtp_win[_mtp_win_idx] = {k, n_acc};
+  _mtp_win_drafted  += k;
+  _mtp_win_accepted += n_acc;
+  _mtp_win_idx = (_mtp_win_idx + 1) % MTP_WIN;
+  if (_mtp_win_filled < MTP_WIN) { _mtp_win_filled++; }
   if (log_is_enabled(LEVEL_DEBUG)) {
     const long gpu_us = std::chrono::duration_cast<std::chrono::microseconds>(t1 - t0).count();
     const long cpu_us = std::chrono::duration_cast<std::chrono::microseconds>(t_end - t1).count();
@@ -310,6 +325,12 @@ void Llama::mtp_reset_state() {
   mtp_buf_clear();
   _has_pending = false;
   _anchor = LLAMA_TOKEN_NULL;
+  for (auto &e : _mtp_win) { e = {0, 0}; }
+  _mtp_win_idx      = 0;
+  _mtp_win_filled   = 0;
+  _mtp_win_drafted  = 0;
+  _mtp_win_accepted = 0;
+  _mtp_last_limit   = 0;
 
   auto *ctx_dft = _spec_init ? _spec_init->context() : nullptr;
   if (!_spec || !ctx_dft) {
