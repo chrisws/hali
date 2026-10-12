@@ -16,8 +16,6 @@ draft → verify → sync → accept → rollback
 Key files:
 - `src/llama_sb_mtp.cpp` — MTP round logic, init, rollback, sampler config
 - `src/llama_sb.h` — member declarations (`_mtp_*`, `_verify_*`, `_draft_toks`, `_spec_batch`)
-- `plans/mtp-perf-1.md` — initial performance analysis and priority table
-- `plans/mtp-perf-2.md` — second-round optimisations (adaptive draft length, pre-computed ptrs, reduced timing)
 
 ## Log Format
 
