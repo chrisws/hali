@@ -9,6 +9,9 @@ void input_test();
 void run_allowed_test();
 void curl_test();
 void mtp_adaptive_test();
+void logging_filter_test();
+void replace_test();
+void build_test();
 
 #include "logging.h"
 
@@ -25,5 +28,8 @@ int main() {
   run_allowed_test();
   curl_test();
   mtp_adaptive_test();
+  logging_filter_test();
+  replace_test();
+  build_test();
   return 0;
 }

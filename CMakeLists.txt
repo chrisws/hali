@@ -201,6 +201,7 @@ add_executable(hali
   src/file.cpp
   src/agent.cpp
   src/agent_utils.cpp
+  src/build.cpp
   src/tui.cpp
   src/ui_text.cpp
   src/graph.cpp

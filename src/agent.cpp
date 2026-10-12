@@ -12,6 +12,7 @@
 #include <mutex>
 #include <sstream>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "llama.h"
@@ -26,6 +27,7 @@
 #include "webview.h"
 #include "icon.h"
 #include "agent_utils.h"
+#include "build.h"
 
 //
 // SESSION.md - see config.cpp
@@ -534,6 +536,27 @@ std::string Agent::process_tool(const std::string &cmd) {
   }
   if (op == "TOOL:RUN") {
     return tool_run(cfg_, tui_, arg1, arg2);
+  }
+  if (op == "TOOL:BUILD") {
+    auto result = build_run(cfg_.sandbox_, arg1, [&](const std::string &msg) {
+      tui_.show_tool(msg);
+    });
+    return result.success_ ? result.output_ : result.output_;
+  }
+  if (op == "TOOL:REPLACE") {
+    tui_.show_tool("replace: " + arg1);
+    const auto path = resolve_path(cfg_.sandbox_, arg1);
+    if (cfg_.permission_prompt_ && !tui_.confirm_dialog(std::format("Allow model to replace in {}?", path))) {
+      return "ERROR: action prevented by user";
+    }
+    backup_file(cfg_, tui_, path);
+    auto result = tool_replace(cfg_.sandbox_, arg1, arg2);
+    if (!utils::starts_with(result, "OK")) {
+      tui_.append_token(ICON_ERR + result);
+    } else {
+      broadcast_reload(cfg_, tui_);
+    }
+    return result;
   }
   if (op == "TOOL:MCP") {
     tui_.show_tool("mcp: " + arg1);

@@ -20,6 +20,7 @@ add_executable(hali_tests
   ../src/logging.cpp
   ../src/string_utils.cpp
   ../src/agent_utils.cpp
+  ../src/build.cpp
   ../src/mcp_format.cpp
   ../src/sha1.cpp
   src/utf8_test.cpp
@@ -33,6 +34,9 @@ add_executable(hali_tests
   src/run_allowed_test.cpp
   src/curl_test.cpp
   src/mtp_adaptive_test.cpp
+  src/logging_filter_test.cpp
+  src/replace_test.cpp
+  src/build_test.cpp
   src/main.cpp
 )
 

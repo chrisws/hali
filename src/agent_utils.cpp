@@ -504,3 +504,81 @@ std::string tool_search(const std::string &sandbox, const std::string &pattern, 
   }
   return output.empty() ? "no matches" : output;
 }
+
+//
+// TOOL:REPLACE
+//
+ReplaceArgs parse_replace_args(const std::string &arg2) {
+  ReplaceArgs r;
+  auto pipe_pos = arg2.find('|');
+  if (pipe_pos == std::string::npos) {
+    return r;
+  }
+  r.find_str = arg2.substr(0, pipe_pos);
+  std::string rest = arg2.substr(pipe_pos + 1);
+  auto flag_pos = rest.find(" --");
+  if (flag_pos != std::string::npos) {
+    r.replace_str = rest.substr(0, flag_pos);
+    std::string flags = rest.substr(flag_pos);
+    if (flags.find("--all") != std::string::npos) {
+      r.all = true;
+    }
+    if (flags.find("--count") != std::string::npos) {
+      r.count = true;
+    }
+  } else {
+    r.replace_str = rest;
+  }
+  return r;
+}
+
+std::string tool_replace(const std::string &sandbox, const std::string &file, const std::string &arg2) {
+  const auto path = resolve_path(sandbox, file);
+  if (!path_in_sandbox(sandbox, path)) {
+    return "ERROR: path outside sandbox";
+  }
+  auto args = parse_replace_args(arg2);
+  if (args.find_str.empty()) {
+    return "ERROR: empty find string";
+  }
+  std::ifstream f(path, std::ios::binary);
+  if (!f) {
+    return "ERROR: cannot open [" + path + "]";
+  }
+  std::ostringstream oss;
+  oss << f.rdbuf();
+  std::string content = oss.str();
+  if (content.size() > 32 * 1024) {
+    return "ERROR: file too large";
+  }
+  size_t count = 0;
+  size_t pos = 0;
+  while ((pos = content.find(args.find_str, pos)) != std::string::npos) {
+    count++;
+    pos += args.find_str.size();
+  }
+  if (count == 0) {
+    return "ERROR: pattern not found in " + file;
+  }
+  if (args.count) {
+    return std::to_string(count) + " occurrence(s) found";
+  }
+  std::string modified = content;
+  if (args.all) {
+    pos = 0;
+    while ((pos = modified.find(args.find_str, pos)) != std::string::npos) {
+      modified.replace(pos, args.find_str.size(), args.replace_str);
+      pos += args.replace_str.size();
+    }
+  } else {
+    pos = modified.find(args.find_str);
+    modified.replace(pos, args.find_str.size(), args.replace_str);
+  }
+  std::ofstream out(path, std::ios::binary | std::ios::trunc);
+  if (!out) {
+    return "ERROR: cannot write [" + path + "]";
+  }
+  out << modified;
+  size_t replaced = args.all ? count : 1;
+  return std::format("OK: replaced {} occurrence(s) in {}", replaced, file);
+}

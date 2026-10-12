@@ -197,6 +197,8 @@ std::string HaliConfig::build_system_prompt() const {
     "  TOOL:MKDIR  <dir>          create a subfolder inside the sandbox\n"
     "  TOOL:EXISTS <file>         YES or NO\n"
     "  TOOL:RUN    <prog> [args]  run program inside sandbox\n"
+    "  TOOL:BUILD  [mode]         build/test/clean (auto-detects CMake or Maven; modes: build, test, clean, default=all)\n"
+    "  TOOL:REPLACE <file> <find>|<replace> [flags]  replace text in file (flags: --all, --count)\n"
     "  TOOL:DATE                  current date\n"
     "  TOOL:TIME                  current time\n"
     "  TOOL:RND                   random float 0..1\n"
