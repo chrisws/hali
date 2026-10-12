@@ -44,13 +44,39 @@ MTP-specific log lines (all prefixed `HALI: MTP`):
 | `MTP: seq_rm failed, disabling MTP` | DEBUG | KV rollback failure |
 | `MTP: rolled back N unemitted KV tokens (keep_end=N)` | DEBUG | Early-termination rollback |
 
+## Log Environment Variables
+
+Hali's logging supports two environment variables to control what is written and
+where:
+
+| Variable | Purpose | Example |
+|----------|---------|---------|
+| `HALI_LOG_FILE` | Override the log file path | `HALI_LOG_FILE=/tmp/mtp.log` |
+| `HALI_LOG_FILTER` | Comma-separated category filter | `HALI_LOG_FILTER=mtp` |
+
+- **`HALI_LOG_FILTER`** — when set, only log lines tagged with a matching category
+  are written. Untagged lines (general logging, tool requests, etc.) are excluded.
+  Set to `*` to disable filtering (default behaviour).
+- **`HALI_LOG_FILE`** — full path to the log file. Parent directories are created
+  automatically. Defaults to `~/.config/hali/hali.log`.
+
+### Capturing a clean MTP log
+
+```bash
+HALI_LOG_FILTER=mtp HALI_LOG_FILE=/tmp/mtp.log ./hali
+```
+
+This produces a log containing **only** MTP-categorised lines, ideal for feeding
+into `scripts/mtp_log_summary.py` without noise from tool requests or other
+subsystems.
+
 ## Log Analysis Script
 
-Use `scripts/mtp_log_summary.py` to parse `hali.log` and produce a summary of MTP
+Use `scripts/mtp_log_summary.py` to parse a log file and produce a summary of MTP
 performance. Run it from the project root:
 
 ```bash
-python3 scripts/mtp_log_summary.py hali.log
+python3 scripts/mtp_log_summary.py /tmp/mtp.log
 ```
 
 ### What the script reports
@@ -174,7 +200,9 @@ if __name__ == '__main__':
 
 ## Workflow
 
-1. **Reproduce** — run Hali with MTP enabled (`hali.config-mtp.json`) and capture `hali.log`.
+1. **Reproduce** — run Hali with MTP enabled (`hali.config-mtp.json`) and capture a
+   clean MTP log using the env-vars (see "Capturing a clean MTP log" above):
+   `HALI_LOG_FILTER=mtp HALI_LOG_FILE=/tmp/mtp.log ./hali`
 2. **Summarise** — run the log script to get acceptance rate, phase timings, and any errors.
 3. **Diagnose** — compare against the baselines in `plans/mtp-perf-1.md`:
    - Acceptance < 50% → check penalty/temperature alignment (plan 1, item 1a/7)
