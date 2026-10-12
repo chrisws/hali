@@ -121,7 +121,6 @@ struct Llama {
   void set_temperature(float temperature) { _temperature = temperature; dirty(); }
   void set_top_k(int top_k) { _top_k = top_k; dirty(); }
   void set_top_p(float top_p) { _top_p = top_p; dirty(); }
-  void set_grammar(const string &src, const string &root);
   void set_seed(unsigned int seed) { _seed = seed; dirty(); }
 
   // error handling
@@ -196,8 +195,6 @@ private:
   llama_sampler *_sampler;
   const llama_vocab *_vocab;
   vector<string> _stop_sequences;
-  string _grammar_src;
-  string _grammar_root;
   string _last_error;
   string _template;
   int32_t _penalty_last_n;

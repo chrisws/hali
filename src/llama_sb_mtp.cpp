@@ -365,9 +365,6 @@ bool Llama::configure_mtp_sampler() {
     sp.penalty_repeat   = _penalty_repeat;
     sp.penalty_freq     = _penalty_freq;
     sp.penalty_present  = _penalty_present;
-    if (!_grammar_src.empty()) {
-      sp.grammar = common_grammar(COMMON_GRAMMAR_TYPE_USER, _grammar_src, _grammar_root);
-    }
     _smpl_mtp = common_sampler_init(_model, sp);
     if (!_smpl_mtp) {
       set_last_error("failed to initialize MTP sampler");

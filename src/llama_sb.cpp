@@ -112,6 +112,7 @@ Llama::Llama() :
   const char *home = getenv("HOME");
   const auto path = std::string(home ? home : ".") + "/.config/hali/hali-common.log";
   common_log_set_file(common_log_main(), path.c_str());
+  common_log_set_verbosity_thold(0);
 
   reset();
   llama_backend_init();
@@ -123,8 +124,6 @@ Llama::Llama(Llama &&other) noexcept
   , _sampler(std::exchange(other._sampler, nullptr))
   , _vocab(std::exchange(other._vocab, nullptr))
   , _stop_sequences(std::move(other._stop_sequences))
-  , _grammar_src(std::move(other._grammar_src))
-  , _grammar_root(std::move(other._grammar_root))
   , _last_error(std::move(other._last_error))
   , _template(std::move(other._template))
   , _penalty_last_n(other._penalty_last_n)
@@ -367,12 +366,6 @@ bool Llama::load_embedding_model(const string &model_path) {
   }
 
   return _last_error.empty();
-}
-
-void Llama::set_grammar(const string &src, const string &root) {
-  _grammar_src = src;
-  _grammar_root = root;
-  dirty();
 }
 
 bool Llama::add_message(LlamaIter &iter, const string &role, const string &content) {
@@ -682,15 +675,6 @@ bool Llama::configure_sampler() {
   sparams.no_perf = false;
   llama_sampler *chain = llama_sampler_chain_init(sparams);
 
-  if (!_grammar_src.empty()) {
-    llama_sampler *grammar = llama_sampler_init_grammar(_vocab, _grammar_src.c_str(), _grammar_root.c_str());
-    if (!grammar) {
-      llama_sampler_free(chain);
-      set_last_error("failed to initialize grammar sampler");
-      return false;
-    }
-    llama_sampler_chain_add(chain, grammar);
-  }
   if (_penalty_last_n != 0 && _penalty_repeat != 1.0f) {
     auto n_vocab = llama_vocab_n_tokens(_vocab);
     auto penalties = llama_sampler_init_penalties(n_vocab, _penalty_last_n, _penalty_repeat, _penalty_freq, _penalty_present);
