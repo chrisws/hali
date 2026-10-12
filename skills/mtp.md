@@ -27,30 +27,30 @@ Hali writes to `hali.log` in this format:
 
 MTP-specific log lines (all prefixed `HALI: MTP`):
 
-| Pattern | Level | Meaning |
-|---------|-------|---------|
-| `MTP detected: N nextn layers` | DEBUG | Model has MTP head |
-| `MTP ready: n_max=N n_min=N p_min=N.NN` | DEBUG | Speculative context initialised |
-| `MTP available (N layers) but disabled` | DEBUG | MTP present but not enabled in config |
-| `MTP speculative init failed, continuing without speculative decoding` | DEBUG | `common_speculative_init` returned null |
-| `MTP: N/N accepted (limit=L) gpu=NNNN cpu=NNNN` | DEBUG | Per-round acceptance, adaptive limit, and phase timing (µs) |
-| `MTP: NNN rounds, X.XX tok/rnd, accept NN% \| gpu NNN.N cpu NNN.N (us)` | DEBUG | Summary every 128 rounds |
-| `MTP: verify decode failed rc=N (k=N pos=N)` | DEBUG | Target decode error |
-| `MTP: speculative process (verify) failed: ..., disabling MTP` | DEBUG | Draft/target KV desync |
-| `MTP: speculative process failed: ...` | DEBUG | `sync_and_capture_mtp` failure |
-| `MTP: ctx_dft pos range [A, B], batch pos [C, D]` | DEBUG | Diagnostic: draft context vs batch position range (on process failure) |
-| `MTP: seq_rm failed, disabling MTP` | DEBUG | KV rollback failure |
-| `MTP: rolled back N unemitted KV tokens (keep_end=N)` | DEBUG | Early-termination rollback |
+| Pattern                                                                 | Level | Meaning                                                                |
+|-------------------------------------------------------------------------|-------|------------------------------------------------------------------------|
+| `MTP detected: N nextn layers`                                          | DEBUG | Model has MTP head                                                     |
+| `MTP ready: n_max=N n_min=N p_min=N.NN`                                 | DEBUG | Speculative context initialised                                        |
+| `MTP available (N layers) but disabled`                                 | DEBUG | MTP present but not enabled in config                                  |
+| `MTP speculative init failed, continuing without speculative decoding`  | DEBUG | `common_speculative_init` returned null                                |
+| `MTP: N/N accepted (limit=L) gpu=NNNN cpu=NNNN`                         | DEBUG | Per-round acceptance, adaptive limit, and phase timing (µs)            |
+| `MTP: NNN rounds, X.XX tok/rnd, accept NN% \| gpu NNN.N cpu NNN.N (us)` | DEBUG | Summary every 128 rounds                                               |
+| `MTP: verify decode failed rc=N (k=N pos=N)`                            | DEBUG | Target decode error                                                    |
+| `MTP: speculative process (verify) failed: ..., disabling MTP`          | DEBUG | Draft/target KV desync                                                 |
+| `MTP: speculative process failed: ...`                                  | DEBUG | `sync_and_capture_mtp` failure                                         |
+| `MTP: ctx_dft pos range [A, B], batch pos [C, D]`                       | DEBUG | Diagnostic: draft context vs batch position range (on process failure) |
+| `MTP: seq_rm failed, disabling MTP`                                     | DEBUG | KV rollback failure                                                    |
+| `MTP: rolled back N unemitted KV tokens (keep_end=N)`                   | DEBUG | Early-termination rollback                                             |
 
 ## Log Environment Variables
 
 Hali's logging supports two environment variables to control what is written and
 where:
 
-| Variable | Purpose | Example |
-|----------|---------|---------|
-| `HALI_LOG_FILE` | Override the log file path | `HALI_LOG_FILE=/tmp/mtp.log` |
-| `HALI_LOG_FILTER` | Comma-separated category filter | `HALI_LOG_FILTER=mtp` |
+| Variable          | Purpose                         | Example                      |
+|-------------------|---------------------------------|------------------------------|
+| `HALI_LOG_FILE`   | Override the log file path      | `HALI_LOG_FILE=/tmp/mtp.log` |
+| `HALI_LOG_FILTER` | Comma-separated category filter | `HALI_LOG_FILTER=mtp`        |
 
 - **`HALI_LOG_FILTER`** — when set, only log lines tagged with a matching category
   are written. Untagged lines (general logging, tool requests, etc.) are excluded.
@@ -88,117 +88,11 @@ python3 scripts/mtp_log_summary.py /tmp/mtp.log
 
 ### Script location
 
-The script lives at `scripts/mtp_log_summary.py`. If it doesn't exist yet, create it
-with the following behaviour:
-
-```python
-#!/usr/bin/env python3
-"""Parse hali.log and summarise MTP speculative decoding performance."""
-
-import re
-import sys
-from collections import Counter
-from datetime import datetime
-
-LOG_RE = re.compile(r'^\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\] \[(\w+)\] (.*)$')
-ACCEPT_RE = re.compile(r'HALI: MTP: (\d+)/(\d+) accepted')
-SUMMARY_RE = re.compile(
-    r'HALI: MTP: (\d+) rounds, ([\d.]+) tok/rnd, accept (\d+)% \| '
-    r'gpu ([\d.]+) cpu ([\d.]+) \(us\)'
-)
-ERROR_RE = re.compile(r'(failed|disabling|disabled)')
-
-def main():
-    if len(sys.argv) < 2:
-        print("Usage: python3 mtp_log_summary.py <logfile>")
-        sys.exit(1)
-
-    accepts = []
-    summaries = []
-    errors = []
-    mtp_info = []
-    timestamps = []
-
-    with open(sys.argv[1]) as f:
-        for line in f:
-            m = LOG_RE.match(line.strip())
-            if not m:
-                continue
-            ts, level, msg = m.groups()
-            timestamps.append(ts)
-
-            am = ACCEPT_RE.search(msg)
-            if am:
-                accepts.append((int(am.group(1)), int(am.group(2))))
-                continue
-
-            sm = SUMMARY_RE.search(msg)
-            if sm:
-                summaries.append(sm.groups())
-                continue
-
-            if 'HALI: MTP' in msg and (level == 'DEBUG' or ERROR_RE.search(msg)):
-                if 'accepted' not in msg:
-                    mtp_info.append((ts, level, msg))
-
-            if ERROR_RE.search(msg) and 'HALI: MTP' in msg:
-                errors.append((ts, msg))
-
-    # --- Output ---
-    print("=== MTP Log Summary ===\n")
-
-    # Config
-    print("Config / Init:")
-    for ts, level, msg in mtp_info:
-        if 'detected' in msg or 'ready' in msg or 'disabled' in msg or 'failed' in msg:
-            print(f"  [{ts}] {msg}")
-    print()
-
-    # Acceptance
-    if accepts:
-        total_drafted = sum(d for _, d in accepts)
-        total_accepted = sum(a for a, _ in accepts)
-        rate = 100.0 * total_accepted / total_drafted if total_drafted else 0
-        hist = Counter(f"{a}/{d}" for a, d in accepts)
-        print(f"Acceptance: {total_accepted}/{total_drafted} ({rate:.1f}%) over {len(accepts)} rounds")
-        print("Histogram:")
-        for key in sorted(hist, key=lambda x: int(x.split('/')[0])):
-            bar = '#' * (hist[key] * 40 // max(hist.values()))
-            print(f"  {key:>4}  {hist[key]:>5}  {bar}")
-        print()
-
-    # Phase timing (from 128-round summaries)
-    if summaries:
-        print("Phase timing (avg µs, from 128-round summaries):")
-        last = summaries[-1]
-        labels = ['rounds', 'tok/rnd', 'accept%', 'gpu', 'cpu']
-        for label, val in zip(labels, last):
-            print(f"  {label:>10}: {val}")
-        print()
-
-    # Errors
-    if errors:
-        print("Errors / Disables:")
-        for ts, msg in errors:
-            print(f"  [{ts}] {msg}")
-        print()
-
-    # Throughput estimate
-    if len(timestamps) >= 2:
-        t0 = datetime.strptime(timestamps[0], '%Y-%m-%d %H:%M:%S')
-        t1 = datetime.strptime(timestamps[-1], '%Y-%m-%d %H:%M:%S')
-        dur = (t1 - t0).total_seconds()
-        if dur > 0 and accepts:
-            total_tokens = total_accepted + len(accepts)  # accepted + 1 per round
-            print(f"Duration: {dur:.1f}s | ~{total_tokens} tokens | ~{total_tokens/dur:.1f} tok/s")
-
-if __name__ == '__main__':
-    main()
-```
+The script lives at `scripts/mtp_log_summary.py`
 
 ## Workflow
 
-1. **Reproduce** — run Hali with MTP enabled (`hali.config-mtp.json`) and capture a
+1. **Reproduce** — run Hali with MTP enabled (`hali.config.json`) and capture a
    clean MTP log using the env-vars (see "Capturing a clean MTP log" above):
    `HALI_LOG_FILTER=mtp HALI_LOG_FILE=/tmp/mtp.log ./hali`
 2. **Summarise** — run the log script to get acceptance rate, phase timings, and any errors.
@@ -228,7 +122,7 @@ if __name__ == '__main__':
 
 ## Configuration
 
-MTP is controlled via `hali.config-mtp.json`:
+MTP is controlled via `hali.config.json`:
 - `mtp_enabled` — master switch
 - `mtp_n_max` — max draft tokens per round (default 3)
 - `mtp_n_min` — min draft tokens (default 0)

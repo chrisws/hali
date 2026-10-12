@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Parse hali.log and summarise MTP speculative decoding performance.
 
-Splits the log into sessions at 'hali starting' markers and, when multiple
-sessions are present, prints a comparison table with deltas to highlight
-improvements or regressions between runs.
+Splits the log into sessions at 'hali starting' markers and, within each
+session, into segments at 'MTP ready' setting changes.  When multiple
+segments are present, prints a comparison table with deltas to highlight
+improvements or regressions between configurations.
 
 Usage: python3 scripts/mtp_log_summary.py <logfile>
 """
@@ -22,6 +23,7 @@ SUMMARY_RE = re.compile(
 )
 ERROR_RE = re.compile(r'(failed|disabling|disabled)')
 SESSION_RE = re.compile(r'hali starting', re.IGNORECASE)
+MTP_READY_RE = re.compile(r'HALI: MTP ready: n_max=(\d+) n_min=(\d+) p_min=([\d.]+)')
 
 
 def split_sessions(lines):
@@ -43,23 +45,36 @@ def split_sessions(lines):
 
 
 def parse_session(lines):
-    """Parse one session's lines into raw data lists."""
-    accepts = []
-    summaries = []
-    errors = []
-    mtp_info = []
-    timestamps = []
+    """Parse one session's lines into segments split at MTP setting changes."""
+    segments = []
+    current = _new_segment()
 
     for line in lines:
         m = LOG_RE.match(line.strip())
         if not m:
             continue
         ts, level, msg = m.groups()
-        timestamps.append(ts)
+        current['timestamps'].append(ts)
+
+        # Check for MTP settings change
+        rm = MTP_READY_RE.search(msg)
+        if rm:
+            # Close current segment if it has data
+            if current['accepts'] or current['summaries']:
+                segments.append(current)
+            # Start new segment with the new settings
+            current = _new_segment()
+            current['settings'] = {
+                'n_max': int(rm.group(1)),
+                'n_min': int(rm.group(2)),
+                'p_min': float(rm.group(3)),
+            }
+            current['mtp_info'].append((ts, level, msg))
+            continue
 
         am = ACCEPT_RE.search(msg)
         if am:
-            accepts.append({
+            current['accepts'].append({
                 'acc': int(am.group(1)),
                 'drafted': int(am.group(2)),
                 'limit': int(am.group(3)),
@@ -70,7 +85,7 @@ def parse_session(lines):
 
         am_old = ACCEPT_RE_OLD.search(msg)
         if am_old:
-            accepts.append({
+            current['accepts'].append({
                 'acc': int(am_old.group(1)),
                 'drafted': int(am_old.group(2)),
                 'limit': None,
@@ -81,27 +96,36 @@ def parse_session(lines):
 
         sm = SUMMARY_RE.search(msg)
         if sm:
-            summaries.append(sm.groups())
+            current['summaries'].append(sm.groups())
             continue
 
         if 'HALI: MTP' in msg and (level == 'DEBUG' or ERROR_RE.search(msg)):
             if 'accepted' not in msg:
-                mtp_info.append((ts, level, msg))
+                current['mtp_info'].append((ts, level, msg))
 
         if ERROR_RE.search(msg) and 'HALI: MTP' in msg:
-            errors.append((ts, msg))
+            current['errors'].append((ts, msg))
 
+    # Close final segment
+    if current['accepts'] or current['summaries'] or current['mtp_info']:
+        segments.append(current)
+
+    return segments
+
+
+def _new_segment():
     return {
-        'accepts': accepts,
-        'summaries': summaries,
-        'errors': errors,
-        'mtp_info': mtp_info,
-        'timestamps': timestamps,
+        'accepts': [],
+        'summaries': [],
+        'errors': [],
+        'mtp_info': [],
+        'timestamps': [],
+        'settings': None,
     }
 
 
 def compute_metrics(data):
-    """Compute summary metrics from parsed session data."""
+    """Compute summary metrics from parsed segment data."""
     accepts = data['accepts']
     timestamps = data['timestamps']
     m = {}
@@ -159,10 +183,18 @@ def delta_str(cur, prev, fmt_str, lower_is_better=False):
     return f"{sign}{fmt_str.format(d)} {arrow}"
 
 
-def print_session_detail(idx, data, metrics):
-    """Print detailed stats for one session."""
+def settings_label(settings):
+    """Format a settings dict as a short label."""
+    if settings is None:
+        return 'default'
+    return f"n_max={settings['n_max']} n_min={settings['n_min']} p_min={settings['p_min']:.2f}"
+
+
+def print_segment_detail(idx, data, metrics):
+    """Print detailed stats for one segment."""
     accepts = data['accepts']
-    print(f"=== Session {idx} ===\n")
+    label = settings_label(data['settings'])
+    print(f"=== Segment {idx} [{label}] ===\n")
 
     # Config / Init
     print("Config / Init:")
@@ -228,16 +260,15 @@ def print_session_detail(idx, data, metrics):
     print()
 
 
-def print_comparison(all_metrics):
-    """Print a comparison table across sessions with deltas."""
+def print_comparison(all_segments, all_metrics):
+    """Print a comparison table across segments with deltas."""
     n = len(all_metrics)
     if n < 2:
         return
 
-    print("=== Session Comparison ===\n")
+    print("=== Settings Comparison ===\n")
 
-    # Column headers
-    col_w = 12
+    col_w = 14
     header = f"{'Metric':<16}"
     for i in range(n):
         header += f"{'S' + str(i + 1):>{col_w}}"
@@ -245,11 +276,18 @@ def print_comparison(all_metrics):
     print(header)
     print("-" * len(header))
 
+    # Settings row
+    line = f"{'Settings':<16}"
+    for seg in all_segments:
+        line += f"{settings_label(seg['settings']):>{col_w}}"
+    line += f"{'':>16}"
+    print(line)
+    print("-" * len(header))
+
     def row(label, vals, fmt_s, lower_better=False):
         line = f"{label:<16}"
         for v in vals:
-            line += f"{fmt(v, fmt_s):>#{col_w}}"
-        # delta: last vs first
+            line += f"{fmt(v, fmt_s):>{col_w}}"
         if len(vals) >= 2 and vals[-1] is not None and vals[0] is not None:
             line += f"{delta_str(vals[-1], vals[0], fmt_s, lower_better):>16}"
         else:
@@ -275,15 +313,18 @@ def main():
         lines = f.readlines()
 
     sessions = split_sessions(lines)
-    all_data = [parse_session(s) for s in sessions]
-    all_metrics = [compute_metrics(d) for d in all_data]
+    all_segments = []
+    for session_lines in sessions:
+        all_segments.extend(parse_session(session_lines))
 
-    # Print per-session detail
-    for i, (data, metrics) in enumerate(zip(all_data, all_metrics), 1):
-        print_session_detail(i, data, metrics)
+    all_metrics = [compute_metrics(s) for s in all_segments]
 
-    # Print comparison table if multiple sessions
-    print_comparison(all_metrics)
+    # Print per-segment detail
+    for i, (seg, metrics) in enumerate(zip(all_segments, all_metrics), 1):
+        print_segment_detail(i, seg, metrics)
+
+    # Print comparison table if multiple segments
+    print_comparison(all_segments, all_metrics)
 
 
 if __name__ == '__main__':
