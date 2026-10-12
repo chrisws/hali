@@ -485,7 +485,7 @@ void Tui::dismiss_modal_popup() {
   if (modal_plane_) {
     ncplane_destroy(modal_plane_);
     modal_plane_ = nullptr;
-    notcurses_render(nc_);
+    redraw_all();
   }
 }
 
@@ -504,7 +504,7 @@ void Tui::dismiss_modal_popup() {
 // Returns the chosen path, or "" on cancel.
 //
 std::string Tui::file_picker(const std::string &start_dir,
-                             const std::string &title_hint) const {
+                             const std::string &title_hint) {
   std::string current_dir = start_dir;
   {
     std::error_code ec;
@@ -695,7 +695,7 @@ std::string Tui::file_picker(const std::string &start_dir,
   }
 
   ncplane_destroy(picker);
-  notcurses_render(nc_);
+  redraw_all();
   return result;
 }
 
@@ -706,7 +706,7 @@ std::string Tui::file_picker(const std::string &start_dir,
 //   n / N / Esc    → false
 //   other keys     → ignored
 //
-bool Tui::confirm_dialog(const std::string &prompt) const {
+bool Tui::confirm_dialog(const std::string &prompt) {
   // Create a centered popup plane.
   int popup_w = std::min(static_cast<int>(prompt.size()) + 16, term_cols_ - 4);
   popup_w = std::max(popup_w, 40);
@@ -764,8 +764,7 @@ bool Tui::confirm_dialog(const std::string &prompt) const {
   }
 
   ncplane_destroy(popup);
-  redraw_input();
-  notcurses_render(nc_);
+  redraw_all();
   return result;
 }
 

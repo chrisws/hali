@@ -396,7 +396,7 @@ class Tui final: TuiContext {
   void append_token(const std::string &token);
 
   // ── interaction ───────────────────────────────────────────────────
-  bool confirm_dialog(const std::string &prompt) const;
+  bool confirm_dialog(const std::string &prompt);
   std::string readline() { return input_.readline(*this); }
   std::string save_chat(const std::string &file) const;
   std::vector<std::string> get_chat() const;
@@ -410,8 +410,8 @@ class Tui final: TuiContext {
 
   // ── folder picker popup ───────────────────────────────────────
   std::string file_picker(const std::string &start_dir,
-                          const std::string &title_hint = "File") const;
-  std::string rag_folder_picker(const std::string &start_dir) const {
+                          const std::string &title_hint = "File");
+  std::string rag_folder_picker(const std::string &start_dir) {
     return file_picker(start_dir, "RAG Folder");
   }
 
