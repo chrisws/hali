@@ -16,7 +16,7 @@
 
 static const std::vector<std::string> ALLOWED_TOOLS = {
   "wc", "stat", "tr", "cut", "sort", "uniq", "od", "xxd", "git",
-  "file", "uname", "whoami", "pwd", "id", "g++", "date", "make", "./maintain.sh"
+  "file", "uname", "whoami", "pwd", "id", "g++", "date", "make"
 };
 
 static KVCachePreset to_kv_preset(const std::string &str) {
@@ -197,7 +197,7 @@ std::string HaliConfig::build_system_prompt() const {
     "  TOOL:MKDIR  <dir>          create a subfolder inside the sandbox\n"
     "  TOOL:EXISTS <file>         YES or NO\n"
     "  TOOL:RUN    <prog> [args]  run program inside sandbox\n"
-    "  TOOL:BUILD  [mode]         build/test/clean (auto-detects CMake or Maven; modes: build, test, clean, default=all)\n"
+    "  TOOL:BUILD  [mode]         build/test/clean (auto-detects CMake, Gradle, Maven, Python; modes: build, test, clean, default=all)\n"
     "  TOOL:REPLACE <file> <find>|<replace> [flags]  replace text in file (flags: --all, --count)\n"
     "  TOOL:DATE                  current date\n"
     "  TOOL:TIME                  current time\n"
@@ -283,6 +283,7 @@ std::string HaliConfig::build_system_prompt() const {
     "- Ask clarifying questions if the request is ambiguous or missing parameters\n"
     "- Prefer direct answers when no tools are needed\n"
     "- After each tool result, explain in plain English what was done\n"
+    "- Always consider whether to add unit tests for any changes\n"
     "- If no user request is provided, respond with a brief readiness message\n\n"
 
     "## Auto-Restart Protocol\n"

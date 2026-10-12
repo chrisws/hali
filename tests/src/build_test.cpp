@@ -235,6 +235,126 @@ static void test_gradle_over_maven() {
   teardown_sandbox();
 }
 
+//
+// test: Python detection via pyproject.toml
+//
+static void test_python_detection_pyproject() {
+  setup_sandbox();
+  write_file(SANDBOX + "/pyproject.toml", "[project]\nname = \"test\"\n");
+  auto r = build_run(SANDBOX, "invalid", [](const string &) {});
+  assert(!r.success_);
+  assert(r.output_.find("no recognised build system") == string::npos);
+  assert(r.output_.find("unknown build mode") != string::npos);
+  teardown_sandbox();
+}
+
+//
+// test: Python detection via setup.py
+//
+static void test_python_detection_setup_py() {
+  setup_sandbox();
+  write_file(SANDBOX + "/setup.py", "from setuptools import setup\nsetup()\n");
+  auto r = build_run(SANDBOX, "invalid", [](const string &) {});
+  assert(!r.success_);
+  assert(r.output_.find("no recognised build system") == string::npos);
+  assert(r.output_.find("unknown build mode") != string::npos);
+  teardown_sandbox();
+}
+
+//
+// test: Python detection via requirements.txt
+//
+static void test_python_detection_requirements() {
+  setup_sandbox();
+  write_file(SANDBOX + "/requirements.txt", "requests\nflask\n");
+  auto r = build_run(SANDBOX, "invalid", [](const string &) {});
+  assert(!r.success_);
+  assert(r.output_.find("no recognised build system") == string::npos);
+  assert(r.output_.find("unknown build mode") != string::npos);
+  teardown_sandbox();
+}
+
+//
+// test: Python detection via bare .py script
+//
+static void test_python_detection_bare_script() {
+  setup_sandbox();
+  write_file(SANDBOX + "/hello.py", "print('hello')\n");
+  auto r = build_run(SANDBOX, "invalid", [](const string &) {});
+  assert(!r.success_);
+  assert(r.output_.find("no recognised build system") == string::npos);
+  assert(r.output_.find("unknown build mode") != string::npos);
+  teardown_sandbox();
+}
+
+//
+// test: CMake takes priority over Python
+//
+static void test_cmake_over_python() {
+  setup_sandbox();
+  write_file(SANDBOX + "/CMakeLists.txt", "cmake_minimum_required(VERSION 3.15)\n");
+  write_file(SANDBOX + "/pyproject.toml", "[project]\nname = \"test\"\n");
+  fs::create_directories(SANDBOX + "/build");
+  write_file(SANDBOX + "/build/Makefile", "clean:\n\techo 'cmake cleaned'\n");
+  fs::create_directories(SANDBOX + "/tests/build");
+  write_file(SANDBOX + "/tests/build/Makefile", "clean:\n\techo 'cmake tests cleaned'\n");
+
+  auto r = build_run(SANDBOX, "clean", [](const string &) {});
+  assert(r.success_);
+  assert(r.output_.find("cmake cleaned") != string::npos);
+  assert(r.output_.find("python3") == string::npos);
+  teardown_sandbox();
+}
+
+//
+// test: Python clean mode removes __pycache__ and .pyc files
+//
+static void test_python_clean() {
+  setup_sandbox();
+  write_file(SANDBOX + "/main.py", "print('hi')\n");
+  // Create artifacts that clean should remove
+  fs::create_directories(SANDBOX + "/__pycache__");
+  write_file(SANDBOX + "/__pycache__/main.cpython-311.pyc", "fake");
+  write_file(SANDBOX + "/main.pyc", "fake");
+  fs::create_directories(SANDBOX + "/.pytest_cache");
+  write_file(SANDBOX + "/.pytest_cache/CACHEDIR.TAG", "fake");
+
+  auto r = build_run(SANDBOX, "clean", [](const string &) {});
+  assert(r.success_);
+  assert(r.output_.find("Cleaning Python artifacts") != string::npos);
+  assert(r.output_.find("Clean complete") != string::npos);
+  // Verify artifacts were removed
+  assert(!fs::exists(SANDBOX + "/__pycache__"));
+  assert(!fs::exists(SANDBOX + "/main.pyc"));
+  assert(!fs::exists(SANDBOX + "/.pytest_cache"));
+  teardown_sandbox();
+}
+
+//
+// test: Python build mode runs syntax check
+//
+static void test_python_build() {
+  setup_sandbox();
+  write_file(SANDBOX + "/main.py", "print('hello')\n");
+  auto r = build_run(SANDBOX, "build", [](const string &) {});
+  assert(r.success_);
+  assert(r.output_.find("Syntax-checking Python files") != string::npos);
+  assert(r.output_.find("Syntax check complete") != string::npos);
+  teardown_sandbox();
+}
+
+//
+// test: Python build mode fails on syntax error
+//
+static void test_python_build_syntax_error() {
+  setup_sandbox();
+  write_file(SANDBOX + "/bad.py", "def broken(:\n  pass\n");
+  auto r = build_run(SANDBOX, "build", [](const string &) {});
+  assert(!r.success_);
+  assert(r.output_.find("Syntax check complete") != string::npos);
+  teardown_sandbox();
+}
+
 void build_test() {
   cout << "=== Running TOOL:BUILD Unit Tests ===\n\n";
 
@@ -250,6 +370,14 @@ void build_test() {
   RUN_TEST(test_gradle_clean);
   RUN_TEST(test_cmake_over_gradle);
   RUN_TEST(test_gradle_over_maven);
+  RUN_TEST(test_python_detection_pyproject);
+  RUN_TEST(test_python_detection_setup_py);
+  RUN_TEST(test_python_detection_requirements);
+  RUN_TEST(test_python_detection_bare_script);
+  RUN_TEST(test_cmake_over_python);
+  RUN_TEST(test_python_clean);
+  RUN_TEST(test_python_build);
+  RUN_TEST(test_python_build_syntax_error);
 
   cout << "\n=== All TOOL:BUILD tests completed ===\n";
 }
