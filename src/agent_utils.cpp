@@ -26,7 +26,7 @@ namespace fs = std::filesystem;
 //
 static const std::vector<std::string> CODE_EXTENSIONS = {
   ".py",".c",".cpp",".h",".bas",".java",".html",".js",".ts",
-  ".json",".yaml",".toml",".sh",".go",".rs",".jsx",".tsx",".xml"
+  ".json",".yaml",".toml",".sh",".go",".rs",".jsx",".tsx",".xml",".svg"
 };
 
 //

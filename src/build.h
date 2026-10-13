@@ -16,7 +16,7 @@ struct BuildResult {
   std::string output_;
 };
 
-// mode: "build" | "test" | "clean" | "all"
+// mode: "setup" | "build" | "test" | "clean" | "all"
 // sandbox: root directory of the project
 // status: callback for progress messages (e.g. tui.show_tool)
 BuildResult build_run(const std::string &sandbox, const std::string &mode,

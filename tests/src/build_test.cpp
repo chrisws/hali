@@ -355,6 +355,150 @@ static void test_python_build_syntax_error() {
   teardown_sandbox();
 }
 
+//
+// test: CMake setup with no tests directory
+//
+static void test_cmake_setup_no_tests() {
+  setup_sandbox();
+  write_file(SANDBOX + "/CMakeLists.txt",
+    "cmake_minimum_required(VERSION 3.15)\n"
+    "project(setuptest CXX)\n");
+  write_file(SANDBOX + "/main.cpp", "int main(){return 0;}\n");
+
+  auto r = build_run(SANDBOX, "setup", [](const string &) {});
+  assert(r.success_);
+  assert(r.output_.find("Configuring main build") != string::npos);
+  assert(r.output_.find("No tests/ directory found") != string::npos);
+  assert(r.output_.find("Setup complete") != string::npos);
+  assert(fs::exists(SANDBOX + "/build"));
+  teardown_sandbox();
+}
+
+//
+// test: CMake setup with tests directory
+//
+static void test_cmake_setup_with_tests() {
+  setup_sandbox();
+  write_file(SANDBOX + "/CMakeLists.txt",
+    "cmake_minimum_required(VERSION 3.15)\n"
+    "project(setuptest CXX)\n");
+  write_file(SANDBOX + "/main.cpp", "int main(){return 0;}\n");
+  fs::create_directories(SANDBOX + "/tests");
+  write_file(SANDBOX + "/tests/CMakeLists.txt",
+    "cmake_minimum_required(VERSION 3.15)\n"
+    "project(setuptest_tests CXX)\n");
+
+  auto r = build_run(SANDBOX, "setup", [](const string &) {});
+  assert(r.success_);
+  assert(r.output_.find("Configuring main build") != string::npos);
+  assert(r.output_.find("Configuring test build") != string::npos);
+  assert(r.output_.find("Setup complete") != string::npos);
+  assert(fs::exists(SANDBOX + "/build"));
+  assert(fs::exists(SANDBOX + "/tests/build"));
+  teardown_sandbox();
+}
+
+//
+// test: Maven setup skips generation when pom.xml already exists
+//
+static void test_maven_setup_existing_pom() {
+  setup_sandbox();
+  write_file(SANDBOX + "/pom.xml",
+    "<project><modelVersion>4.0.0</modelVersion></project>\n");
+  auto r = build_run(SANDBOX, "setup", [](const string &) {});
+  assert(r.output_.find("already exists") != string::npos);
+  assert(r.output_.find("Generating basic pom.xml") == string::npos);
+  teardown_sandbox();
+}
+
+//
+// test: Gradle setup succeeds with gradlew and build.gradle
+//
+static void test_gradle_setup_ok() {
+  setup_sandbox();
+  write_file(SANDBOX + "/build.gradle", "apply plugin: 'java'\n");
+  write_file(SANDBOX + "/gradlew", "#!/bin/sh\necho gradlew\n");
+  fs::permissions(SANDBOX + "/gradlew",
+                   fs::perms::owner_all | fs::perms::group_read | fs::perms::others_read);
+
+  auto r = build_run(SANDBOX, "setup", [](const string &) {});
+  assert(r.success_);
+  assert(r.output_.find("gradlew found and made executable") != string::npos);
+  assert(r.output_.find("Setup complete") != string::npos);
+  auto perms = fs::status(SANDBOX + "/gradlew").permissions();
+  assert(perms & fs::perms::owner_exec);
+  teardown_sandbox();
+}
+
+//
+// test: Gradle setup fails when gradlew is missing
+//
+static void test_gradle_setup_no_gradlew() {
+  setup_sandbox();
+  write_file(SANDBOX + "/build.gradle", "apply plugin: 'java'\n");
+
+  auto r = build_run(SANDBOX, "setup", [](const string &) {});
+  assert(!r.success_);
+  assert(r.output_.find("no gradlew found") != string::npos);
+  assert(r.output_.find("Setup complete") != string::npos);
+  teardown_sandbox();
+}
+
+//
+// test: Gradle setup fails when build.gradle is missing
+//
+static void test_gradle_setup_no_build_gradle() {
+  setup_sandbox();
+  write_file(SANDBOX + "/gradlew", "#!/bin/sh\necho gradlew\n");
+  fs::permissions(SANDBOX + "/gradlew",
+                   fs::perms::owner_all | fs::perms::group_read | fs::perms::others_read);
+
+  auto r = build_run(SANDBOX, "setup", [](const string &) {});
+  assert(!r.success_);
+  assert(r.output_.find("no build.gradle found") != string::npos);
+  assert(r.output_.find("Setup complete") != string::npos);
+  teardown_sandbox();
+}
+
+//
+// test: Python setup detects pyproject.toml
+//
+static void test_python_setup_pyproject() {
+  setup_sandbox();
+  write_file(SANDBOX + "/pyproject.toml", "[project]\nname = \"test\"\n");
+  auto r = build_run(SANDBOX, "setup", [](const string &) {});
+  assert(r.success_);
+  assert(r.output_.find("pyproject.toml found") != string::npos);
+  assert(r.output_.find("Setup complete") != string::npos);
+  teardown_sandbox();
+}
+
+//
+// test: Python setup detects setup.py
+//
+static void test_python_setup_setup_py() {
+  setup_sandbox();
+  write_file(SANDBOX + "/setup.py", "from setuptools import setup\nsetup()\n");
+  auto r = build_run(SANDBOX, "setup", [](const string &) {});
+  assert(r.success_);
+  assert(r.output_.find("setup.py found") != string::npos);
+  assert(r.output_.find("Setup complete") != string::npos);
+  teardown_sandbox();
+}
+
+//
+// test: Python setup with no project file (implicit discovery)
+//
+static void test_python_setup_neither() {
+  setup_sandbox();
+  write_file(SANDBOX + "/main.py", "print('hi')\n");
+  auto r = build_run(SANDBOX, "setup", [](const string &) {});
+  assert(r.success_);
+  assert(r.output_.find("implicit discovery") != string::npos);
+  assert(r.output_.find("Setup complete") != string::npos);
+  teardown_sandbox();
+}
+
 void build_test() {
   cout << "=== Running TOOL:BUILD Unit Tests ===\n\n";
 
@@ -378,6 +522,15 @@ void build_test() {
   RUN_TEST(test_python_clean);
   RUN_TEST(test_python_build);
   RUN_TEST(test_python_build_syntax_error);
+  RUN_TEST(test_cmake_setup_no_tests);
+  RUN_TEST(test_cmake_setup_with_tests);
+  RUN_TEST(test_maven_setup_existing_pom);
+  RUN_TEST(test_gradle_setup_ok);
+  RUN_TEST(test_gradle_setup_no_gradlew);
+  RUN_TEST(test_gradle_setup_no_build_gradle);
+  RUN_TEST(test_python_setup_pyproject);
+  RUN_TEST(test_python_setup_setup_py);
+  RUN_TEST(test_python_setup_neither);
 
   cout << "\n=== All TOOL:BUILD tests completed ===\n";
 }

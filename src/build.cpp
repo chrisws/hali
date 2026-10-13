@@ -8,6 +8,7 @@
 
 #include <filesystem>
 #include <format>
+#include <fstream>
 #include <sstream>
 #include <thread>
 
@@ -237,6 +238,133 @@ static BuildResult build_python(const std::string &sandbox, const std::string &m
   return {ok, result};
 }
 
+static BuildResult setup_cmake(const std::string &sandbox,
+                               const std::function<void(const std::string &)> &status) {
+  std::string result;
+  bool ok = true;
+
+  result += "==> Configuring main build...\n";
+  auto out = run_command("cmake -S " + sandbox + " -B " + sandbox + "/build -G \"Unix Makefiles\"", status);
+  if (out.find("Error") != std::string::npos || out.find("CMake Error") != std::string::npos) {
+    ok = false;
+  }
+  result += out;
+
+  if (fs::exists(sandbox + "/tests/CMakeLists.txt")) {
+    result += "==> Configuring test build...\n";
+    out = run_command("cmake -S " + sandbox + "/tests -B " + sandbox + "/tests/build -G \"Unix Makefiles\"", status);
+    if (out.find("Error") != std::string::npos || out.find("CMake Error") != std::string::npos) {
+      ok = false;
+    }
+    result += out;
+  } else {
+    result += "==> No tests/ directory found, skipping test configuration.\n";
+  }
+
+  result += "==> Setup complete.\n";
+  return {ok, result};
+}
+
+static BuildResult setup_maven(const std::string &sandbox,
+                               const std::function<void(const std::string &)> &status) {
+  std::string result;
+  bool ok = true;
+  const std::string pom = sandbox + "/pom.xml";
+
+  if (!fs::exists(pom)) {
+    result += "==> Generating basic pom.xml...\n";
+    // Write a minimal pom.xml
+    std::ofstream f(pom);
+    f << "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+      << "<project xmlns=\"http://maven.apache.org/POM/4.0.0\"\n"
+      << "         xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"\n"
+      << "         xsi:schemaLocation=\"http://maven.apache.org/POM/4.0.0\n"
+      << "         http://maven.apache.org/xsd/maven-4.0.0.xsd\">\n"
+      << "  <modelVersion>4.0.0</modelVersion>\n"
+      << "  <groupId>com.example</groupId>\n"
+      << "  <artifactId>" + fs::path(sandbox).filename().string() + "</artifactId>\n"
+      << "  <version>1.0-SNAPSHOT</version>\n"
+      << "  <packaging>jar</packaging>\n"
+      << "  <properties>\n"
+      << "    <maven.compiler.source>17</maven.compiler.source>\n"
+      << "    <maven.compiler.target>17</maven.compiler.target>\n"
+      << "    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>\n"
+      << "  </properties>\n"
+      << "</project>\n";
+    f.close();
+    result += "==> pom.xml created.\n";
+  } else {
+    result += "==> pom.xml already exists, skipping generation.\n";
+  }
+
+  result += "==> Compiling with Maven...\n";
+  auto out = run_command("mvn -f " + pom + " compile -q", status);
+  if (out.find("BUILD FAILURE") != std::string::npos) {
+    ok = false;
+  }
+  result += out;
+  result += "==> Setup complete.\n";
+  return {ok, result};
+}
+
+static BuildResult setup_gradle(const std::string &sandbox,
+                                const std::function<void(const std::string &)> &status) {
+  std::string result;
+  bool ok = true;
+
+  result += "==> Checking Gradle project structure...\n";
+
+  if (fs::exists(sandbox + "/gradlew")) {
+    // Ensure gradlew is executable
+    fs::permissions(sandbox + "/gradlew",
+                     fs::perms::owner_all | fs::perms::group_read | fs::perms::group_exec |
+                     fs::perms::others_read | fs::perms::others_exec);
+    result += "==> gradlew found and made executable.\n";
+  } else {
+    result += "==> WARNING: no gradlew found. If this is an Android Studio project,\n"
+              "==> the wrapper should already exist. If not, run: gradle wrapper\n";
+    ok = false;
+  }
+
+  if (!fs::exists(sandbox + "/build.gradle") && !fs::exists(sandbox + "/build.gradle.kts")) {
+    result += "==> WARNING: no build.gradle found. This project may need to be\n"
+              "==> set up in Android Studio first.\n";
+    ok = false;
+  }
+
+  result += "==> Setup complete.\n";
+  return {ok, result};
+}
+
+static BuildResult setup_python(const std::string &sandbox,
+                                const std::function<void(const std::string &)> &status) {
+  std::string result;
+  bool ok = true;
+
+  result += "==> Checking Python project structure...\n";
+
+  if (fs::exists(sandbox + "/pyproject.toml")) {
+    result += "==> pyproject.toml found.\n";
+  } else if (fs::exists(sandbox + "/setup.py")) {
+    result += "==> setup.py found.\n";
+  } else {
+    result += "==> No pyproject.toml or setup.py found. Project will use\n"
+              "==> implicit discovery (compileall / unittest discover).\n";
+  }
+
+  // Verify python3 is available
+  auto out = run_command("python3 --version", status);
+  if (out.find("not found") != std::string::npos) {
+    result += "==> WARNING: python3 not found on PATH.\n";
+    ok = false;
+  } else {
+    result += "==> " + out;
+  }
+
+  result += "==> Setup complete.\n";
+  return {ok, result};
+}
+
 BuildResult build_run(const std::string &sandbox, const std::string &mode,
                       const std::function<void(const std::string &)> &status) {
   const auto sys = detect_build_system(sandbox);
@@ -249,8 +377,18 @@ BuildResult build_run(const std::string &sandbox, const std::string &mode,
     m = "all";
   }
 
+  if (m == "setup") {
+    switch (sys) {
+      case BuildSystem::CMAKE:  return setup_cmake(sandbox, status);
+      case BuildSystem::MAVEN:  return setup_maven(sandbox, status);
+      case BuildSystem::GRADLE: return setup_gradle(sandbox, status);
+      case BuildSystem::PYTHON: return setup_python(sandbox, status);
+      default:                  return {false, "ERROR: unsupported build system"};
+    }
+  }
+
   if (m != "build" && m != "test" && m != "clean" && m != "all") {
-    return {false, "ERROR: unknown build mode: " + m + " (expected: build, test, clean, or all)"};
+    return {false, "ERROR: unknown build mode: " + m + " (expected: setup, build, test, clean, or all)"};
   }
 
   switch (sys) {
