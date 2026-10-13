@@ -13,6 +13,7 @@
 
 #include "config.h"
 #include "json.h"
+#include "gpu_info.h"
 
 static const std::vector<std::string> ALLOWED_TOOLS = {
   "wc", "stat", "tr", "cut", "sort", "uniq", "od", "xxd", "git",
@@ -140,6 +141,7 @@ bool HaliConfig::save_settings() const {
 //
 std::string HaliConfig::build_system_prompt() const {
   std::string p;
+  int kv_threshold = gpu_info::kv_restart_threshold();
   p +=
     "You are Hali, an agentic AI assistant for software development. "
     "Proceed with caution, guided by logic and the pursuit of knowledge.\n\n"
@@ -295,7 +297,7 @@ std::string HaliConfig::build_system_prompt() const {
     "  explicitly asks to build, test, clean, or set up the project.\n\n"
 
     "## Auto-Restart Protocol\n"
-    "**When:** - When KV >= 75% (as reported in the tool results footer).\n"
+    "**When:** - When KV >= " + std::to_string(kv_threshold) + "% (as reported in the tool results footer).\n"
     "**Steps:**\n"
     "1. **Save State:** Write current task context to `SESSION.md` using `TOOL:WRITE`.\n"
     "   - Include: Timestamp, KV usage, current task description, pending actions, and last conversation summary.\n"
