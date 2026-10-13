@@ -362,23 +362,10 @@ std::string Agent::process_tool(const std::string &cmd) {
     // clear leading WS from rest
     rest.erase(0, rest.find_first_not_of(" \t"));
 
-    // handle space of newline separator
-    // TOOL:WRITE src/render_transport.cpp\n#include "render_transport.h"\n...
-    // TOOL:WRITE src/render_transport.cpp #include "render_transport.h"\n ...
-    auto NL = rest.find('\n');
-    auto SP = rest.find(' ');
-    int sep;
-    if (NL != std::string::npos && (SP == std::string::npos || NL < SP)) {
-      sep = NL;
-    } else {
-      sep = SP;
-    }
-    if (sep == std::string::npos) {
-      arg1 = rest;
-    } else {
-      arg1 = rest.substr(0, sep);
-      arg2 = rest.substr(sep + 1);
-    }
+    // Quote-aware arg splitting (handles "multi word" patterns)
+    ToolArgs ta = split_tool_args(rest);
+    arg1 = ta.arg1;
+    arg2 = ta.arg2;
   }
 
   if (op == "TOOL:DATE") {

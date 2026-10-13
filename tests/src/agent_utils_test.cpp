@@ -785,6 +785,91 @@ static void test_tool_search_name() {
 }
 
 //
+// split_tool_args tests
+//
+
+static void test_split_tool_args() {
+  // 1. Quoted multi-word: "Plan File" src/config.cpp --line-numbers
+  {
+    ToolArgs r = split_tool_args("\"Plan File\" src/config.cpp --line-numbers");
+    assert(r.arg1 == "\"Plan File\"");
+    assert(r.arg2 == "src/config.cpp --line-numbers");
+  }
+
+  // 2. Quoted single word: "struct" src/
+  {
+    ToolArgs r = split_tool_args("\"struct\" src/");
+    assert(r.arg1 == "\"struct\"");
+    assert(r.arg2 == "src/");
+  }
+
+  // 3. Unquoted single token: src/main.cpp
+  {
+    ToolArgs r = split_tool_args("src/main.cpp");
+    assert(r.arg1 == "src/main.cpp");
+    assert(r.arg2 == "");
+  }
+
+  // 4. Unquoted with flags: src/ --recursive
+  {
+    ToolArgs r = split_tool_args("src/ --recursive");
+    assert(r.arg1 == "src/");
+    assert(r.arg2 == "--recursive");
+  }
+
+  // 5. Single-quoted multi-word: 'hello world' src/
+  {
+    ToolArgs r = split_tool_args("'hello world' src/");
+    assert(r.arg1 == "'hello world'");
+    assert(r.arg2 == "src/");
+  }
+
+  // 6. No closing quote: "hello src/
+  {
+    ToolArgs r = split_tool_args("\"hello src/");
+    assert(r.arg1 == "\"hello src/");
+    assert(r.arg2 == "");
+  }
+
+  // 7. Newline separator: src/file.cpp\ncontent
+  {
+    ToolArgs r = split_tool_args("src/file.cpp\ncontent");
+    assert(r.arg1 == "src/file.cpp");
+    assert(r.arg2 == "content");
+  }
+
+  // 8. Empty string
+  {
+    ToolArgs r = split_tool_args("");
+    assert(r.arg1 == "");
+    assert(r.arg2 == "");
+  }
+
+  // 9. Quoted with trailing flags: "hello world" src/ --recursive --line-numbers
+  {
+    ToolArgs r = split_tool_args("\"hello world\" src/ --recursive --line-numbers");
+    assert(r.arg1 == "\"hello world\"");
+    assert(r.arg2 == "src/ --recursive --line-numbers");
+  }
+
+  // 10. Single-quoted single word: 'struct' src/ --recursive
+  {
+    ToolArgs r = split_tool_args("'struct' src/ --recursive");
+    assert(r.arg1 == "'struct'");
+    assert(r.arg2 == "src/ --recursive");
+  }
+
+  // 11. Newline before space: src/file.cpp \ncontent
+  {
+    ToolArgs r = split_tool_args("src/file.cpp \ncontent");
+    assert(r.arg1 == "src/file.cpp");
+    assert(r.arg2 == "\ncontent");
+  }
+
+  cout << "test_split_tool_args passed" << endl;
+}
+
+//
 // Top-level test entry point
 //
 
@@ -818,6 +903,7 @@ void agent_utils_test() {
   RUN_TEST(test_tool_search);
   RUN_TEST(test_tool_search_name);
   RUN_TEST(test_parse_search_args);
+  RUN_TEST(test_split_tool_args);
 
   cout << "\n=== All agent_utils tests completed ===\n";
 }

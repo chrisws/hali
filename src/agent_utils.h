@@ -23,6 +23,16 @@ std::string resolve_path(const std::string &sandbox, const std::string &p);
 bool path_in_sandbox(const std::string &sandbox, const std::string &path);
 
 //
+// Tool argument splitting
+//
+struct ToolArgs {
+  std::string arg1;
+  std::string arg2;
+};
+
+ToolArgs split_tool_args(const std::string &rest);
+
+//
 // TOOL:SEARCH
 //
 struct SearchFlags {

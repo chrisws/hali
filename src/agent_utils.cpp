@@ -213,6 +213,45 @@ bool path_in_sandbox(const std::string &sandbox, const std::string &path) {
 }
 
 //
+// Tool argument splitting
+//
+ToolArgs split_tool_args(const std::string &rest) {
+  ToolArgs r;
+  if (rest.empty()) return r;
+
+  if (rest[0] == '"' || rest[0] == '\'') {
+    char q = rest[0];
+    auto close = rest.find(q, 1);
+    if (close != std::string::npos) {
+      r.arg1 = rest.substr(0, close + 1);
+      r.arg2 = rest.substr(close + 1);
+      r.arg2.erase(0, r.arg2.find_first_not_of(" \t"));
+      return r;
+    }
+    // No closing quote — treat whole string as arg1
+    r.arg1 = rest;
+    return r;
+  }
+
+  // Existing behaviour: split on first space or newline
+  auto NL = rest.find('\n');
+  auto SP = rest.find(' ');
+  int sep;
+  if (NL != std::string::npos && (SP == std::string::npos || NL < SP)) {
+    sep = NL;
+  } else {
+    sep = SP;
+  }
+  if (sep == std::string::npos) {
+    r.arg1 = rest;
+  } else {
+    r.arg1 = rest.substr(0, sep);
+    r.arg2 = rest.substr(sep + 1);
+  }
+  return r;
+}
+
+//
 // TOOL:SEARCH
 //
 SearchArgs parse_search_args(const std::string &arg1, const std::string &arg2) {
