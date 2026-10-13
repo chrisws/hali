@@ -75,25 +75,7 @@ Llama::Llama() :
   _sampler_dirty(false),
   _can_shift(false),
   _memory_flush(false),
-  _seed(LLAMA_DEFAULT_SEED),
-  _n_mtp_layers(0),
-  _mtp_enabled(false),
-  _mtp_disabled_permanently(false),
-  _mtp_n_max(1),
-  _mtp_n_min(1),
-  _mtp_p_min(0.0f),
-  _smpl_mtp(nullptr),
-  _mtp_buf_head(0),
-  _mtp_buf_len(0),
-  _anchor(LLAMA_TOKEN_NULL),
-  _has_pending(false),
-  _mtp_rounds(0),
-  _mtp_drafted(0),
-  _mtp_accepted(0),
-  _n_ctx(0),
-  _n_batch(0),
-  _mtp_time_gpu(0),
-  _mtp_time_cpu(0) {
+  _seed(LLAMA_DEFAULT_SEED) {
   llama_log_set([](enum ggml_log_level level, const char *text, void *user_data) {
     Llama *llama = static_cast<Llama *>(user_data);
     if (level == GGML_LOG_LEVEL_ERROR && llama->_last_error.empty()) {
@@ -144,45 +126,15 @@ Llama::Llama(Llama &&other) noexcept
   , _can_shift(other._can_shift)
   , _memory_flush(other._memory_flush)
   , _seed(other._seed)
-  , _n_mtp_layers(other._n_mtp_layers)
-  , _mtp_enabled(other._mtp_enabled)
-  , _mtp_disabled_permanently(other._mtp_disabled_permanently)
-  , _mtp_n_max(other._mtp_n_max)
-  , _mtp_n_min(other._mtp_n_min)
-  , _mtp_p_min(other._mtp_p_min)
-  , _spec_init(std::move(other._spec_init))
-  , _spec(std::move(other._spec))
-  , _spec_params(std::move(other._spec_params))
-  , _smpl_mtp(std::exchange(other._smpl_mtp, nullptr))
-  , _mtp_buf_head(other._mtp_buf_head)
-  , _mtp_buf_len(other._mtp_buf_len)
-  , _anchor(other._anchor)
-  , _has_pending(other._has_pending)
-  , _mtp_rounds(other._mtp_rounds)
-  , _mtp_drafted(other._mtp_drafted)
-  , _mtp_accepted(other._mtp_accepted)
-  , _mtp_acc_tokens(std::move(other._mtp_acc_tokens))
-  , _verify_toks(std::move(other._verify_toks))
-  , _verify_pos(std::move(other._verify_pos))
-  , _verify_n_seq(std::move(other._verify_n_seq))
-  , _verify_seq_ids(std::move(other._verify_seq_ids))
-  , _verify_seq_ptrs(std::move(other._verify_seq_ptrs))
-  , _verify_logits(std::move(other._verify_logits))
-  , _draft_toks(std::move(other._draft_toks))
-  , _spec_batch(std::move(other._spec_batch))
-  , _n_ctx(other._n_ctx)
-  , _n_batch(other._n_batch)
-  , _mtp_time_gpu(other._mtp_time_gpu)
-  , _mtp_time_cpu(other._mtp_time_cpu) {
-  std::memcpy(_mtp_buf, other._mtp_buf, sizeof(_mtp_buf));
+  , _mtp(std::move(other._mtp)) {
 }
 
 Llama::~Llama() {
-  if (_smpl_mtp) {
-    common_sampler_free(_smpl_mtp);
+  if (_mtp.smpl) {
+    common_sampler_free(_mtp.smpl);
   }
-  _spec.reset();
-  _spec_init.reset();
+  _mtp.spec.reset();
+  _mtp.spec_init.reset();
   if (_sampler) {
     llama_sampler_free(_sampler);
   }
@@ -211,11 +163,11 @@ void Llama::reset() {
   _tokens_physically_used = 0;
   _seed = LLAMA_DEFAULT_SEED;
   _sampler_dirty = true;
-  mtp_buf_clear();
-  _has_pending = false;
-  _mtp_rounds = 0;
-  _mtp_drafted = 0;
-  _mtp_accepted = 0;
+  _mtp.buf_clear();
+  _mtp.has_pending = false;
+  _mtp.rounds = 0;
+  _mtp.drafted = 0;
+  _mtp.accepted = 0;
   if (_ctx) {
     llama_memory_clear(llama_get_memory(_ctx), true);
   }
@@ -234,12 +186,12 @@ bool Llama::load_model(const LlamaLoad &load) {
   ggml_backend_load_all();
 
   // free any previously loaded model to avoid leaks on reload
-  if (_smpl_mtp) {
-    common_sampler_free(_smpl_mtp);
-    _smpl_mtp = nullptr;
+  if (_mtp.smpl) {
+    common_sampler_free(_mtp.smpl);
+    _mtp.smpl = nullptr;
   }
-  _spec.reset();
-  _spec_init.reset();
+  _mtp.spec.reset();
+  _mtp.spec_init.reset();
   if (_sampler) {
     llama_sampler_free(_sampler);
     _sampler = nullptr;
@@ -253,11 +205,11 @@ bool Llama::load_model(const LlamaLoad &load) {
     _model = nullptr;
   }
   _vocab = nullptr;
-  _n_mtp_layers = 0;
-  _mtp_enabled = false;
-  _mtp_disabled_permanently = false;
-  mtp_buf_clear();
-  _has_pending = false;
+  _mtp.n_layers = 0;
+  _mtp.enabled = false;
+  _mtp.disabled_permanently = false;
+  _mtp.buf_clear();
+  _mtp.has_pending = false;
 
   llama_model_params mparams = llama_model_default_params();
   if (load.n_gpu_layers >= 0) {
@@ -327,8 +279,8 @@ bool Llama::load_model(const LlamaLoad &load) {
       set_last_error("Create context");
     } else {
       _vocab = llama_model_get_vocab(_model);
-      _n_ctx   = llama_n_ctx(_ctx);
-      _n_batch = llama_n_batch(_ctx);
+      _mtp.n_ctx   = llama_n_ctx(_ctx);
+      _mtp.n_batch = llama_n_batch(_ctx);
       _template = llama_model_chat_template(_model, nullptr);
       _is_gemma4 = (_template.find("<|turn>model") != string::npos);
       _can_shift = llama_memory_can_shift(llama_get_memory(_ctx));
@@ -375,8 +327,8 @@ bool Llama::add_message(LlamaIter &iter, const string &role, const string &conte
   int32_t n = 0;
 
   _last_error.clear();
-  mtp_buf_clear();
-  _has_pending = false;
+  _mtp.buf_clear();
+  _mtp.has_pending = false;
   if (_template.empty()) {
     set_last_error("Chat template availability test");
     return false;
@@ -467,27 +419,27 @@ string Llama::next(LlamaIter &iter) {
   }
 
   // tokens left over from the last speculative round
-  if (!mtp_buf_empty()) {
-    llama_token tok = mtp_buf_front();
-    mtp_buf_pop_front();
+  if (!_mtp.buf_empty()) {
+    llama_token tok = _mtp.buf_front();
+    _mtp.buf_pop_front();
     return emit_token(iter, tok);
   }
 
   // the previous round ended with an anchor that was returned but not decoded: run the next round
-  if (_has_pending) {
-    _has_pending = false;
+  if (_mtp.has_pending) {
+    _mtp.has_pending = false;
     llama_token nxt = LLAMA_TOKEN_NULL;
-    if (_mtp_enabled && mtp_round(_anchor, _mtp_acc_tokens, nxt)) {
-      mtp_buf_assign(_mtp_acc_tokens.data(), (int)_mtp_acc_tokens.size());
-      mtp_buf_push_back(nxt);
-      _anchor = nxt;
-      _has_pending = true;
-      llama_token tok = mtp_buf_front();
-      mtp_buf_pop_front();
+    if (_mtp.enabled && mtp_round(_mtp.anchor, _mtp.acc_tokens, nxt)) {
+      _mtp.buf_assign(_mtp.acc_tokens.data(), (int)_mtp.acc_tokens.size());
+      _mtp.buf_push_back(nxt);
+      _mtp.anchor = nxt;
+      _mtp.has_pending = true;
+      llama_token tok = _mtp.buf_front();
+      _mtp.buf_pop_front();
       return emit_token(iter, tok);
     }
     // MTP failed or got disabled: decode the anchor normally and carry on
-    if (!decode_anchor(_anchor)) {
+    if (!decode_anchor(_mtp.anchor)) {
       iter._has_next = false;
       set_last_error("Failed to evaluate token during generation");
       return "";
@@ -500,10 +452,10 @@ string Llama::next(LlamaIter &iter) {
     return "";
   }
 
-  if (_mtp_enabled) {
+  if (_mtp.enabled) {
     // do NOT decode yet: the token heads the next verify batch
-    _anchor = tok;
-    _has_pending = true;
+    _mtp.anchor = tok;
+    _mtp.has_pending = true;
     return emit_token(iter, tok);
   }
 
@@ -704,9 +656,9 @@ bool Llama::configure_sampler() {
 
 // one place for "sample the next anchor", so sampler state never diverges
 llama_token Llama::sample_next() {
-  if (_smpl_mtp) {
-    llama_token tok = common_sampler_sample(_smpl_mtp, _ctx, -1);
-    common_sampler_accept(_smpl_mtp, tok, true);
+  if (_mtp.smpl) {
+    llama_token tok = common_sampler_sample(_mtp.smpl, _ctx, -1);
+    common_sampler_accept(_mtp.smpl, tok, true);
     return tok;
   }
   return llama_sampler_sample(_sampler, _ctx, -1);
@@ -757,13 +709,13 @@ bool Llama::make_space_for_tokens(int n_tokens) {
       _tokens_physically_used = new_used;
 
       // MTP draft context positions are now invalid; clear it
-      auto *ctx_dft = _spec_init ? _spec_init->context() : nullptr;
+      auto *ctx_dft = _mtp.spec_init ? _mtp.spec_init->context() : nullptr;
       if (ctx_dft) {
         llama_memory_clear(llama_get_memory(ctx_dft), true);
       }
-      mtp_buf_clear();
-      _has_pending = false;
-      _anchor = LLAMA_TOKEN_NULL;
+      _mtp.buf_clear();
+      _mtp.has_pending = false;
+      _mtp.anchor = LLAMA_TOKEN_NULL;
 
       return true;
     }

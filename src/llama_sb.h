@@ -9,7 +9,9 @@
 #pragma once
 
 #include <chrono>
+#include <cstring>
 #include <string>
+#include <utility>
 #include <vector>
 #include "llama.h"
 #include "speculative.h"
@@ -88,6 +90,144 @@ struct LlamaLoad {
   float mtp_p_min = 0.0f;    // min probability threshold for draft acceptance
 };
 
+// ---------------------------------------------------------------------------
+// MTP (Multi-Token Prediction) speculative decoding state
+// ---------------------------------------------------------------------------
+struct MtpState {
+  // --- capability & config ceiling ---------------------------------------
+  int   n_layers             = 0;
+  bool  enabled              = false;
+  bool  disabled_permanently = false;
+  int   n_max                = 3;    // config ceiling (hard bound)
+  int   n_min                = 0;    // config floor
+  float p_min                = 0.0f; // config initial
+
+  // --- speculative context ------------------------------------------------
+  common_speculative_init_result_ptr spec_init;
+  common_speculative_ptr             spec;
+  common_params                      spec_params;
+  common_sampler                    *smpl = nullptr;
+
+  // --- pending-token ring buffer -------------------------------------------
+  static constexpr int BUF_MAX = 16;
+  llama_token buf[BUF_MAX] = {};
+  int buf_head = 0;
+  int buf_len  = 0;
+
+  // ring-buffer helpers
+  void buf_clear()   { buf_head = 0; buf_len = 0; }
+  bool buf_empty() const { return buf_len == 0; }
+  int  buf_size()  const { return buf_len; }
+  llama_token buf_front() const { return buf[buf_head]; }
+  void buf_pop_front() { buf_head = (buf_head + 1) % BUF_MAX; buf_len--; }
+  void buf_push_back(llama_token tok) {
+    buf[(buf_head + buf_len) % BUF_MAX] = tok; buf_len++;
+  }
+  void buf_assign(const llama_token *src, int n) {
+    buf_head = 0; buf_len = n;
+    for (int i = 0; i < n; ++i) { buf[i] = src[i]; }
+  }
+
+  // --- anchor / pending ----------------------------------------------------
+  llama_token anchor      = LLAMA_TOKEN_NULL;
+  bool        has_pending = false;
+
+  // --- cumulative stats ------------------------------------------------------
+  uint64_t rounds   = 0;
+  uint64_t drafted  = 0;
+  uint64_t accepted = 0;
+
+  // --- sliding window --------------------------------------------------------
+  static constexpr int WIN = 32;
+  struct WinEntry {
+    int drafted;
+    int accepted;
+    int pos_acc[4] = {};   // per-position acceptance (plan 3)
+  };
+  WinEntry win[WIN] = {};
+  int win_idx      = 0;
+  int win_filled   = 0;
+  int win_drafted  = 0;
+  int win_accepted = 0;
+  int last_limit   = 0;
+
+  // --- adaptive state (plan 3) -----------------------------------------------
+  struct Adaptive {
+    int   eval_counter  = 0;
+    int   cooldown      = 0;
+    int   eff_n_max     = 3;
+    float pos_threshold = 0.30f;
+    float p_min         = 0.0f;
+    int   n_min         = 1;
+  };
+  Adaptive adapt;
+  bool     adaptive_enabled = true;
+
+  // --- pre-allocated round buffers -------------------------------------------
+  vector<llama_token>   acc_tokens;
+  vector<llama_token>   verify_toks;
+  vector<llama_pos>     verify_pos;
+  vector<int32_t>       verify_n_seq;
+  vector<llama_seq_id>  verify_seq_ids;
+  vector<llama_seq_id*> verify_seq_ptrs;
+  vector<int8_t>        verify_logits;
+  vector<llama_token>   draft_toks;
+  common_batch          spec_batch;
+
+  // --- cached context params ---------------------------------------------------
+  int n_ctx   = 0;
+  int n_batch = 0;
+
+  // --- phase timers (cumulative µs) ---------------------------------------------
+  uint64_t time_gpu = 0;
+  uint64_t time_cpu = 0;
+
+  // default constructor
+  MtpState() = default;
+
+  // move constructor (handles raw pointer + fixed array)
+  MtpState(MtpState &&other) noexcept
+    : n_layers(other.n_layers)
+    , enabled(other.enabled)
+    , disabled_permanently(other.disabled_permanently)
+    , n_max(other.n_max)
+    , n_min(other.n_min)
+    , p_min(other.p_min)
+    , spec_init(std::move(other.spec_init))
+    , spec(std::move(other.spec))
+    , spec_params(std::move(other.spec_params))
+    , smpl(std::exchange(other.smpl, nullptr))
+    , buf_head(other.buf_head)
+    , buf_len(other.buf_len)
+    , anchor(other.anchor)
+    , has_pending(other.has_pending)
+    , rounds(other.rounds)
+    , drafted(other.drafted)
+    , accepted(other.accepted)
+    , win_idx(other.win_idx)
+    , win_filled(other.win_filled)
+    , win_drafted(other.win_drafted)
+    , win_accepted(other.win_accepted)
+    , last_limit(other.last_limit)
+    , adapt(other.adapt)
+    , adaptive_enabled(other.adaptive_enabled)
+    , acc_tokens(std::move(other.acc_tokens))
+    , verify_toks(std::move(other.verify_toks))
+    , verify_pos(std::move(other.verify_pos))
+    , verify_n_seq(std::move(other.verify_n_seq))
+    , verify_seq_ids(std::move(other.verify_seq_ids))
+    , verify_seq_ptrs(std::move(other.verify_seq_ptrs))
+    , verify_logits(std::move(other.verify_logits))
+    , draft_toks(std::move(other.draft_toks))
+    , spec_batch(std::move(other.spec_batch))
+    , n_ctx(other.n_ctx)
+    , n_batch(other.n_batch)
+    , time_gpu(other.time_gpu)
+    , time_cpu(other.time_cpu) {
+    std::memcpy(buf, other.buf, sizeof(buf));
+  }
+};
+
 struct Llama {
   explicit Llama();
 
@@ -148,11 +288,11 @@ struct Llama {
   int get_embed_dim() const { return _model != nullptr ? llama_model_n_embd(_model) : 0; }
 
   // MTP (Multi-Token Prediction) speculative decoding
-  bool is_mtp_enabled() const { return _mtp_enabled; }
-  int  mtp_n_layers() const { return _n_mtp_layers; }
-  void set_mtp_n_max(int n) { _mtp_n_max = n; }
-  void set_mtp_n_min(int n) { _mtp_n_min = n; }
-  void set_mtp_p_min(float p) { _mtp_p_min = p; }
+  bool is_mtp_enabled() const { return _mtp.enabled; }
+  int  mtp_n_layers()  const { return _mtp.n_layers; }
+  void set_mtp_n_max(int n) { _mtp.n_max = n; }
+  void set_mtp_n_min(int n) { _mtp.n_min = n; }
+  void set_mtp_p_min(float p) { _mtp.p_min = p; }
 
 private:
   bool batch_decode_tokens(vector<llama_token> &tokens);
@@ -175,21 +315,8 @@ private:
   llama_token sample_next();
 
   // MTP (Multi-Token Prediction) speculative decoding - in llama_sb_mtp.cpp
-  bool configure_mtp_sampler() ;
+  bool configure_mtp_sampler();
 
-  // ring-buffer helpers for _mtp_buf
-  void mtp_buf_clear() { _mtp_buf_head = 0; _mtp_buf_len = 0; }
-  bool mtp_buf_empty() const { return _mtp_buf_len == 0; }
-  int  mtp_buf_size()  const { return _mtp_buf_len; }
-  llama_token mtp_buf_front() const { return _mtp_buf[_mtp_buf_head]; }
-  void mtp_buf_pop_front() { _mtp_buf_head = (_mtp_buf_head + 1) % MTP_BUF_MAX; _mtp_buf_len--; }
-  void mtp_buf_push_back(llama_token tok) { _mtp_buf[(_mtp_buf_head + _mtp_buf_len) % MTP_BUF_MAX] = tok; _mtp_buf_len++; }
-  void mtp_buf_assign(const llama_token *src, int n) {
-    _mtp_buf_head = 0;
-    _mtp_buf_len = n;
-    for (int i = 0; i < n; ++i) { _mtp_buf[i] = src[i]; }
-  }
-  
   llama_model *_model;
   llama_context *_ctx;
   llama_sampler *_sampler;
@@ -217,49 +344,5 @@ private:
   unsigned int _seed;
 
   // MTP (Multi-Token Prediction) speculative decoding state
-  int _n_mtp_layers;
-  bool _mtp_enabled;
-  bool _mtp_disabled_permanently;
-  int _mtp_n_max;
-  int _mtp_n_min;
-  float _mtp_p_min;
-  common_speculative_init_result_ptr _spec_init;
-  common_speculative_ptr _spec;
-  common_params _spec_params;
-  common_sampler *_smpl_mtp;
-  // pending-token ring buffer (O(1) pop-front, replaces vector)
-  static constexpr int MTP_BUF_MAX = 16;
-  llama_token _mtp_buf[MTP_BUF_MAX] = {};
-  int _mtp_buf_head = 0;
-  int _mtp_buf_len  = 0;
-  llama_token _anchor;        // last token handed to the caller but not yet decoded
-  bool _has_pending;          // _anchor is valid
-  uint64_t _mtp_rounds;       // per-instance MTP stats
-  uint64_t _mtp_drafted;
-  uint64_t _mtp_accepted;
-  // sliding-window acceptance tracking for adaptive draft length
-  static constexpr int MTP_WIN = 32;
-  struct MtpWinEntry { int drafted; int accepted; };
-  MtpWinEntry _mtp_win[MTP_WIN] = {};
-  int _mtp_win_idx      = 0;
-  int _mtp_win_filled   = 0;
-  int _mtp_win_drafted  = 0;
-  int _mtp_win_accepted = 0;
-  int _mtp_last_limit   = 0;
-  // pre-allocated buffers for the speculative round (avoid per-round heap allocs)
-  vector<llama_token>   _mtp_acc_tokens;
-  vector<llama_token>   _verify_toks;
-  vector<llama_pos>     _verify_pos;
-  vector<int32_t>       _verify_n_seq;
-  vector<llama_seq_id>  _verify_seq_ids;
-  vector<llama_seq_id*> _verify_seq_ptrs;
-  vector<int8_t>        _verify_logits;
-  vector<llama_token>   _draft_toks;
-  common_batch          _spec_batch;
-  // cached context params (avoid per-round API calls)
-  int _n_ctx   = 0;
-  int _n_batch = 0;
-  // phase timers: cumulative microseconds, logged as averages every 128 rounds
-  uint64_t _mtp_time_gpu = 0;  // draft + verify (GPU fwd passes)
-  uint64_t _mtp_time_cpu = 0;  // sync + sample + rollback (KV mgmt + sampling)
+  MtpState _mtp;
 };
