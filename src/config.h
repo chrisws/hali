@@ -62,6 +62,7 @@ struct HaliConfig {
   int   mtp_n_min_      = 0;
   float mtp_p_min_      = 0.0f;
   bool  mtp_enabled_    = true;
+  bool  mtp_adaptive_   = true;
 
   KVCachePreset kv_preset_ = KVCachePreset::Compact;
 

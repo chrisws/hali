@@ -117,6 +117,7 @@ void HaliConfig::load_settings() {
   root.get_int("mtp_n_max", mtp_n_max_);
   root.get_int("mtp_n_min", mtp_n_min_);
   root.get_float("mtp_p_min", mtp_p_min_);
+  root.get_bool("mtp_adaptive", mtp_adaptive_);
 }
 
 // Persist the current cfg to ~/.config/hali/settings.json.
@@ -207,6 +208,7 @@ std::string HaliConfig::build_system_prompt() const {
     "  TOOL:RAG    <query>        query the RAG index for additional context\n"
     "  TOOL:ASK    <query>        ask the user for clarification or additional context\n"
     "  TOOL:GRAPH  <json>         display tree/bar charts.\n"
+    "  TOOL:TABLE  <R>x<C> <rows>  format pipe-delimited rows into an aligned table\n"
     "  TOOL:INTROSPECT            show current model settings\n"
     "  TOOL:CURL   <url>          HTTP GET, returns response body (max 32 KB)\n"
     "  TOOL:PERMISSION            ask user for explicit permission\n"
@@ -352,7 +354,8 @@ std::string HaliConfig::introspect() const {
     "  \"mtp_enabled\":    {},\n"
     "  \"mtp_n_max\":      {},\n"
     "  \"mtp_n_min\":      {},\n"
-    "  \"mtp_p_min\":      {}\n"
+    "  \"mtp_p_min\":      {},\n"
+    "  \"mtp_adaptive\":   {}\n"
     "}}\n";
   return std::format(tmpl,
                      model_path_,
@@ -376,6 +379,7 @@ std::string HaliConfig::introspect() const {
                      mtp_enabled_,
                      mtp_n_max_,
                      mtp_n_min_,
-                     mtp_p_min_);
+                     mtp_p_min_,
+                     mtp_adaptive_);
 }
 
