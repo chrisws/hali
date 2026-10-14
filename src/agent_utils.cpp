@@ -651,6 +651,28 @@ std::string tool_replace(const std::string &sandbox, const std::string &file, co
 }
 
 //
+// Count display width (UTF-8 code points) of a string
+//
+static int display_width(const std::string &s) {
+  int w = 0;
+  size_t i = 0;
+  while (i < s.size()) {
+    unsigned char c = static_cast<unsigned char>(s[i]);
+    if (c < 0x80) {
+      i += 1;
+    } else if (c < 0xE0) {
+      i += 2;
+    } else if (c < 0xF0) {
+      i += 3;
+    } else {
+      i += 4;
+    }
+    w++;
+  }
+  return w;
+}
+
+//
 // TOOL:TABLE
 //
 TableResult tool_table(const std::string &dims, const std::string &data) {
@@ -688,32 +710,44 @@ TableResult tool_table(const std::string &dims, const std::string &data) {
   std::vector<int> widths(cols, 0);
   for (const auto &row : grid) {
     for (int c = 0; c < cols && c < (int)row.size(); c++) {
-      widths[c] = std::max(widths[c], (int)row[c].size());
+      widths[c] = std::max(widths[c], display_width(row[c]));
     }
   }
 
-  // Format
+  // Helper: build a horizontal border line
+  auto border = [&](const std::string &left, const std::string &mid, const std::string &right) {
+    std::ostringstream oss;
+    oss << left;
+    for (int c = 0; c < cols; c++) {
+      for (int i = 0; i < widths[c] + 2; i++) oss << "\u2500";
+      oss << ((c < cols - 1) ? mid : right);
+    }
+    return oss.str();
+  };
+
+  // Top border
+  result.rows.push_back(border("\u250C", "\u252C", "\u2510"));
+
+  // Rows
   for (int r = 0; r < (int)grid.size(); r++) {
     std::ostringstream oss;
     for (int c = 0; c < cols; c++) {
-      if (c > 0) oss << "  ";
+      oss << "\u2502 ";
       const std::string &val = (c < (int)grid[r].size()) ? grid[r][c] : "";
       oss << val;
-      if (c < cols - 1) {
-        int pad = widths[c] - (int)val.size();
-        for (int i = 0; i < pad; i++) oss << ' ';
-      }
+      int pad = widths[c] - display_width(val);
+      for (int i = 0; i < pad; i++) oss << ' ';
+      oss << " ";
     }
+    oss << "\u2502";
     result.rows.push_back(oss.str());
     // Separator after header
     if (r == 0) {
-      std::ostringstream sep;
-      for (int c = 0; c < cols; c++) {
-        if (c > 0) sep << "  ";
-        for (int i = 0; i < widths[c]; i++) sep << "-";
-      }
-      result.rows.push_back(sep.str());
+      result.rows.push_back(border("\u251C", "\u253C", "\u2524"));
     }
   }
+
+  // Bottom border
+  result.rows.push_back(border("\u2514", "\u2534", "\u2518"));
   return result;
 }
