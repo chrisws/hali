@@ -51,6 +51,10 @@ void Llama::mtp_init(const LlamaLoad &load) {
       _mtp.n_max = load.mtp_n_max;
       _mtp.n_min = load.mtp_n_min;
       _mtp.p_min = load.mtp_p_min;
+      _mtp.adaptive_enabled = load.mtp_adaptive;
+      _mtp.adapt.eff_n_max = load.mtp_n_max;
+      _mtp.adapt.p_min = load.mtp_p_min;
+      _mtp.adapt.n_min = load.mtp_n_min > 0 ? load.mtp_n_min : 1;
       // pre-allocate per-round buffers (sized to mtp_n_max + 1)
       const int vsize = load.mtp_n_max + 1;
       _mtp.acc_tokens.resize(vsize);
@@ -146,20 +150,11 @@ bool Llama::mtp_round(llama_token anchor, vector<llama_token> &accepted, llama_t
   accepted.clear();
   const llama_pos P = (llama_pos)_tokens_physically_used;
   const int room = _mtp.n_ctx - (int)P - 1;
-  int limit = _mtp.n_max;
-  if (_mtp.win_filled >= 16 && _mtp.win_drafted > 0) {
-    const double rate = (double)_mtp.win_accepted / (double)_mtp.win_drafted;
-    if (rate < 0.25) {
-      limit = 1;
-    } else if (rate < 0.50) {
-      limit = 2;
-    }
-  }
+  int limit = _mtp.adapt.eff_n_max;
   limit = std::min({limit, _mtp.n_batch - 1, room});
   if (limit != _mtp.last_limit && log_is_enabled(LEVEL_DEBUG)) {
-    log_write_cat(LEVEL_DEBUG, "mtp", "HALI: MTP: adaptive limit %d -> %d (win_rate=%.2f)",
-              _mtp.last_limit, limit,
-              _mtp.win_drafted > 0 ? (double)_mtp.win_accepted / (double)_mtp.win_drafted : 0.0);
+    log_write_cat(LEVEL_DEBUG, "mtp", "HALI: MTP: adaptive limit %d -> %d (eff_n_max=%d)",
+              _mtp.last_limit, limit, _mtp.adapt.eff_n_max);
   }
   _mtp.last_limit = limit;
   if (limit <= 0) {
@@ -173,6 +168,9 @@ bool Llama::mtp_round(llama_token anchor, vector<llama_token> &accepted, llama_t
     auto &dp = common_speculative_get_draft_params(_mtp.spec.get(), 0);
     dp.drafting = true;
     dp.n_max = limit;
+    // NOTE: p_min is baked into the speculative object at init time.
+    // _mtp.adapt.p_min tracks the ideal value; wiring it to the API
+    // requires per-round p_min support in common_speculative_draft_params.
     dp.pos0 = P;
     dp.id_last = anchor;
     dp.result = &_mtp.draft_toks;
@@ -290,7 +288,14 @@ bool Llama::mtp_round(llama_token anchor, vector<llama_token> &accepted, llama_t
     _mtp.win_drafted  -= _mtp.win[_mtp.win_idx].drafted;
     _mtp.win_accepted -= _mtp.win[_mtp.win_idx].accepted;
   }
-  _mtp.win[_mtp.win_idx] = {k, n_acc, {}};
+  {
+    auto &w = _mtp.win[_mtp.win_idx];
+    w.drafted  = k;
+    w.accepted = n_acc;
+    for (int i = 0; i < 4; ++i) {
+      w.pos_acc[i] = (i < n_acc) ? 1 : 0;
+    }
+  }
   _mtp.win_drafted  += k;
   _mtp.win_accepted += n_acc;
   _mtp.win_idx = (_mtp.win_idx + 1) % MtpState::WIN;
@@ -306,15 +311,172 @@ bool Llama::mtp_round(llama_token anchor, vector<llama_token> &accepted, llama_t
       const double r = (double)_mtp.rounds;
       log_write_cat(LEVEL_DEBUG, "mtp",
                 "HALI: MTP: %llu rounds, %.2f tok/rnd, accept %.0f%% | "
-                "gpu %.1f cpu %.1f (us)",
+                "gpu %.1f cpu %.1f (us) | n_max=%d p_min=%.2f n_min=%d",
                 (unsigned long long)_mtp.rounds,
                 1.0 + (double)_mtp.accepted / r,
                 _mtp.drafted ? 100.0 * (double)_mtp.accepted / (double)_mtp.drafted : 0.0,
                 (double)_mtp.time_gpu / r,
-                (double)_mtp.time_cpu / r);
+                (double)_mtp.time_cpu / r,
+                _mtp.adapt.eff_n_max,
+                (double)_mtp.adapt.p_min,
+                _mtp.adapt.n_min);
     }
   }
+  if (++_mtp.adapt.eval_counter >= 32) {
+    mtp_adapt_eval();
+  }
   return true;
+}
+
+// ---------------------------------------------------------------------------
+// Compute the effective n_max from per-position acceptance rates.
+// Returns the largest k such that pos_rate[0..k-1] are all above pos_threshold.
+// ---------------------------------------------------------------------------
+int Llama::compute_effective_n_max() {
+  if (_mtp.win_filled < 16) {
+    return _mtp.n_max;  // not enough data, use config ceiling
+  }
+  int k = 0;
+  for (int i = 0; i < _mtp.n_max; ++i) {
+    int sum = 0;
+    for (int j = 0; j < _mtp.win_filled; ++j) {
+      sum += _mtp.win[j].pos_acc[i];
+    }
+    double rate = (double)sum / (double)_mtp.win_filled;
+    // Hysteresis: extending beyond current eff_n_max requires a higher bar
+    double threshold = (i >= _mtp.adapt.eff_n_max)
+      ? _mtp.adapt.pos_threshold + 0.05
+      : _mtp.adapt.pos_threshold;
+    if (rate < threshold) break;
+    k = i + 1;
+  }
+  return std::max(k, 1);  // always draft at least 1
+}
+
+// ---------------------------------------------------------------------------
+// Adapt p_min based on the window acceptance fraction.
+// High fraction → MTP head is too conservative → lower p_min.
+// Low fraction  → MTP head is drafting low-quality tokens → raise p_min.
+// ---------------------------------------------------------------------------
+void Llama::adapt_p_min() {
+  if (_mtp.win_drafted == 0) return;
+  double frac = (double)_mtp.win_accepted / (double)_mtp.win_drafted;
+  if (frac > 0.80 && _mtp.adapt.p_min > 0.0f) {
+    float old = _mtp.adapt.p_min;
+    _mtp.adapt.p_min = std::max(0.0f, _mtp.adapt.p_min - 0.05f);
+    if (log_is_enabled(LEVEL_DEBUG)) {
+      log_write_cat(LEVEL_DEBUG, "mtp",
+        "HALI: MTP: adaptive p_min %.2f -> %.2f (win_frac=%.2f)",
+        old, _mtp.adapt.p_min, frac);
+    }
+  } else if (frac < 0.30 && _mtp.adapt.p_min < 0.50f) {
+    float old = _mtp.adapt.p_min;
+    _mtp.adapt.p_min = std::min(0.50f, _mtp.adapt.p_min + 0.05f);
+    if (log_is_enabled(LEVEL_DEBUG)) {
+      log_write_cat(LEVEL_DEBUG, "mtp",
+        "HALI: MTP: adaptive p_min %.2f -> %.2f (win_frac=%.2f)",
+        old, _mtp.adapt.p_min, frac);
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Circuit breaker: if position 0 acceptance is consistently very low,
+// allow zero drafts (n_min=0). Restore when it recovers.
+// ---------------------------------------------------------------------------
+void Llama::adapt_n_min() {
+  if (_mtp.win_filled < MtpState::WIN) return;
+  int sum = 0;
+  for (int j = 0; j < _mtp.win_filled; ++j) {
+    sum += _mtp.win[j].pos_acc[0];
+  }
+  double rate0 = (double)sum / (double)_mtp.win_filled;
+  if (rate0 < 0.15 && _mtp.adapt.n_min > 0) {
+    if (log_is_enabled(LEVEL_DEBUG)) {
+      log_write_cat(LEVEL_DEBUG, "mtp",
+        "HALI: MTP: adaptive n_min %d -> 0 (pos_rate[0]=%.2f < 0.15)",
+        _mtp.adapt.n_min, rate0);
+    }
+    _mtp.adapt.n_min = 0;
+  } else if (rate0 > 0.40 && _mtp.adapt.n_min == 0) {
+    if (log_is_enabled(LEVEL_DEBUG)) {
+      log_write_cat(LEVEL_DEBUG, "mtp",
+        "HALI: MTP: adaptive n_min 0 -> 1 (pos_rate[0]=%.2f > 0.40)",
+        rate0);
+    }
+    _mtp.adapt.n_min = 1;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Meta-adaptation: tune the pos_threshold itself based on long-term
+// acceptance rate. High overall rate → be more aggressive (raise threshold).
+// Low overall rate → be more conservative (lower threshold).
+// ---------------------------------------------------------------------------
+void Llama::adapt_pos_threshold() {
+  if (_mtp.drafted == 0) return;
+  double ema = (double)_mtp.accepted / (double)_mtp.drafted;
+  if (ema > 0.70 && _mtp.adapt.pos_threshold < 0.40f) {
+    float old = _mtp.adapt.pos_threshold;
+    _mtp.adapt.pos_threshold = std::min(0.50f, _mtp.adapt.pos_threshold + 0.05f);
+    if (log_is_enabled(LEVEL_DEBUG)) {
+      log_write_cat(LEVEL_DEBUG, "mtp",
+        "HALI: MTP: adaptive pos_threshold %.2f -> %.2f (ema=%.2f)",
+        old, _mtp.adapt.pos_threshold, ema);
+    }
+  } else if (ema < 0.30 && _mtp.adapt.pos_threshold > 0.20f) {
+    float old = _mtp.adapt.pos_threshold;
+    _mtp.adapt.pos_threshold = std::max(0.15f, _mtp.adapt.pos_threshold - 0.05f);
+    if (log_is_enabled(LEVEL_DEBUG)) {
+      log_write_cat(LEVEL_DEBUG, "mtp",
+        "HALI: MTP: adaptive pos_threshold %.2f -> %.2f (ema=%.2f)",
+        old, _mtp.adapt.pos_threshold, ema);
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Adaptive parameter evaluation — called every 32 rounds (one full window).
+// Adjusts eff_n_max, p_min, n_min, and pos_threshold based on accumulated
+// acceptance experience.
+// ---------------------------------------------------------------------------
+void Llama::mtp_adapt_eval() {
+  if (!_mtp.adaptive_enabled) {
+    _mtp.adapt.eval_counter = 0;
+    return;
+  }
+  if (_mtp.adapt.cooldown > 0) {
+    _mtp.adapt.cooldown--;
+    _mtp.adapt.eval_counter = 0;
+    return;
+  }
+  if (_mtp.win_filled < MtpState::WIN) {
+    _mtp.adapt.eval_counter = 0;
+    return;
+  }
+
+  // 1. per-position n_max
+  int new_nmax = compute_effective_n_max();
+  if (new_nmax != _mtp.adapt.eff_n_max) {
+    if (log_is_enabled(LEVEL_DEBUG)) {
+      log_write_cat(LEVEL_DEBUG, "mtp",
+        "HALI: MTP: adaptive n_max %d -> %d",
+        _mtp.adapt.eff_n_max, new_nmax);
+    }
+    _mtp.adapt.eff_n_max = new_nmax;
+    _mtp.adapt.cooldown = 32;
+  }
+
+  // 2. p_min
+  adapt_p_min();
+
+  // 3. n_min (circuit breaker)
+  adapt_n_min();
+
+  // 4. meta: pos_threshold
+  adapt_pos_threshold();
+
+  _mtp.adapt.eval_counter = 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -331,6 +493,8 @@ void Llama::mtp_reset_state() {
   _mtp.win_drafted  = 0;
   _mtp.win_accepted = 0;
   _mtp.last_limit   = 0;
+  _mtp.adapt.eval_counter = 0;
+  _mtp.adapt.cooldown     = 0;
 
   auto *ctx_dft = _mtp.spec_init ? _mtp.spec_init->context() : nullptr;
   if (!_mtp.spec || !ctx_dft) {

@@ -88,6 +88,7 @@ struct LlamaLoad {
   int  mtp_n_max = 3;        // max draft tokens per step
   int  mtp_n_min = 0;        // min accepted tokens to use MTP
   float mtp_p_min = 0.0f;    // min probability threshold for draft acceptance
+  bool mtp_adaptive = true;  // enable self-tuning of MTP parameters
 };
 
 // ---------------------------------------------------------------------------
@@ -316,6 +317,11 @@ private:
 
   // MTP (Multi-Token Prediction) speculative decoding - in llama_sb_mtp.cpp
   bool configure_mtp_sampler();
+  int  compute_effective_n_max();
+  void mtp_adapt_eval();
+  void adapt_p_min();
+  void adapt_n_min();
+  void adapt_pos_threshold();
 
   llama_model *_model;
   llama_context *_ctx;
