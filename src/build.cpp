@@ -65,7 +65,10 @@ static std::string run_command(const std::string &cmd,
   }
   pclose(fp);
   if (out.size() > 4096) {
-    out = out.substr(0, 4096) + "\n…(truncated)";
+    const size_t head = 1024;
+    const size_t tail = 3072;
+    out = out.substr(0, head) + "\n…(truncated)…" +
+          out.substr(out.size() - tail);
   }
   return out;
 }
