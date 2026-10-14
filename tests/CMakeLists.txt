@@ -37,6 +37,7 @@ add_executable(hali_tests
   src/logging_filter_test.cpp
   src/replace_test.cpp
   src/build_test.cpp
+  src/table_test.cpp
   src/main.cpp
 )
 

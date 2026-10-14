@@ -72,3 +72,8 @@ struct ReplaceArgs {
 
 ReplaceArgs parse_replace_args(const std::string &arg2);
 std::string tool_replace(const std::string &sandbox, const std::string &file, const std::string &arg2);
+
+//
+// TOOL:TABLE
+//
+std::string tool_table(const std::string &dims, const std::string &data);

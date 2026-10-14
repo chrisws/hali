@@ -18,6 +18,7 @@
 #include <memory>
 
 #include "agent_utils.h"
+#include "string_utils.h"
 
 namespace fs = std::filesystem;
 
@@ -647,4 +648,67 @@ std::string tool_replace(const std::string &sandbox, const std::string &file, co
   out << modified;
   size_t replaced = args.all ? count : 1;
   return std::format("OK: replaced {} occurrence(s) in {}", replaced, file);
+}
+
+//
+// TOOL:TABLE
+//
+std::string tool_table(const std::string &dims, const std::string &data) {
+  // Parse RxC
+  auto xpos = dims.find('x');
+  if (xpos == std::string::npos) {
+    return "ERROR: expected <R>x<C> format, got [" + dims + "]";
+  }
+  int rows = std::stoi(dims.substr(0, xpos));
+  int cols = std::stoi(dims.substr(xpos + 1));
+
+  // Split data into rows
+  std::vector<std::vector<std::string>> grid;
+  std::istringstream ss(data);
+  std::string line;
+  while (std::getline(ss, line) && (int)grid.size() < rows) {
+    std::vector<std::string> cells;
+    std::istringstream ls(line);
+    std::string cell;
+    while (std::getline(ls, cell, '|')) {
+      cells.push_back(utils::trim(cell));
+    }
+    grid.push_back(cells);
+  }
+
+  if (grid.empty()) {
+    return "ERROR: no table data provided";
+  }
+
+  // Compute max width per column
+  std::vector<int> widths(cols, 0);
+  for (const auto &row : grid) {
+    for (int c = 0; c < cols && c < (int)row.size(); c++) {
+      widths[c] = std::max(widths[c], (int)row[c].size());
+    }
+  }
+
+  // Format
+  std::ostringstream oss;
+  for (int r = 0; r < (int)grid.size(); r++) {
+    for (int c = 0; c < cols; c++) {
+      if (c > 0) oss << "  ";
+      const std::string &val = (c < (int)grid[r].size()) ? grid[r][c] : "";
+      oss << val;
+      if (c < cols - 1) {
+        int pad = widths[c] - (int)val.size();
+        for (int i = 0; i < pad; i++) oss << ' ';
+      }
+    }
+    oss << "\n";
+    // Separator after header
+    if (r == 0) {
+      for (int c = 0; c < cols; c++) {
+        if (c > 0) oss << "  ";
+        for (int i = 0; i < widths[c]; i++) oss << "-";
+      }
+      oss << "\n";
+    }
+  }
+  return oss.str();
 }

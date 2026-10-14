@@ -187,6 +187,7 @@ bool Agent::setup_model() {
   load.mtp_n_max = cfg_.mtp_n_max_;
   load.mtp_n_min = cfg_.mtp_n_min_;
   load.mtp_p_min = cfg_.mtp_p_min_;
+  load.mtp_adaptive = cfg_.mtp_adaptive_;
 
   if (!llama_->load_model(load)) {
     tui_.dismiss_modal_popup();
@@ -556,6 +557,16 @@ std::string Agent::process_tool(const std::string &cmd) {
       tui_.append_lines(graphResult.data_);
     }
     return graphResult.success_ ? "OK" : graphResult.message_;
+  }
+  if (op == "TOOL:TABLE") {
+    const auto result = tool_table(arg1, arg2);
+    if (utils::starts_with(result, "ERROR")) {
+      tui_.show_tool("table error: " + result);
+      tui_.append_lines(arg2);
+      return result;
+    }
+    tui_.append_lines(result);
+    return "OK";
   }
   return "ERROR: unknown tool: [" + op + "]";
 }

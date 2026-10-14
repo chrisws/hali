@@ -12,6 +12,7 @@ void mtp_adaptive_test();
 void logging_filter_test();
 void replace_test();
 void build_test();
+void table_test();
 
 #include "logging.h"
 
@@ -31,5 +32,6 @@ int main() {
   logging_filter_test();
   replace_test();
   build_test();
+  table_test();
   return 0;
 }
