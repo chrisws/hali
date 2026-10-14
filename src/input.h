@@ -6,7 +6,8 @@
 // Download the GNU Public License (GPL) from www.gnu.org
 //
 
-#pragma once
+#ifndef INPUT_H
+#define INPUT_H
 
 #include <string>
 
@@ -47,3 +48,5 @@ class Input {
   InputHistory history_;
 };
 
+
+#endif

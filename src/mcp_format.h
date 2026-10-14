@@ -6,9 +6,12 @@
 // Download the GNU Public License (GPL) from www.gnu.org
 //
 
-#pragma once
+#ifndef MCP_FORMAT_H
+#define MCP_FORMAT_H
 
 #include <string>
 #include "json.h"
 
 std::string formatSpec(const json::JsonValue &root);
+
+#endif

@@ -6,7 +6,8 @@
 // Download the GNU Public License (GPL) from www.gnu.org
 //
 
-#pragma once
+#ifndef TUI_H
+#define TUI_H
 
 #include <mutex>
 #include <string>
@@ -504,3 +505,5 @@ class Tui final: TuiContext {
   std::unique_ptr<ColorTheme> theme_;
 };
 
+
+#endif

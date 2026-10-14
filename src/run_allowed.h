@@ -6,7 +6,8 @@
 // Download the GNU Public License (GPL) from www.gnu.org
 //
 
-#pragma once
+#ifndef RUN_ALLOWED_H
+#define RUN_ALLOWED_H
 
 #include <algorithm>
 #include <cstdlib>
@@ -178,3 +179,4 @@ class RunAllowed {
 
   std::vector<std::string> entries_;
 };
+#endif

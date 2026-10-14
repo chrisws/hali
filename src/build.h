@@ -6,7 +6,8 @@
 // Download the GNU Public License (GPL) from www.gnu.org
 //
 
-#pragma once
+#ifndef BUILD_H
+#define BUILD_H
 
 #include <functional>
 #include <string>
@@ -21,3 +22,5 @@ struct BuildResult {
 // status: callback for progress messages (e.g. tui.show_tool)
 BuildResult build_run(const std::string &sandbox, const std::string &mode,
                       const std::function<void(const std::string &)> &status);
+
+#endif

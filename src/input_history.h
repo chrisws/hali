@@ -6,7 +6,8 @@
 // Download the GNU Public License (GPL) from www.gnu.org
 //
 
-#pragma once
+#ifndef INPUT_HISTORY_H
+#define INPUT_HISTORY_H
 
 #include <algorithm>
 #include <string>
@@ -111,3 +112,4 @@ class InputHistory {
   std::vector<std::string> history_stack;
   int current_index = 0;
 };
+#endif

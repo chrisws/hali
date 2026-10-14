@@ -6,7 +6,8 @@
 // Download the GNU Public License (GPL) from www.gnu.org
 //
 
-#pragma once
+#ifndef CONFIG_H
+#define CONFIG_H
 
 #include <string>
 #include <vector>
@@ -81,3 +82,5 @@ struct HaliConfig {
   std::vector<std::string> mcp_filter_;
 };
 
+
+#endif

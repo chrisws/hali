@@ -6,7 +6,8 @@
 // Download the GNU Public License (GPL) from www.gnu.org
 //
 
-#pragma once
+#ifndef UTF8_H
+#define UTF8_H
 
 #include <cstdint>
 #include <iterator>
@@ -126,3 +127,5 @@ inline void append(char32_t cp, std::string &text) {
 }
 
 } // namespace utf8
+
+#endif

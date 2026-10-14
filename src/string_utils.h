@@ -6,7 +6,8 @@
 // Download the GNU Public License (GPL) from www.gnu.org
 //
 
-#pragma once
+#ifndef STRING_UTILS_H
+#define STRING_UTILS_H
 
 #include <string>
 #include <string_view>
@@ -59,3 +60,5 @@ namespace utils {
 
 } // namespace utils
 
+
+#endif

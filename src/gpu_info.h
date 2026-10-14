@@ -6,7 +6,8 @@
 // Download the GNU Public License (GPL) from www.gnu.org
 //
 
-#pragma once
+#ifndef GPU_INFO_H
+#define GPU_INFO_H
 
 #include <cstdint>
 
@@ -24,3 +25,5 @@ uint64_t vram_bytes();
 int kv_restart_threshold();
 
 } // namespace gpu_info
+
+#endif

@@ -6,7 +6,8 @@
 // Download the GNU Public License (GPL) from www.gnu.org
 //
 
-#pragma once
+#ifndef ICON_H
+#define ICON_H
 
 #include <string>
 
@@ -14,3 +15,5 @@ constexpr std::string ICON_ERR   = " ⚡ ▏";
 constexpr std::string ICON_THINK = " 🤔 ▏";
 constexpr std::string ICON_TOOL  = " 🔧 ▏";
 constexpr std::string ICON_SYS   = " ✨ ▏";
+
+#endif

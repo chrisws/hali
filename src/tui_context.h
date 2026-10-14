@@ -6,7 +6,8 @@
 // Download the GNU Public License (GPL) from www.gnu.org
 //
 
-#pragma once
+#ifndef TUI_CONTEXT_H
+#define TUI_CONTEXT_H
 
 #include "input_event.h"
 
@@ -25,3 +26,5 @@ public:
   virtual int get_term_rows() const = 0;
   virtual void toggle_theme() = 0;
 };
+
+#endif

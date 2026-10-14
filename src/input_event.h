@@ -6,7 +6,8 @@
 // Download the GNU Public License (GPL) from www.gnu.org
 //
 
-#pragma once
+#ifndef INPUT_EVENT_H
+#define INPUT_EVENT_H
 
 #include <notcurses/notcurses.h>
 
@@ -98,3 +99,5 @@ struct InputEvent {
 private:
   ncinput in_{};
 };
+
+#endif

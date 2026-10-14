@@ -5,7 +5,8 @@
 // This program is distributed under the terms of the GPL v2.0
 // Download the GNU Public License (GPL) from www.gnu.org
 
-#pragma once
+#ifndef WEBVIEW_H
+#define WEBVIEW_H
 
 #include <string>
 
@@ -18,3 +19,5 @@ namespace webview {
   bool has_message();
   std::string get_message();
 }
+
+#endif

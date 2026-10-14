@@ -6,7 +6,8 @@
 // Download the GNU Public License (GPL) from www.gnu.org
 //
 
-#pragma once
+#ifndef GRAPH_H
+#define GRAPH_H
 
 #include <string>
 #include <vector>
@@ -64,3 +65,5 @@ struct GraphResult {
 };
 
 GraphResult tool_graph(int term_cols, const std::string &graph_json);
+
+#endif

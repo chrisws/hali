@@ -6,7 +6,8 @@
 // Download the GNU Public License (GPL) from www.gnu.org
 //
 
-#pragma once
+#ifndef PATCH_H
+#define PATCH_H
 
 #include <string>
 
@@ -14,3 +15,5 @@
 constexpr std::string PATCH_BEGIN    = "<<<<<<<";
 constexpr std::string PATCH_BOUNDARY = "=======";
 constexpr std::string PATCH_END      = ">>>>>>>";
+
+#endif

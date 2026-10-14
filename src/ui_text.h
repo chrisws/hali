@@ -6,7 +6,8 @@
 // Download the GNU Public License (GPL) from www.gnu.org
 //
 
-#pragma once
+#ifndef UI_TEXT_H
+#define UI_TEXT_H
 
 #include <string>
 
@@ -20,3 +21,5 @@ namespace ui {
   void no_model(Tui &tui);
   void welcome(Tui &tui, const std::string &sandbox);
 }
+
+#endif

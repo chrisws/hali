@@ -6,7 +6,8 @@
 // Download the GNU Public License (GPL) from www.gnu.org
 //
 
-#pragma once
+#ifndef CURL_H
+#define CURL_H
 
 #include <curl/curl.h>
 #include <string>
@@ -15,3 +16,5 @@ void curl_init();
 void curl_close();
 void curl_set_opts(CURL *curl, long timeoutSecs);
 std::string tool_curl(const std::string &url);
+
+#endif

@@ -6,7 +6,8 @@
 // Download the GNU Public License (GPL) from www.gnu.org
 //
 
-#pragma once
+#ifndef JSON_H
+#define JSON_H
 
 #include <string>
 #include <vector>
@@ -156,3 +157,5 @@ JsonMutDoc parse_mutable(const std::string &json_str);
 
 } // namespace json
 
+
+#endif

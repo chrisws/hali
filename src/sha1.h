@@ -6,7 +6,8 @@
 // Download the GNU Public License (GPL) from www.gnu.org
 //
 
-#pragma once
+#ifndef SHA1_H
+#define SHA1_H
 
 #include <cstdint>
 #include <cstddef>
@@ -16,3 +17,5 @@
 namespace sha1 {
   std::array<uint8_t, 20> hash(const std::string &input);
 }
+
+#endif

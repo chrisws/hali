@@ -6,7 +6,8 @@
 // Download the GNU Public License (GPL) from www.gnu.org
 //
 
-#pragma once
+#ifndef LINE_LIST_H
+#define LINE_LIST_H
 
 #include <filesystem>
 #include <fstream>
@@ -44,3 +45,4 @@ inline void save_lines(const std::string &path, const std::vector<std::string> &
     f << s << '\n';
   }
 }
+#endif

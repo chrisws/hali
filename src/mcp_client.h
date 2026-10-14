@@ -6,7 +6,8 @@
 // Download the GNU Public License (GPL) from www.gnu.org
 //
 
-#pragma once
+#ifndef MCP_CLIENT_H
+#define MCP_CLIENT_H
 
 #include <string>
 #include <vector>
@@ -56,3 +57,5 @@ class Client {
 };
 
 }
+
+#endif

@@ -6,7 +6,8 @@
 // Download the GNU Public License (GPL) from www.gnu.org
 //
 
-#pragma once
+#ifndef LLAMA_SB_RAG_H
+#define LLAMA_SB_RAG_H
 
 #include <string>
 
@@ -79,3 +80,5 @@ struct RagSession {
   }
 };
 
+
+#endif

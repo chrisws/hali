@@ -6,7 +6,8 @@
 // Download the GNU Public License (GPL) from www.gnu.org
 //
 
-#pragma once
+#ifndef LLAMA_SB_H
+#define LLAMA_SB_H
 
 #include <chrono>
 #include <cstring>
@@ -352,3 +353,4 @@ private:
   // MTP (Multi-Token Prediction) speculative decoding state
   MtpState _mtp;
 };
+#endif

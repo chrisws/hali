@@ -6,7 +6,8 @@
 // Download the GNU Public License (GPL) from www.gnu.org
 //
 
-#pragma once
+#ifndef AGENT_H
+#define AGENT_H
 
 #include <filesystem>
 #include <string>
@@ -58,3 +59,5 @@ struct Agent {
   float tokens_per_sec() const;
   void invoke_tool(const std::string &buffer, std::string_view template_str);
 };
+
+#endif
