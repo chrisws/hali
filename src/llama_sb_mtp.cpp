@@ -55,6 +55,7 @@ void Llama::mtp_init(const LlamaLoad &load) {
       _mtp.adapt.eff_n_max = load.mtp_n_max;
       _mtp.adapt.p_min = load.mtp_p_min;
       _mtp.adapt.n_min = load.mtp_n_min > 0 ? load.mtp_n_min : 1;
+      _mtp.adapt.pos_threshold = load.mtp_pos_threshold;
       // pre-allocate per-round buffers (sized to mtp_n_max + 1)
       const int vsize = load.mtp_n_max + 1;
       _mtp.acc_tokens.resize(vsize);
@@ -414,23 +415,23 @@ void Llama::adapt_n_min() {
 // Low overall rate → be more conservative (lower threshold).
 // ---------------------------------------------------------------------------
 void Llama::adapt_pos_threshold() {
-  if (_mtp.drafted == 0) return;
-  double ema = (double)_mtp.accepted / (double)_mtp.drafted;
-  if (ema > 0.70 && _mtp.adapt.pos_threshold < 0.40f) {
+  if (_mtp.win_drafted == 0) return;
+  double frac = (double)_mtp.win_accepted / (double)_mtp.win_drafted;
+  if (frac > 0.70 && _mtp.adapt.pos_threshold < 0.40f) {
     float old = _mtp.adapt.pos_threshold;
     _mtp.adapt.pos_threshold = std::min(0.50f, _mtp.adapt.pos_threshold + 0.05f);
     if (log_is_enabled(LEVEL_DEBUG)) {
       log_write(LEVEL_DEBUG, "mtp",
-                    "HALI: MTP: adaptive pos_threshold %.2f -> %.2f (ema=%.2f)",
-                    old, _mtp.adapt.pos_threshold, ema);
+                    "HALI: MTP: adaptive pos_threshold %.2f -> %.2f (win_frac=%.2f)",
+                    old, _mtp.adapt.pos_threshold, frac);
     }
-  } else if (ema < 0.30 && _mtp.adapt.pos_threshold > 0.20f) {
+  } else if (frac < 0.30 && _mtp.adapt.pos_threshold > 0.20f) {
     float old = _mtp.adapt.pos_threshold;
     _mtp.adapt.pos_threshold = std::max(0.15f, _mtp.adapt.pos_threshold - 0.05f);
     if (log_is_enabled(LEVEL_DEBUG)) {
       log_write(LEVEL_DEBUG, "mtp",
-                    "HALI: MTP: adaptive pos_threshold %.2f -> %.2f (ema=%.2f)",
-                    old, _mtp.adapt.pos_threshold, ema);
+                    "HALI: MTP: adaptive pos_threshold %.2f -> %.2f (win_frac=%.2f)",
+                    old, _mtp.adapt.pos_threshold, frac);
     }
   }
 }
@@ -455,6 +456,36 @@ void Llama::mtp_adapt_eval() {
     return;
   }
 
+  // --- compute windowed t/s from timing deltas ---------------------------
+  {
+    uint64_t gpu_delta = _mtp.time_gpu - _mtp.adapt.time_gpu_at_eval;
+    uint64_t cpu_delta = _mtp.time_cpu - _mtp.adapt.time_cpu_at_eval;
+    _mtp.adapt.time_gpu_at_eval = _mtp.time_gpu;
+    _mtp.adapt.time_cpu_at_eval = _mtp.time_cpu;
+    double window_time_s = (double)(gpu_delta + cpu_delta) / 1e6;
+    double window_tokens = (double)_mtp.win_filled + (double)_mtp.win_accepted;
+    _mtp.adapt.current_tps = window_time_s > 0.0 ? window_tokens / window_time_s : 0.0;
+  }
+
+  // --- track best settings ------------------------------------------------
+  if (_mtp.adapt.current_tps > 0.0) {
+    if (!_mtp.adapt.best.valid || _mtp.adapt.current_tps > _mtp.adapt.best.tps) {
+      _mtp.adapt.best.eff_n_max     = _mtp.adapt.eff_n_max;
+      _mtp.adapt.best.p_min         = _mtp.adapt.p_min;
+      _mtp.adapt.best.n_min         = _mtp.adapt.n_min;
+      _mtp.adapt.best.pos_threshold = _mtp.adapt.pos_threshold;
+      _mtp.adapt.best.tps           = _mtp.adapt.current_tps;
+      _mtp.adapt.best.valid         = true;
+      if (log_is_enabled(LEVEL_DEBUG)) {
+        log_write(LEVEL_DEBUG, "mtp",
+                      "HALI: MTP: new best t/s %.1f (n_max=%d p_min=%.2f n_min=%d pos_thr=%.2f)",
+                      _mtp.adapt.best.tps, _mtp.adapt.best.eff_n_max,
+                      _mtp.adapt.best.p_min, _mtp.adapt.best.n_min,
+                      _mtp.adapt.best.pos_threshold);
+      }
+    }
+  }
+
   // 1. per-position n_max
   int new_nmax = compute_effective_n_max();
   if (new_nmax != _mtp.adapt.eff_n_max) {
@@ -474,6 +505,30 @@ void Llama::mtp_adapt_eval() {
   // 4. meta: pos_threshold
   adapt_pos_threshold();
 
+  // 5. gradual reversion toward best when t/s drops below 80% of best
+  if (_mtp.adapt.best.valid && _mtp.adapt.current_tps < _mtp.adapt.best.tps * 0.80) {
+    if (_mtp.adapt.eff_n_max < _mtp.adapt.best.eff_n_max) {
+      _mtp.adapt.eff_n_max++;
+    } else if (_mtp.adapt.eff_n_max > _mtp.adapt.best.eff_n_max) {
+      _mtp.adapt.eff_n_max--;
+    }
+    if (_mtp.adapt.n_min < _mtp.adapt.best.n_min) {
+      _mtp.adapt.n_min++;
+    } else if (_mtp.adapt.n_min > _mtp.adapt.best.n_min) {
+      _mtp.adapt.n_min--;
+    }
+    _mtp.adapt.p_min         += 0.25f * (_mtp.adapt.best.p_min - _mtp.adapt.p_min);
+    _mtp.adapt.pos_threshold += 0.25f * (_mtp.adapt.best.pos_threshold - _mtp.adapt.pos_threshold);
+    if (log_is_enabled(LEVEL_DEBUG)) {
+      log_write(LEVEL_DEBUG, "mtp",
+                    "HALI: MTP: reverting toward best (tps %.1f < %.1f*0.8): "
+                    "n_max=%d p_min=%.2f n_min=%d pos_thr=%.2f",
+                    _mtp.adapt.current_tps, _mtp.adapt.best.tps,
+                    _mtp.adapt.eff_n_max, _mtp.adapt.p_min,
+                    _mtp.adapt.n_min, _mtp.adapt.pos_threshold);
+    }
+  }
+
   _mtp.adapt.eval_counter = 0;
 }
 
@@ -491,8 +546,14 @@ void Llama::mtp_reset_state() {
   _mtp.win_drafted  = 0;
   _mtp.win_accepted = 0;
   _mtp.last_limit   = 0;
-  _mtp.adapt.eval_counter = 0;
-  _mtp.adapt.cooldown     = 0;
+  _mtp.adapt.eval_counter  = 0;
+  _mtp.adapt.cooldown      = 0;
+  // reset adaptive params to config defaults so a new session
+  // doesn't inherit a ratcheted-down state from the previous one
+  _mtp.adapt.eff_n_max     = _mtp.n_max;
+  _mtp.adapt.p_min         = _mtp.p_min;
+  _mtp.adapt.n_min         = _mtp.n_min > 0 ? _mtp.n_min : 1;
+  _mtp.adapt.pos_threshold = 0.30f;
 
   auto *ctx_dft = _mtp.spec_init ? _mtp.spec_init->context() : nullptr;
   if (!_mtp.spec || !ctx_dft) {

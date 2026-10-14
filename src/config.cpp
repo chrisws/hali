@@ -117,6 +117,7 @@ void HaliConfig::load_settings() {
   root.get_int("mtp_n_max", mtp_n_max_);
   root.get_int("mtp_n_min", mtp_n_min_);
   root.get_float("mtp_p_min", mtp_p_min_);
+  root.get_float("mtp_pos_threshold", mtp_pos_threshold_);
   root.get_bool("mtp_adaptive", mtp_adaptive_);
 }
 
@@ -361,6 +362,7 @@ std::string HaliConfig::introspect() const {
     "  \"mtp_n_max\":      {},\n"
     "  \"mtp_n_min\":      {},\n"
     "  \"mtp_p_min\":      {},\n"
+    "  \"mtp_pos_threshold\":{},\n"
     "  \"mtp_adaptive\":   {}\n"
     "}}\n";
   return std::format(tmpl,
@@ -386,6 +388,7 @@ std::string HaliConfig::introspect() const {
                      mtp_n_max_,
                      mtp_n_min_,
                      mtp_p_min_,
+                     mtp_pos_threshold_,
                      mtp_adaptive_);
 }
 

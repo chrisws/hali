@@ -187,6 +187,7 @@ bool Agent::setup_model() {
   load.mtp_n_max = cfg_.mtp_n_max_;
   load.mtp_n_min = cfg_.mtp_n_min_;
   load.mtp_p_min = cfg_.mtp_p_min_;
+  load.mtp_pos_threshold = cfg_.mtp_pos_threshold_;
   load.mtp_adaptive = cfg_.mtp_adaptive_;
 
   if (!llama_->load_model(load)) {
@@ -785,4 +786,17 @@ bool Agent::run_turn(const std::string &user_message) {
   tui_.append_line(stat);
   tui_.redraw_all();
   return true;
+}
+
+void Agent::save_mtp_best_settings() {
+  if (!model_loaded_ || !llama_->mtp_has_best()) {
+    return;
+  }
+  cfg_.mtp_n_max_ = llama_->mtp_best_n_max();
+  cfg_.mtp_n_min_ = llama_->mtp_best_n_min();
+  cfg_.mtp_p_min_ = llama_->mtp_best_p_min();
+  cfg_.mtp_pos_threshold_ = llama_->mtp_best_pos_threshold();
+  cfg_.save_settings();
+  log_write(LEVEL_INFO, "agent", "MTP best settings saved: n_max=%d n_min=%d p_min=%.3f pos_threshold=%.3f",
+            cfg_.mtp_n_max_, cfg_.mtp_n_min_, cfg_.mtp_p_min_, cfg_.mtp_pos_threshold_);
 }

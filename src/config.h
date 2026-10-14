@@ -62,6 +62,7 @@ struct HaliConfig {
   int   mtp_n_max_      = 3;
   int   mtp_n_min_      = 0;
   float mtp_p_min_      = 0.0f;
+  float mtp_pos_threshold_ = 0.30f;
   bool  mtp_enabled_    = true;
   bool  mtp_adaptive_   = true;
 

@@ -37,6 +37,7 @@ struct Agent {
   std::string memory_info_text() const;
   void apply_generation_params() const;
   bool model_loaded() const { return model_loaded_;}
+  void save_mtp_best_settings();
 
   private:
   HaliConfig &cfg_;

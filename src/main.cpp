@@ -433,6 +433,9 @@ int main(int argc, char **argv) {
   log_write(LEVEL_INFO, "main", "hali exiting");
   log_close();
 
+  // Persist MTP best settings if the model found improvements.
+  agent.save_mtp_best_settings();
+
   // Persist input history for the next session.
   cfg.user_run_allowed_.save(RunAllowed::default_path());
   tui.history_save(history_path());

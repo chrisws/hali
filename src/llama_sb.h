@@ -89,6 +89,7 @@ struct LlamaLoad {
   int  mtp_n_max = 3;        // max draft tokens per step
   int  mtp_n_min = 0;        // min accepted tokens to use MTP
   float mtp_p_min = 0.0f;    // min probability threshold for draft acceptance
+  float mtp_pos_threshold = 0.30f; // initial per-position acceptance threshold
   bool mtp_adaptive = true;  // enable self-tuning of MTP parameters
 };
 
@@ -161,6 +162,21 @@ struct MtpState {
     float pos_threshold = 0.30f;
     float p_min         = 0.0f;
     int   n_min         = 1;
+    // best-settings memory: the combo that produced the highest t/s
+    struct Best {
+      int   eff_n_max     = 3;
+      float p_min         = 0.0f;
+      int   n_min         = 1;
+      float pos_threshold = 0.30f;
+      double tps          = 0.0;
+      bool   valid        = false;
+    };
+    Best best;
+    // windowed t/s (computed each eval)
+    double current_tps = 0.0;
+    // timing snapshot for windowed t/s delta
+    uint64_t time_gpu_at_eval = 0;
+    uint64_t time_cpu_at_eval = 0;
   };
   Adaptive adapt;
   bool     adaptive_enabled = true;
@@ -295,6 +311,13 @@ struct Llama {
   void set_mtp_n_max(int n) { _mtp.n_max = n; }
   void set_mtp_n_min(int n) { _mtp.n_min = n; }
   void set_mtp_p_min(float p) { _mtp.p_min = p; }
+  // MTP best-settings (for persistence on exit)
+  bool  mtp_has_best() const { return _mtp.adapt.best.valid; }
+  int   mtp_best_n_max() const { return _mtp.adapt.best.eff_n_max; }
+  int   mtp_best_n_min() const { return _mtp.adapt.best.n_min; }
+  float mtp_best_p_min() const { return _mtp.adapt.best.p_min; }
+  float mtp_best_pos_threshold() const { return _mtp.adapt.best.pos_threshold; }
+  double mtp_best_tps() const { return _mtp.adapt.best.tps; }
 
 private:
   bool batch_decode_tokens(vector<llama_token> &tokens);
