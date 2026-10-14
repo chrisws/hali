@@ -785,6 +785,75 @@ static void test_tool_search_name() {
 }
 
 //
+// file_category / search result ordering tests
+//
+
+static void test_search_result_ordering() {
+  const string sandbox = "/tmp/hali_test_order_sandbox";
+  fs::create_directories(sandbox + "/src");
+
+  // Create files in different categories
+  {
+    // Binary (no recognized extension)
+    ofstream out(sandbox + "/main.o");
+    out << "Plan File binary match\n";
+  }
+  {
+    // Text file
+    ofstream out(sandbox + "/README.md");
+    out << "Plan File in readme\n";
+  }
+  {
+    // Source file
+    ofstream out(sandbox + "/src/config.cpp");
+    out << "Plan File in source\n";
+  }
+  {
+    // Another binary
+    ofstream out(sandbox + "/hali");
+    out << "Plan File in binary\n";
+  }
+  {
+    // Another text file
+    ofstream out(sandbox + "/notes.txt");
+    out << "Plan File in notes\n";
+  }
+
+  // Search should return source first, then text, then binary
+  string result = tool_search(sandbox, "Plan File", ".", "--recursive");
+
+  // Find positions of each file in the result (use full paths to avoid
+  // matching the sandbox directory name "hali" in every path)
+  size_t pos_source = result.find(sandbox + "/src/config.cpp");
+  size_t pos_readme = result.find(sandbox + "/README.md");
+  size_t pos_notes = result.find(sandbox + "/notes.txt");
+  size_t pos_binary1 = result.find(sandbox + "/main.o");
+  size_t pos_binary2 = result.find(sandbox + "/hali:");
+
+  // All should be found
+  assert(pos_source != string::npos);
+  assert(pos_readme != string::npos);
+  assert(pos_notes != string::npos);
+  assert(pos_binary1 != string::npos);
+  assert(pos_binary2 != string::npos);
+
+  // Source before text
+  assert(pos_source < pos_readme);
+  assert(pos_source < pos_notes);
+
+  // Text before binary
+  assert(pos_readme < pos_binary1);
+  assert(pos_readme < pos_binary2);
+  assert(pos_notes < pos_binary1);
+  assert(pos_notes < pos_binary2);
+
+  // Clean up
+  fs::remove_all(sandbox);
+
+  cout << "test_search_result_ordering passed" << endl;
+}
+
+//
 // split_tool_args tests
 //
 
@@ -903,6 +972,7 @@ void agent_utils_test() {
   RUN_TEST(test_tool_search);
   RUN_TEST(test_tool_search_name);
   RUN_TEST(test_parse_search_args);
+  RUN_TEST(test_search_result_ordering);
   RUN_TEST(test_split_tool_args);
 
   cout << "\n=== All agent_utils tests completed ===\n";

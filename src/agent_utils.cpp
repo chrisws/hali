@@ -29,6 +29,28 @@ static const std::vector<std::string> CODE_EXTENSIONS = {
   ".json",".yaml",".toml",".sh",".go",".rs",".jsx",".tsx",".xml",".svg"
 };
 
+static const std::vector<std::string> TEXT_EXTENSIONS = {
+  ".md",".txt",".json",".yaml",".toml",".xml",".svg",
+  ".cfg",".ini",".conf",".lock",".env"
+};
+
+//
+// File priority for search result ordering:
+//   0 = source code
+//   1 = text / config
+//   2 = binary / unknown
+//
+static int file_category(const std::string &filename) {
+  auto ext = fs::path(filename).extension().string();
+  if (std::ranges::any_of(CODE_EXTENSIONS, [&](const std::string &e){ return ext == e; })) {
+    return 0;
+  }
+  if (std::ranges::any_of(TEXT_EXTENSIONS, [&](const std::string &e){ return ext == e; })) {
+    return 1;
+  }
+  return 2;
+}
+
 //
 // whether TOOL:RUN arguments contain unsafe actions
 //
@@ -518,6 +540,11 @@ std::string tool_search(const std::string &sandbox, const std::string &pattern, 
       }
     }
   }
+
+  // Sort: source files first, then text, then binary
+  std::stable_sort(files.begin(), files.end(), [](const std::string &a, const std::string &b) {
+    return file_category(a) < file_category(b);
+  });
 
   for (const auto &file : files) {
     if (flags.name) {
