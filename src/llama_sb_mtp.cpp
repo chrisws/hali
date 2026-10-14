@@ -32,7 +32,7 @@ void Llama::mtp_init(const LlamaLoad &load) {
   _mtp.n_layers = llama_model_n_layer_nextn(_model);
   if (load.mtp_enabled && _mtp.n_layers > 0) {
     if (log_is_enabled(LEVEL_DEBUG)) {
-      log_write_cat(LEVEL_DEBUG, "mtp", "HALI: MTP detected: %d nextn layers", _mtp.n_layers);
+      log_write(LEVEL_DEBUG, "mtp", "HALI: MTP detected: %d nextn layers", _mtp.n_layers);
     }
     _mtp.spec_params.speculative.types = {COMMON_SPECULATIVE_TYPE_DRAFT_MTP};
     _mtp.spec_params.speculative.draft.n_max = load.mtp_n_max;
@@ -70,17 +70,17 @@ void Llama::mtp_init(const LlamaLoad &load) {
       _mtp.draft_toks.resize(vsize);
       _mtp.spec_batch = common_batch(_ctx);
       if (log_is_enabled(LEVEL_DEBUG)) {
-        log_write_cat(LEVEL_DEBUG, "mtp", "HALI: MTP ready: n_max=%d n_min=%d p_min=%.2f", _mtp.n_max, _mtp.n_min, _mtp.p_min);
+        log_write(LEVEL_DEBUG, "mtp", "HALI: MTP ready: n_max=%d n_min=%d p_min=%.2f", _mtp.n_max, _mtp.n_min, _mtp.p_min);
       }
     } else {
       if (log_is_enabled(LEVEL_DEBUG)) {
-        log_write_cat(LEVEL_DEBUG, "mtp", "HALI: MTP speculative init failed, continuing without speculative decoding");
+        log_write(LEVEL_DEBUG, "mtp", "HALI: MTP speculative init failed, continuing without speculative decoding");
       }
       _mtp.n_layers = 0;
     }
   } else if (_mtp.n_layers > 0) {
     if (log_is_enabled(LEVEL_DEBUG)) {
-      log_write_cat(LEVEL_DEBUG, "mtp", "HALI: MTP available (%d layers) but disabled", _mtp.n_layers);
+      log_write(LEVEL_DEBUG, "mtp", "HALI: MTP available (%d layers) but disabled", _mtp.n_layers);
     }
     _mtp.n_layers = 0;
   }
@@ -100,13 +100,13 @@ void Llama::sync_and_capture_mtp(const llama_token *tokens, int n_tokens, llama_
   }
   if (!common_speculative_process(_mtp.spec.get(), _mtp.spec_batch)) {
     if (log_is_enabled(LEVEL_DEBUG)) {
-      log_write_cat(LEVEL_DEBUG, "mtp", "HALI: MTP: speculative process failed: %s", _last_error.c_str());
+      log_write(LEVEL_DEBUG, "mtp", "HALI: MTP: speculative process failed: %s", _last_error.c_str());
       auto * ctx_dft = _mtp.spec_init ? _mtp.spec_init->context() : nullptr;
       if (ctx_dft) {
         const llama_pos dft_pos_min = llama_memory_seq_pos_min(llama_get_memory(ctx_dft), 0);
         const llama_pos dft_pos_max = llama_memory_seq_pos_max(llama_get_memory(ctx_dft), 0);
-        log_write_cat(LEVEL_DEBUG, "mtp", "HALI: MTP: ctx_dft pos range [%d, %d], batch pos [%d, %d]",
-                  (int)dft_pos_min, (int)dft_pos_max, (int)pos_start, (int)(pos_start + n_tokens - 1));
+        log_write(LEVEL_DEBUG, "mtp", "HALI: MTP: ctx_dft pos range [%d, %d], batch pos [%d, %d]",
+                      (int)dft_pos_min, (int)dft_pos_max, (int)pos_start, (int)(pos_start + n_tokens - 1));
       }
     }
     _last_error.clear();
@@ -139,8 +139,8 @@ void Llama::mtp_rollback_unemitted(int n_unemitted) {
   llama_memory_seq_rm(llama_get_memory(_ctx), 0, keep_end, -1);
   mtp_trim_draft(keep_end);
   _tokens_physically_used -= n_unemitted;
-  log_write_cat(LEVEL_DEBUG, "mtp", "HALI: MTP: rolled back %d unemitted KV tokens (keep_end=%d)",
-            n_unemitted, (int)keep_end);
+  log_write(LEVEL_DEBUG, "mtp", "HALI: MTP: rolled back %d unemitted KV tokens (keep_end=%d)",
+                n_unemitted, (int)keep_end);
 }
 
 // ---------------------------------------------------------------------------
@@ -153,8 +153,8 @@ bool Llama::mtp_round(llama_token anchor, vector<llama_token> &accepted, llama_t
   int limit = _mtp.adapt.eff_n_max;
   limit = std::min({limit, _mtp.n_batch - 1, room});
   if (limit != _mtp.last_limit && log_is_enabled(LEVEL_DEBUG)) {
-    log_write_cat(LEVEL_DEBUG, "mtp", "HALI: MTP: adaptive limit %d -> %d (eff_n_max=%d)",
-              _mtp.last_limit, limit, _mtp.adapt.eff_n_max);
+    log_write(LEVEL_DEBUG, "mtp", "HALI: MTP: adaptive limit %d -> %d (eff_n_max=%d)",
+                  _mtp.last_limit, limit, _mtp.adapt.eff_n_max);
   }
   _mtp.last_limit = limit;
   if (limit <= 0) {
@@ -209,7 +209,7 @@ bool Llama::mtp_round(llama_token anchor, vector<llama_token> &accepted, llama_t
     const int rc = llama_decode(_ctx, batch);
     if (rc != 0) {
       if (log_is_enabled(LEVEL_DEBUG)) {
-        log_write_cat(LEVEL_DEBUG, "mtp", "HALI: MTP: verify decode failed rc=%d (k=%d pos=%d)", rc, k, (int)P);
+        log_write(LEVEL_DEBUG, "mtp", "HALI: MTP: verify decode failed rc=%d (k=%d pos=%d)", rc, k, (int)P);
       }
       llama_memory_seq_rm(llama_get_memory(_ctx), 0, P, -1);
       mtp_trim_draft(P);
@@ -233,7 +233,7 @@ bool Llama::mtp_round(llama_token anchor, vector<llama_token> &accepted, llama_t
     }
     if (!common_speculative_process(_mtp.spec.get(), _mtp.spec_batch)) {
       if (log_is_enabled(LEVEL_DEBUG)) {
-        log_write_cat(LEVEL_DEBUG, "mtp", "HALI: MTP: speculative process (verify) failed: %s, disabling MTP", _last_error.c_str());
+        log_write(LEVEL_DEBUG, "mtp", "HALI: MTP: speculative process (verify) failed: %s, disabling MTP", _last_error.c_str());
       }
       _last_error.clear();
       // the draft head is now out of sync with the target: stop using it.
@@ -265,7 +265,7 @@ bool Llama::mtp_round(llama_token anchor, vector<llama_token> &accepted, llama_t
     mtp_trim_draft(keep_end);  // drop rejected rows from the draft cache too
     if (!llama_memory_seq_rm(llama_get_memory(_ctx), 0, keep_end, -1)) {
       if (log_is_enabled(LEVEL_DEBUG)) {
-        log_write_cat(LEVEL_DEBUG, "mtp", "HALI: MTP: seq_rm failed, disabling MTP");
+        log_write(LEVEL_DEBUG, "mtp", "HALI: MTP: seq_rm failed, disabling MTP");
       }
       _mtp.enabled = false;
       _mtp.disabled_permanently = true;
@@ -303,23 +303,23 @@ bool Llama::mtp_round(llama_token anchor, vector<llama_token> &accepted, llama_t
   if (log_is_enabled(LEVEL_DEBUG)) {
     const long gpu_us = std::chrono::duration_cast<std::chrono::microseconds>(t1 - t0).count();
     const long cpu_us = std::chrono::duration_cast<std::chrono::microseconds>(t_end - t1).count();
-    log_write_cat(LEVEL_DEBUG, "mtp", "HALI: MTP: %d/%d accepted (limit=%d) gpu=%ld cpu=%ld",
-              n_acc, k, limit, gpu_us, cpu_us);
+    log_write(LEVEL_DEBUG, "mtp", "HALI: MTP: %d/%d accepted (limit=%d) gpu=%ld cpu=%ld",
+                  n_acc, k, limit, gpu_us, cpu_us);
   }
   if (_mtp.rounds % 128 == 0) {
     if (log_is_enabled(LEVEL_DEBUG)) {
       const double r = (double)_mtp.rounds;
-      log_write_cat(LEVEL_DEBUG, "mtp",
-                "HALI: MTP: %llu rounds, %.2f tok/rnd, accept %.0f%% | "
-                "gpu %.1f cpu %.1f (us) | n_max=%d p_min=%.2f n_min=%d",
-                (unsigned long long)_mtp.rounds,
-                1.0 + (double)_mtp.accepted / r,
-                _mtp.drafted ? 100.0 * (double)_mtp.accepted / (double)_mtp.drafted : 0.0,
-                (double)_mtp.time_gpu / r,
-                (double)_mtp.time_cpu / r,
-                _mtp.adapt.eff_n_max,
-                (double)_mtp.adapt.p_min,
-                _mtp.adapt.n_min);
+      log_write(LEVEL_DEBUG, "mtp",
+                    "HALI: MTP: %llu rounds, %.2f tok/rnd, accept %.0f%% | "
+                    "gpu %.1f cpu %.1f (us) | n_max=%d p_min=%.2f n_min=%d",
+                    (unsigned long long)_mtp.rounds,
+                    1.0 + (double)_mtp.accepted / r,
+                    _mtp.drafted ? 100.0 * (double)_mtp.accepted / (double)_mtp.drafted : 0.0,
+                    (double)_mtp.time_gpu / r,
+                    (double)_mtp.time_cpu / r,
+                    _mtp.adapt.eff_n_max,
+                    (double)_mtp.adapt.p_min,
+                    _mtp.adapt.n_min);
     }
   }
   if (++_mtp.adapt.eval_counter >= 32) {
@@ -365,17 +365,17 @@ void Llama::adapt_p_min() {
     float old = _mtp.adapt.p_min;
     _mtp.adapt.p_min = std::max(0.0f, _mtp.adapt.p_min - 0.05f);
     if (log_is_enabled(LEVEL_DEBUG)) {
-      log_write_cat(LEVEL_DEBUG, "mtp",
-        "HALI: MTP: adaptive p_min %.2f -> %.2f (win_frac=%.2f)",
-        old, _mtp.adapt.p_min, frac);
+      log_write(LEVEL_DEBUG, "mtp",
+                    "HALI: MTP: adaptive p_min %.2f -> %.2f (win_frac=%.2f)",
+                    old, _mtp.adapt.p_min, frac);
     }
   } else if (frac < 0.30 && _mtp.adapt.p_min < 0.50f) {
     float old = _mtp.adapt.p_min;
     _mtp.adapt.p_min = std::min(0.50f, _mtp.adapt.p_min + 0.05f);
     if (log_is_enabled(LEVEL_DEBUG)) {
-      log_write_cat(LEVEL_DEBUG, "mtp",
-        "HALI: MTP: adaptive p_min %.2f -> %.2f (win_frac=%.2f)",
-        old, _mtp.adapt.p_min, frac);
+      log_write(LEVEL_DEBUG, "mtp",
+                    "HALI: MTP: adaptive p_min %.2f -> %.2f (win_frac=%.2f)",
+                    old, _mtp.adapt.p_min, frac);
     }
   }
 }
@@ -393,16 +393,16 @@ void Llama::adapt_n_min() {
   double rate0 = (double)sum / (double)_mtp.win_filled;
   if (rate0 < 0.15 && _mtp.adapt.n_min > 0) {
     if (log_is_enabled(LEVEL_DEBUG)) {
-      log_write_cat(LEVEL_DEBUG, "mtp",
-        "HALI: MTP: adaptive n_min %d -> 0 (pos_rate[0]=%.2f < 0.15)",
-        _mtp.adapt.n_min, rate0);
+      log_write(LEVEL_DEBUG, "mtp",
+                    "HALI: MTP: adaptive n_min %d -> 0 (pos_rate[0]=%.2f < 0.15)",
+                    _mtp.adapt.n_min, rate0);
     }
     _mtp.adapt.n_min = 0;
   } else if (rate0 > 0.40 && _mtp.adapt.n_min == 0) {
     if (log_is_enabled(LEVEL_DEBUG)) {
-      log_write_cat(LEVEL_DEBUG, "mtp",
-        "HALI: MTP: adaptive n_min 0 -> 1 (pos_rate[0]=%.2f > 0.40)",
-        rate0);
+      log_write(LEVEL_DEBUG, "mtp",
+                    "HALI: MTP: adaptive n_min 0 -> 1 (pos_rate[0]=%.2f > 0.40)",
+                    rate0);
     }
     _mtp.adapt.n_min = 1;
   }
@@ -420,17 +420,17 @@ void Llama::adapt_pos_threshold() {
     float old = _mtp.adapt.pos_threshold;
     _mtp.adapt.pos_threshold = std::min(0.50f, _mtp.adapt.pos_threshold + 0.05f);
     if (log_is_enabled(LEVEL_DEBUG)) {
-      log_write_cat(LEVEL_DEBUG, "mtp",
-        "HALI: MTP: adaptive pos_threshold %.2f -> %.2f (ema=%.2f)",
-        old, _mtp.adapt.pos_threshold, ema);
+      log_write(LEVEL_DEBUG, "mtp",
+                    "HALI: MTP: adaptive pos_threshold %.2f -> %.2f (ema=%.2f)",
+                    old, _mtp.adapt.pos_threshold, ema);
     }
   } else if (ema < 0.30 && _mtp.adapt.pos_threshold > 0.20f) {
     float old = _mtp.adapt.pos_threshold;
     _mtp.adapt.pos_threshold = std::max(0.15f, _mtp.adapt.pos_threshold - 0.05f);
     if (log_is_enabled(LEVEL_DEBUG)) {
-      log_write_cat(LEVEL_DEBUG, "mtp",
-        "HALI: MTP: adaptive pos_threshold %.2f -> %.2f (ema=%.2f)",
-        old, _mtp.adapt.pos_threshold, ema);
+      log_write(LEVEL_DEBUG, "mtp",
+                    "HALI: MTP: adaptive pos_threshold %.2f -> %.2f (ema=%.2f)",
+                    old, _mtp.adapt.pos_threshold, ema);
     }
   }
 }
@@ -459,9 +459,7 @@ void Llama::mtp_adapt_eval() {
   int new_nmax = compute_effective_n_max();
   if (new_nmax != _mtp.adapt.eff_n_max) {
     if (log_is_enabled(LEVEL_DEBUG)) {
-      log_write_cat(LEVEL_DEBUG, "mtp",
-        "HALI: MTP: adaptive n_max %d -> %d",
-        _mtp.adapt.eff_n_max, new_nmax);
+      log_write(LEVEL_DEBUG, "mtp", "HALI: MTP: adaptive n_max %d -> %d", _mtp.adapt.eff_n_max, new_nmax);
     }
     _mtp.adapt.eff_n_max = new_nmax;
     _mtp.adapt.cooldown = 32;
@@ -546,8 +544,7 @@ bool Llama::decode_anchor(llama_token tok) {
   }
   _tokens_physically_used += 1;
   sync_and_capture_mtp(&tok, 1, (llama_pos)(_tokens_physically_used - 1));
-  _mtp.time_cpu += std::chrono::duration_cast<std::chrono::microseconds>(
-                                                                            std::chrono::high_resolution_clock::now() - t0).count();
+  _mtp.time_cpu += std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - t0).count();
   return true;
 }
 

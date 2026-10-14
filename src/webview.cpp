@@ -215,16 +215,16 @@ struct WebServer {
   // ── Public ────────────────────────────────────────────────────────
   void broadcast_message(const std::string &message) {
     if (!live_reload_) {
-      log_write(LEVEL_INFO, "live_reload disabled");
+      log_write(LEVEL_INFO, "webview", "live_reload disabled");
       return;
     }
-    log_write(LEVEL_INFO, "broadcasting [%s]", message.c_str());
+    log_write(LEVEL_INFO, "webview", "broadcasting [%s]", message.c_str());
     std::string frame = ws_encode_frame(message);
     std::lock_guard<std::mutex> lock(ws_mutex_);
     for (auto it = ws_clients_.begin(); it != ws_clients_.end(); ) {
       ssize_t n = ::send(*it, frame.data(), frame.size(), MSG_NOSIGNAL);
       if (n < 0) {
-        log_write(LEVEL_INFO, "broadcast_message failed [%d]", n);
+        log_write(LEVEL_INFO, "webview", "broadcast_message failed [%d]", n);
         ::close(*it);
         it = ws_clients_.erase(it);
       } else {
@@ -462,7 +462,7 @@ struct WebServer {
 
   // Per-connection handler: WebSocket upgrade or static file.
   void handle_client(int fd) {
-    log_write(LEVEL_INFO, "handle request entered");
+    log_write(LEVEL_INFO, "webview", "handle request entered");
 
     std::string head;
     if (!read_request_head(fd, head)) {
@@ -476,7 +476,7 @@ struct WebServer {
     if (req.path == std::string(WS_PATH)) {
       std::string key = req.header("sec-websocket-key");
       if (key.empty()) {
-        log_write(LEVEL_INFO, "ws-upgrade bad request");
+        log_write(LEVEL_INFO, "webview", "ws-upgrade bad request");
         send_http_response(fd, 400, "Bad Request", "text/plain", "Expected WebSocket upgrade request");
         ::close(fd);
         return;
@@ -484,7 +484,7 @@ struct WebServer {
 
       std::string accept = ws_accept_key(key);
       std::ostringstream resp;
-      log_write(LEVEL_INFO, "ws-upgrade [%s] key[%s] accept[%s]", req.path.c_str(), key.c_str(), accept.c_str());
+      log_write(LEVEL_INFO, "webview", "ws-upgrade [%s] key[%s] accept[%s]", req.path.c_str(), key.c_str(), accept.c_str());
       resp << "HTTP/1.1 101 Switching Protocols\r\n";
       resp << "Upgrade: websocket\r\n";
       resp << "Connection: Upgrade\r\n";
@@ -498,7 +498,7 @@ struct WebServer {
         sent += static_cast<size_t>(n);
       }
 
-      log_write(LEVEL_INFO, "sent [%d] of [%d] bytes", sent, out.length());
+      log_write(LEVEL_INFO, "webview", "sent [%d] of [%d] bytes", sent, out.length());
       {
         std::lock_guard<std::mutex> lock(ws_mutex_);
         ws_clients_.push_back(fd);
@@ -511,7 +511,7 @@ struct WebServer {
       while (true) {
         ssize_t n = ::recv(fd, chunk, sizeof(chunk), 0);
         if (n <= 0) {
-          log_write(LEVEL_INFO, "ws recv [%d]", n);
+          log_write(LEVEL_INFO, "webview", "ws recv [%d]", n);
           break;
         }
         rx.append(chunk, static_cast<size_t>(n));
@@ -530,7 +530,7 @@ struct WebServer {
         }
         rx.erase(0, pos);
       }
-      log_write(LEVEL_INFO, "ws connection released");
+      log_write(LEVEL_INFO, "webview", "ws connection released");
       {
         std::lock_guard<std::mutex> lock(ws_mutex_);
         auto it = std::ranges::find(ws_clients_, fd);
@@ -550,7 +550,7 @@ struct WebServer {
       rel_path = rel_path.substr(1);
     }
 
-    log_write(LEVEL_INFO, "serve %s", rel_path.c_str());
+    log_write(LEVEL_INFO, "webview", "serve %s", rel_path.c_str());
     serve_file(fd, rel_path);
     ::close(fd);
   }

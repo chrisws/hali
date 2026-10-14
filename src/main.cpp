@@ -324,7 +324,7 @@ int main(int argc, char **argv) {
   // ── Init MCP ──────────────────────────────────────────────────────
   if (do_mcp_test) {
     log_open_console();
-    log_write(LEVEL_INFO, mcp_client.get_system_context(cfg.mcp_filter_).c_str());
+    log_write(LEVEL_INFO, "main", mcp_client.get_system_context(cfg.mcp_filter_).c_str());
     curl_close();
     log_close();
     return 0;
@@ -391,7 +391,7 @@ int main(int argc, char **argv) {
   }
 
   // ── Main loop ─────────────────────────────────────────────────────
-  log_write(LEVEL_INFO, "hali starting");
+  log_write(LEVEL_INFO, "main", "hali starting");
   for (;;) {
     if (cfg.web_port_ != -1) {
       if (webview::has_message()) {
@@ -430,7 +430,7 @@ int main(int argc, char **argv) {
     webview::stop();
   }
 
-  log_write(LEVEL_INFO, "hali exiting");
+  log_write(LEVEL_INFO, "main", "hali exiting");
   log_close();
 
   // Persist input history for the next session.

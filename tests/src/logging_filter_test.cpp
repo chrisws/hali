@@ -38,9 +38,9 @@ static void test_filter_matching_category() {
   log_close();
   log_open("0");
 
-  log_write_cat(LEVEL_DEBUG, "mtp", "matching line");
-  log_write_cat(LEVEL_DEBUG, "other", "non-matching line");
-  log_write(LEVEL_DEBUG, "untagged line");
+  log_write(LEVEL_DEBUG, "mtp", "matching line");
+  log_write(LEVEL_DEBUG, "other", "non-matching line");
+  log_write(LEVEL_DEBUG, "untagged", "untagged line");
 
   log_close();
 
@@ -62,8 +62,8 @@ static void test_filter_wildcard() {
   log_close();
   log_open("0");
 
-  log_write_cat(LEVEL_DEBUG, "mtp", "categorized line");
-  log_write(LEVEL_DEBUG, "untagged line");
+  log_write(LEVEL_DEBUG, "mtp", "categorized line");
+  log_write(LEVEL_DEBUG, "untagged", "untagged line");
 
   log_close();
 
@@ -84,10 +84,10 @@ static void test_filter_multiple_categories() {
   log_close();
   log_open("0");
 
-  log_write_cat(LEVEL_DEBUG, "mtp", "mtp line");
-  log_write_cat(LEVEL_DEBUG, "net", "net line");
-  log_write_cat(LEVEL_DEBUG, "other", "other line");
-  log_write(LEVEL_DEBUG, "untagged line");
+  log_write(LEVEL_DEBUG, "mtp", "mtp line");
+  log_write(LEVEL_DEBUG, "net", "net line");
+  log_write(LEVEL_DEBUG, "other", "other line");
+  log_write(LEVEL_DEBUG, "untagged", "untagged line");
 
   log_close();
 
@@ -110,8 +110,8 @@ static void test_filter_no_env_var() {
   log_close();
   log_open("0");
 
-  log_write_cat(LEVEL_DEBUG, "mtp", "categorized line");
-  log_write(LEVEL_DEBUG, "untagged line");
+  log_write(LEVEL_DEBUG, "mtp", "categorized line");
+  log_write(LEVEL_DEBUG, "untagged", "untagged line");
 
   log_close();
 

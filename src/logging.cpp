@@ -7,6 +7,7 @@
 //
 
 #include "logging.h"
+#include "json.h"
 
 #include <cstdio>
 #include <ctime>
@@ -14,6 +15,7 @@
 #include <mutex>
 #include <atomic>
 #include <string>
+#include <fstream>
 #include <unordered_map>
 #include <unordered_set>
 #include <filesystem>
@@ -47,40 +49,76 @@ static LogLevel get_level(const std::string& level) {
 
 void log_open(const std::string& level) {
   std::lock_guard<std::mutex> lock(g_log_mutex);
-  g_level.store(get_level(level));
   g_log_console = false;
 
-  // Read category filter (reset state unconditionally)
+  std::string level_str = level;
+  std::string file_path;
+  std::string filter_str;
+  bool has_file = false;
+  bool has_filter = false;
+
+  // Check if the argument is a path to an existing file (JSON config)
+  std::error_code ec;
+  if (!level.empty() && fs::is_regular_file(level, ec)) {
+    std::ifstream ifs(level);
+    std::string content((std::istreambuf_iterator<char>(ifs)),
+                        std::istreambuf_iterator<char>());
+    json::JsonDoc doc = json::JsonDoc::parse(content);
+    if (doc.is_valid()) {
+      json::JsonValue root = doc.get_root();
+      std::string val;
+      if (root.get_str("level", val)) {
+        level_str = val;
+      }
+      if (root.get_str("file", val)) {
+        file_path = val;
+        has_file = true;
+      }
+      if (root.get_str("filter", val)) {
+        filter_str = val;
+        has_filter = true;
+      }
+    }
+  }
+
+  g_level.store(get_level(level_str));
+
+  // Category filter: JSON config takes precedence over env var
   g_log_filter_active = false;
   g_log_categories.clear();
-  if (const char *filter = getenv("HALI_LOG_FILTER")) {
-    g_log_filter_active = (std::string(filter) != "*");
-    if (g_log_filter_active) {
-      std::string f(filter);
-      size_t start = 0;
-      while (start < f.size()) {
-        size_t comma = f.find(',', start);
-        if (comma == std::string::npos) {
-          g_log_categories.insert(f.substr(start));
-          break;
-        }
-        g_log_categories.insert(f.substr(start, comma - start));
-        start = comma + 1;
+  std::string effective_filter;
+  if (has_filter) {
+    effective_filter = filter_str;
+  } else if (const char *env_filter = getenv("HALI_LOG_FILTER")) {
+    effective_filter = env_filter;
+  }
+  if (!effective_filter.empty() && effective_filter != "*") {
+    g_log_filter_active = true;
+    size_t start = 0;
+    while (start < effective_filter.size()) {
+      size_t comma = effective_filter.find(',', start);
+      if (comma == std::string::npos) {
+        g_log_categories.insert(effective_filter.substr(start));
+        break;
       }
+      g_log_categories.insert(effective_filter.substr(start, comma - start));
+      start = comma + 1;
     }
   }
 
   if (g_logfile == nullptr) {
     std::string path;
-    if (const char *env_path = getenv("HALI_LOG_FILE")) {
+    if (has_file) {
+      path = file_path;
+    } else if (const char *env_path = getenv("HALI_LOG_FILE")) {
       path = env_path;
     } else {
       const char *home = getenv("HOME");
       path = std::string(home ? home : ".") + "/.config/hali/hali.log";
     }
-    std::error_code ec;
+    std::error_code ec2;
     fs::path dir = fs::path(path).parent_path();
-    fs::create_directories(dir, ec);
+    fs::create_directories(dir, ec2);
     g_logfile = fopen(path.c_str(), "a");
   }
 }
@@ -104,7 +142,7 @@ bool log_is_enabled(LogLevel level) {
   return level >= g_level.load();
 }
 
-void log_write_cat(LogLevel level, const char* category, const char* format, ...) {
+void log_write(LogLevel level, const char* category, const char* format, ...) {
   std::lock_guard<std::mutex> lock(g_log_mutex);
 
   if (g_log_console) {
@@ -150,48 +188,3 @@ void log_write_cat(LogLevel level, const char* category, const char* format, ...
   fflush(g_logfile);
 }
 
-void log_write(LogLevel level, const char* format, ...) {
-  std::lock_guard<std::mutex> lock(g_log_mutex);
-
-  if (g_log_console) {
-    fprintf(stderr, "LOG: ");
-    va_list args;
-    va_start(args, format);
-    vfprintf(stderr, format, args);
-    va_end(args);
-    fprintf(stderr, "\n");
-    return;
-  }
-
-  if (!g_logfile || level < g_level.load()) {
-    return;
-  }
-
-  // When a category filter is active, untagged lines are excluded
-  if (g_log_filter_active) {
-    return;
-  }
-
-  const time_t now = time(nullptr);
-  char timestamp[20];
-  strftime(timestamp, sizeof(timestamp), "%Y-%m-%d %H:%M:%S", localtime(&now));
-
-  const char* level_str;
-  switch (level) {
-    case LEVEL_DEBUG: level_str = "DEBUG"; break;
-    case LEVEL_INFO: level_str = "INFO"; break;
-    case LEVEL_WARNING: level_str = "WARNING"; break;
-    case LEVEL_ERROR: level_str = "ERROR"; break;
-    default: level_str = "UNKNOWN"; break;
-  }
-
-  fprintf(g_logfile, "[%s] [%s] ", timestamp, level_str);
-  if (format) {
-    va_list args;
-    va_start(args, format);
-    vfprintf(g_logfile, format, args);
-    va_end(args);
-  }
-  fprintf(g_logfile, "\n");
-  fflush(g_logfile);
-}

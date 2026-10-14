@@ -84,7 +84,7 @@ Llama::Llama() :
     }
     // always log errors; log others if above threshold
     if (level == GGML_LOG_LEVEL_ERROR || level > llama->_log_level) {
-      log_write(LEVEL_INFO, "LLAMA: %s", utils::trim(text).c_str());
+      log_write(LEVEL_INFO, "llama", "LLAMA: %s", utils::trim(text).c_str());
     }
   }, this);
 
@@ -236,17 +236,17 @@ bool Llama::load_model(const LlamaLoad &load) {
 
     switch (load.kv_cache_preset) {
       case KVCachePreset::F16:
-        log_write(LEVEL_INFO, "HALI: kv_cache_preset=f16");
+        log_write(LEVEL_INFO, "llama", "HALI: kv_cache_preset=f16");
         cparams.type_k = GGML_TYPE_F16;
         cparams.type_v = GGML_TYPE_F16;
         break;
       case KVCachePreset::Balanced:
-        log_write(LEVEL_INFO, "HALI: kv_cache_preset=balanced");
+        log_write(LEVEL_INFO, "llama", "HALI: kv_cache_preset=balanced");
         cparams.type_k = GGML_TYPE_Q8_0;
         cparams.type_v = GGML_TYPE_Q8_0;
         break;
       case KVCachePreset::Compact:
-        log_write(LEVEL_INFO, "HALI: kv_cache_preset=compact");
+        log_write(LEVEL_INFO, "llama", "HALI: kv_cache_preset=compact");
         cparams.type_k = GGML_TYPE_Q4_0;
         cparams.type_v = GGML_TYPE_Q4_0;
         break;
@@ -259,12 +259,12 @@ bool Llama::load_model(const LlamaLoad &load) {
     cparams.swa_full = true;
 
     if (load.n_threads > 0) {
-      log_write(LEVEL_INFO, "HALI: n_threads: %d", load.n_threads);
+      log_write(LEVEL_INFO, "llama", "HALI: n_threads: %d", load.n_threads);
       cparams.n_threads = load.n_threads;
     }
 
     if (load.n_threads_batch > 0) {
-      log_write(LEVEL_INFO, "HALI: n_threads_batch: %d", load.n_threads_batch);
+      log_write(LEVEL_INFO, "llama", "HALI: n_threads_batch: %d", load.n_threads_batch);
       cparams.n_threads_batch = load.n_threads_batch;
     }
 
@@ -284,7 +284,7 @@ bool Llama::load_model(const LlamaLoad &load) {
       _template = llama_model_chat_template(_model, nullptr);
       _is_gemma4 = (_template.find("<|turn>model") != string::npos);
       _can_shift = llama_memory_can_shift(llama_get_memory(_ctx));
-      log_write(LEVEL_INFO, "HALI: can_shift=%d, is_gemma4=%d n_swa=%d", _can_shift, _is_gemma4, llama_model_n_swa(_model));
+      log_write(LEVEL_INFO, "llama", "HALI: can_shift=%d, is_gemma4=%d n_swa=%d", _can_shift, _is_gemma4, llama_model_n_swa(_model));
       mtp_init(load);
     }
   }
@@ -349,7 +349,7 @@ bool Llama::add_message(LlamaIter &iter, const string &role, const string &conte
     bool add_ass = (role == "user" || role == "tool" || role == "tool_result");
     n = llama_chat_apply_template(_template.c_str(), &message, 1, add_ass, buf.data(), buf_size);
     if (n < 0) {
-      log_write(LEVEL_INFO, "HALI: unsupported template: %s", _template.c_str());
+      log_write(LEVEL_INFO, "llama", "HALI: unsupported template: %s", _template.c_str());
       set_last_error("Chat template support test");
       return false;
     } else if (n > (int32_t)buf.size()) {
@@ -698,7 +698,7 @@ bool Llama::make_space_for_tokens(int n_tokens) {
 
     int new_used = n_keep + n_left - n_discard;
     if (n_discard > 0 && new_used + n_tokens <= n_ctx) {
-      log_write(LEVEL_DEBUG,
+      log_write(LEVEL_DEBUG, "llama",
                 "HALI: context shift: keep=%d discard=%d new_used=%d requested=%d n_ctx=%d",
                 n_keep, n_discard, new_used, n_tokens, n_ctx);
 
@@ -722,7 +722,7 @@ bool Llama::make_space_for_tokens(int n_tokens) {
   }
 
   // Fall back to full clear
-  log_write(LEVEL_DEBUG,
+  log_write(LEVEL_DEBUG, "llama",
             "HALI: capacity exhausted, forcing full reset: "
             "used=%zu requested=%d n_ctx=%d can_shift=%d",
             _tokens_physically_used, n_tokens, n_ctx, _can_shift ? 1 : 0);

@@ -221,7 +221,7 @@ std::string Input::readline(TuiContext &tui) {
   for (;;) {
     auto ev = tui.get_event();
     if (ev.is(Key::ENTER) || ev.is(Key::NL) || ev.is(Key::CR)) {
-      log_write(LEVEL_DEBUG, "Key ENTER/NL/CR pressed");
+      log_write(LEVEL_DEBUG, "input", "Key ENTER/NL/CR pressed");
       std::string result = input_buf_;
       if (!result.empty()) {
         history_.push(result);
@@ -234,7 +234,7 @@ std::string Input::readline(TuiContext &tui) {
     }
 
     if (ev.is_ctrl() && ev.is(Key::X)) {
-      log_write(LEVEL_DEBUG, "Ctrl+X key combination");
+      log_write(LEVEL_DEBUG, "input", "Ctrl+X key combination");
       ctrl_x_mode_ = true;
       // read next key combination
       continue;
@@ -244,20 +244,20 @@ std::string Input::readline(TuiContext &tui) {
     }
 
     if (ev.is(Key::F2)) {
-      log_write(LEVEL_DEBUG, "F2 key pressed (toggle mouse mode)");
+      log_write(LEVEL_DEBUG, "input", "F2 key pressed (toggle mouse mode)");
       mouse_mode_ = !mouse_mode_;
       tui.enable_mouse(mouse_mode_);
       continue;
     }
 
     if (ev.is(Key::F12)) {
-      log_write(LEVEL_DEBUG, "F12 key pressed (toggle theme)");
+      log_write(LEVEL_DEBUG, "input", "F12 key pressed (toggle theme)");
       tui.toggle_theme();
       continue;
     }
 
     if (ev.is(Key::PAGE_UP)) {
-      log_write(LEVEL_DEBUG, "Page Up key pressed");
+      log_write(LEVEL_DEBUG, "input", "Page Up key pressed");
       const int term_rows = tui.get_term_rows();
       scroll_offset_ += std::max(1, term_rows - 4);
       redraw_chat();
@@ -265,7 +265,7 @@ std::string Input::readline(TuiContext &tui) {
     }
 
     if (ev.is(Key::PAGE_DOWN)) {
-      log_write(LEVEL_DEBUG, "Page Down key pressed");
+      log_write(LEVEL_DEBUG, "input", "Page Down key pressed");
       const int term_rows = tui.get_term_rows();
       scroll_offset_ = std::max(0, scroll_offset_ - std::max(1, term_rows - 4));
       redraw_chat();
@@ -273,7 +273,7 @@ std::string Input::readline(TuiContext &tui) {
     }
 
     if (ev.is(Key::UP)) {
-      log_write(LEVEL_DEBUG, "Up arrow key pressed");
+      log_write(LEVEL_DEBUG, "input", "Up arrow key pressed");
       std::string hist_entry;
       if (history_.up(hist_entry)) {
         if (!input_buf_.empty() && hist_entry != input_buf_) {
@@ -287,7 +287,7 @@ std::string Input::readline(TuiContext &tui) {
     }
 
     if (ev.is(Key::DOWN)) {
-      log_write(LEVEL_DEBUG, "Down arrow key pressed");
+      log_write(LEVEL_DEBUG, "input", "Down arrow key pressed");
       std::string hist_entry;
       if (history_.down(hist_entry)) {
         input_buf_  = hist_entry;
@@ -303,7 +303,7 @@ std::string Input::readline(TuiContext &tui) {
 
     // Ctrl-L: clear screen and redraw
     if (ev.is_ctrl() && ev.is(Key::L)) {
-      log_write(LEVEL_DEBUG, "Ctrl+L key pressed (clear screen)");
+      log_write(LEVEL_DEBUG, "input", "Ctrl+L key pressed (clear screen)");
       cursor_pos_ = 0;
       scroll_offset_ = 0;
       input_buf_.clear();
@@ -313,7 +313,7 @@ std::string Input::readline(TuiContext &tui) {
 
     // Insert mode handling
     if (insert_mode_) {
-      log_write(LEVEL_DEBUG, "Insert mode handling");
+      log_write(LEVEL_DEBUG, "input", "Insert mode handling");
       if (ev.is(Key::BACKSPACE) || ev.is(Key::ESCAPE)) {
         if (cursor_pos_ > 0) {
           input_buf_.erase(cursor_pos_ - 1, 1); --cursor_pos_;
@@ -336,12 +336,12 @@ std::string Input::readline(TuiContext &tui) {
 
     // Ctrl-Left / Ctrl-Right: word-wise navigation
     if (ev.is_ctrl() && ev.is(Key::LEFT)) {
-      log_write(LEVEL_DEBUG, "Ctrl+left pressed [%d]", cursor_pos_);
+      log_write(LEVEL_DEBUG, "input", "Ctrl+left pressed [%d]", cursor_pos_);
       cursor_pos_ = move_to_prev_word(cursor_pos_);
       redraw_input();
       continue;
     } else if (ev.is_ctrl() && ev.is(Key::RIGHT)) {
-      log_write(LEVEL_DEBUG, "Ctrl+right pressed [%d]", cursor_pos_);
+      log_write(LEVEL_DEBUG, "input", "Ctrl+right pressed [%d]", cursor_pos_);
       cursor_pos_ = move_to_next_word(cursor_pos_);
       redraw_input();
       continue;
@@ -371,7 +371,7 @@ std::string Input::readline(TuiContext &tui) {
 
     // Ctrl-I (Tab): insert space
     if (ev.is_ctrl() && ev.is(Key::SPACE)) {
-      log_write(LEVEL_DEBUG, "Ctrl+space key pressed");
+      log_write(LEVEL_DEBUG, "input", "Ctrl+space key pressed");
       input_buf_.insert(cursor_pos_, 1, ' ');
       ++cursor_pos_;
       redraw_input();
@@ -380,7 +380,7 @@ std::string Input::readline(TuiContext &tui) {
 
     // Ctrl-Backspace: delete word before cursor
     if (ev.is_ctrl() && ev.is(Key::BACKSPACE)) {
-      log_write(LEVEL_DEBUG, "Ctrl+backspace key pressed");
+      log_write(LEVEL_DEBUG, "input", "Ctrl+backspace key pressed");
       cursor_pos_ = delete_word_before(cursor_pos_);
       redraw_input();
       continue;
@@ -388,7 +388,7 @@ std::string Input::readline(TuiContext &tui) {
 
     // Ctrl-W: kill word backward
     if (ev.is_ctrl() && ev.is(Key::W)) {
-      log_write(LEVEL_DEBUG, "Ctrl+W key pressed");
+      log_write(LEVEL_DEBUG, "input", "Ctrl+W key pressed");
       cursor_pos_ = kill_word_backward(cursor_pos_);
       redraw_input();
       continue;
@@ -396,7 +396,7 @@ std::string Input::readline(TuiContext &tui) {
 
     // Ctrl-U: clear from cursor to beginning
     if (ev.is_ctrl() && ev.is(Key::U)) {
-      log_write(LEVEL_DEBUG, "Ctrl+U key pressed");
+      log_write(LEVEL_DEBUG, "input", "Ctrl+U key pressed");
       input_buf_.erase(0, cursor_pos_);
       cursor_pos_ = 0;
       redraw_input();
@@ -405,7 +405,7 @@ std::string Input::readline(TuiContext &tui) {
 
     // Ctrl-K: clear from cursor to end
     if (ev.is_ctrl() && ev.is(Key::K)) {
-      log_write(LEVEL_DEBUG, "Ctrl+K key pressed");
+      log_write(LEVEL_DEBUG, "input", "Ctrl+K key pressed");
       input_buf_.erase(cursor_pos_);
       redraw_input();
       continue;
@@ -413,7 +413,7 @@ std::string Input::readline(TuiContext &tui) {
 
     // Ctrl-D: delete-char (kill next char)
     if (ev.is_ctrl() && ev.is(Key::D)) {
-      log_write(LEVEL_DEBUG, "Ctrl+D key pressed (delete char)");
+      log_write(LEVEL_DEBUG, "input", "Ctrl+D key pressed (delete char)");
       if (cursor_pos_ < input_buf_.size()) {
         input_buf_.erase(cursor_pos_, 1);
         redraw_input();
@@ -422,7 +422,7 @@ std::string Input::readline(TuiContext &tui) {
     }
 
     if (ev.is_ctrl() && ev.is(Key::V)) {
-      log_write(LEVEL_DEBUG, "Ctrl+V key pressed (enter insert mode)");
+      log_write(LEVEL_DEBUG, "input", "Ctrl+V key pressed (enter insert mode)");
       // Ctrl-V: enter insert mode for the next character
       insert_mode_ = true;
       redraw_input();
@@ -431,7 +431,7 @@ std::string Input::readline(TuiContext &tui) {
 
     // Ctrl-H: kill-backward-char (backspace char)
     if (ev.is_ctrl() && ev.is(Key::H)) {
-      log_write(LEVEL_DEBUG, "Ctrl+H key pressed (backspace)");
+      log_write(LEVEL_DEBUG, "input", "Ctrl+H key pressed (backspace)");
       if (cursor_pos_ > 0) {
         input_buf_.erase(cursor_pos_ - 1, 1);
         --cursor_pos_;
@@ -483,7 +483,7 @@ std::string Input::readline(TuiContext &tui) {
     }
 
     if (ctrl_x_mode_) {
-      log_write(LEVEL_DEBUG, "Ctrl-X mode");
+      log_write(LEVEL_DEBUG, "input", "Ctrl-X mode");
       // Ctrl-x Ctrl+K: kill-line (clear to end)
       if (ev.is(Key::K)) {
         input_buf_.erase(cursor_pos_);
@@ -560,7 +560,7 @@ std::string Input::readline(TuiContext &tui) {
       input_buf_.insert(cursor_pos_, 1, ev.val());
       ++cursor_pos_;
     } else {
-      log_write(LEVEL_DEBUG, "val:%d is_shift:%d is_ctrl:%d is_edit:%d is_ascii:%d is_resize:%d",
+      log_write(LEVEL_DEBUG, "input", "val:%d is_shift:%d is_ctrl:%d is_edit:%d is_ascii:%d is_resize:%d",
                 ev.val(), ev.is_shift(), ev.is_ctrl(), ev.is_edit(), ev.is_ascii(), ev.is_resize());
       continue;
     }
