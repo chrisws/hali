@@ -560,12 +560,12 @@ std::string Agent::process_tool(const std::string &cmd) {
   }
   if (op == "TOOL:TABLE") {
     const auto result = tool_table(arg1, arg2);
-    if (utils::starts_with(result, "ERROR")) {
-      tui_.show_tool("table error: " + result);
-      tui_.append_lines(arg2);
-      return result;
+    if (!result.error.empty()) {
+      tui_.show_tool("table error: " + result.error);
+      tui_.append_line(arg2);
+      return result.error;
     }
-    tui_.append_lines(result);
+    tui_.append_lines(result.rows);
     return "OK";
   }
   return "ERROR: unknown tool: [" + op + "]";

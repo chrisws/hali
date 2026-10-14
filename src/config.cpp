@@ -245,6 +245,12 @@ std::string HaliConfig::build_system_prompt() const {
     "- For TOOL:GRAPH, Reference `skills/graph.md` when you need the full schema details\n"
     "- Only expand the context when actively working with graphs\n\n"
 
+    "## TOOL:TABLE Rules\n"
+    "- ALWAYS use TOOL:TABLE when presenting tabular data (comparisons, columnar lists, summaries with 2+ columns)\n"
+    "- Do NOT write markdown tables (| col | col |) in your response text\n"
+    "- Format: first line is <R>x<C>, then one pipe-delimited row per line\n"
+    "- Example: TOOL:TABLE 3x2 Name|Value\\nfoo|1\\nbar|2\n\n"
+
     "## File Writing Rules\n"
     "Use TOOL:WRITE only if explicitly requested. Prefer TOOL:APPEND or TOOL:PATCH\n"
     "- Write complete and valid content\n"

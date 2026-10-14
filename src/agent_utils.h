@@ -6,7 +6,8 @@
 // Download the GNU Public License (GPL) from www.gnu.org
 //
 
-#pragma once
+#ifndef AGENT_UTILS_H
+#define AGENT_UTILS_H
 
 #include <string>
 #include <vector>
@@ -76,4 +77,11 @@ std::string tool_replace(const std::string &sandbox, const std::string &file, co
 //
 // TOOL:TABLE
 //
-std::string tool_table(const std::string &dims, const std::string &data);
+struct TableResult {
+  std::string error;
+  std::vector<std::string> rows;
+};
+
+TableResult tool_table(const std::string &dims, const std::string &data);
+
+#endif

@@ -653,11 +653,14 @@ std::string tool_replace(const std::string &sandbox, const std::string &file, co
 //
 // TOOL:TABLE
 //
-std::string tool_table(const std::string &dims, const std::string &data) {
+TableResult tool_table(const std::string &dims, const std::string &data) {
+  TableResult result;
+
   // Parse RxC
   auto xpos = dims.find('x');
   if (xpos == std::string::npos) {
-    return "ERROR: expected <R>x<C> format, got [" + dims + "]";
+    result.error = "expected <R>x<C> format, got [" + dims + "]";
+    return result;
   }
   int rows = std::stoi(dims.substr(0, xpos));
   int cols = std::stoi(dims.substr(xpos + 1));
@@ -677,7 +680,8 @@ std::string tool_table(const std::string &dims, const std::string &data) {
   }
 
   if (grid.empty()) {
-    return "ERROR: no table data provided";
+    result.error = "no table data provided";
+    return result;
   }
 
   // Compute max width per column
@@ -689,8 +693,8 @@ std::string tool_table(const std::string &dims, const std::string &data) {
   }
 
   // Format
-  std::ostringstream oss;
   for (int r = 0; r < (int)grid.size(); r++) {
+    std::ostringstream oss;
     for (int c = 0; c < cols; c++) {
       if (c > 0) oss << "  ";
       const std::string &val = (c < (int)grid[r].size()) ? grid[r][c] : "";
@@ -700,15 +704,16 @@ std::string tool_table(const std::string &dims, const std::string &data) {
         for (int i = 0; i < pad; i++) oss << ' ';
       }
     }
-    oss << "\n";
+    result.rows.push_back(oss.str());
     // Separator after header
     if (r == 0) {
+      std::ostringstream sep;
       for (int c = 0; c < cols; c++) {
-        if (c > 0) oss << "  ";
-        for (int i = 0; i < widths[c]; i++) oss << "-";
+        if (c > 0) sep << "  ";
+        for (int i = 0; i < widths[c]; i++) sep << "-";
       }
-      oss << "\n";
+      result.rows.push_back(sep.str());
     }
   }
-  return oss.str();
+  return result;
 }
