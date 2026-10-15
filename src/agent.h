@@ -16,6 +16,7 @@
 #include "config.h"
 #include "tui.h"
 #include "mcp_client.h"
+#include "usage_log.h"
 
 //
 // Agent
@@ -38,6 +39,7 @@ struct Agent {
   void apply_generation_params() const;
   bool model_loaded() const { return model_loaded_;}
   void save_mtp_best_settings();
+  void dump_usage_log(const std::string &path) const;
 
   private:
   HaliConfig &cfg_;
@@ -61,6 +63,13 @@ struct Agent {
   double elapsed_seconds() const;
   float tokens_per_sec() const;
   void invoke_tool(const std::string &buffer, std::string_view template_str);
+
+  UsageLog usage_log_;
+  int turn_number_ = 0;
+  int turn_tool_calls_ = 0;
+  int turn_tool_errors_ = 0;
+  int turn_files_read_ = 0;
+  int turn_files_written_ = 0;
 };
 
 #endif

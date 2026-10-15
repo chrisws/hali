@@ -448,6 +448,10 @@ int main(int argc, char **argv) {
   }
 
   log_write(LEVEL_INFO, "main", "hali exiting");
+
+  // Dump usage log for post-hoc analysis.
+  agent.dump_usage_log(cfg.sandbox_ + "/usage_log.json");
+
   log_close();
 
   // Persist MTP best settings if the model found improvements.

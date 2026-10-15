@@ -408,6 +408,7 @@ std::string Agent::process_tool(const std::string &cmd) {
   }
   if (op == "TOOL:READ") {
     tui_.show_tool("reading: " + arg1);
+    turn_files_read_++;
     std::string p = resolve_path(cfg_.sandbox_, arg1);
     if (!path_in_sandbox(cfg_.sandbox_, p)) {
       return "ERROR: path outside sandbox";
@@ -417,6 +418,7 @@ std::string Agent::process_tool(const std::string &cmd) {
   if (op == "TOOL:SEARCH") {
     SearchArgs sa = parse_search_args(arg1, arg2);
     tui_.show_tool("search: " + sa.pattern + " " + sa.path_and_flags);
+    turn_files_read_++;
     std::string path_part, flags_part;
     auto space_pos = sa.path_and_flags.find(' ');
     if (space_pos != std::string::npos) {
@@ -429,6 +431,7 @@ std::string Agent::process_tool(const std::string &cmd) {
   }
   if (op == "TOOL:WRITE") {
     tui_.show_tool("writing: " + arg1);
+    turn_files_written_++;
     const auto path = resolve_path(cfg_.sandbox_, arg1);
     if (!path_in_sandbox(cfg_.sandbox_, path)) {
       return "ERROR: path outside sandbox";
@@ -457,6 +460,7 @@ std::string Agent::process_tool(const std::string &cmd) {
   }
   if (op == "TOOL:PATCH") {
     tui_.show_tool("patch: " + arg1);
+    turn_files_written_++;
     const auto path = resolve_path(cfg_.sandbox_, arg1);
     if (!path_in_sandbox(cfg_.sandbox_, path)) {
       return "ERROR: path outside sandbox";
@@ -480,6 +484,7 @@ std::string Agent::process_tool(const std::string &cmd) {
   }
   if (op == "TOOL:APPEND") {
     tui_.show_tool("append: " + arg1);
+    turn_files_written_++;
     const auto path = resolve_path(cfg_.sandbox_, arg1);
     if (!path_in_sandbox(cfg_.sandbox_, path)) {
       return "ERROR: path outside sandbox";
@@ -598,9 +603,13 @@ void Agent::invoke_tool(const std::string &buffer, const std::string_view templa
   }
 
   log_write(LEVEL_DEBUG, "agent", "tool request: [%s]", tool.c_str());
+  turn_tool_calls_++;
   std::string result = process_tool(tool);
   if (result.empty()) {
     result = "TOOL produced no results";
+  }
+  if (result.rfind("ERROR", 0) == 0) {
+    turn_tool_errors_++;
   }
   const std::string content = TOOL_RESULT + std::vformat(template_str, std::make_format_args(result)) + memory_info_status();
   // log_write(LEVEL_DEBUG, "tool: [%s] result: [%s]", tool.c_str(), result.c_str());
@@ -654,6 +663,11 @@ bool Agent::run_turn(const std::string &user_message) {
     return false;
   }
   flush_count_ = 0;
+  turn_number_++;
+  turn_tool_calls_ = 0;
+  turn_tool_errors_ = 0;
+  turn_files_read_ = 0;
+  turn_files_written_ = 0;
   bool flushed = false;
   if (!llama_->add_message(*iter_, "user", effective_message)) {
     if (llama_->is_memory_flush()) {
@@ -808,8 +822,29 @@ bool Agent::run_turn(const std::string &user_message) {
                 elapsed_seconds(),
                 static_cast<double>(tui_.get_kv_percent()));
   tui_.append_line(stat);
+
+  // Record usage log for this turn
+  TurnMetrics tm;
+  tm.turn_number       = turn_number_;
+  tm.llm_latency_ms    = elapsed_seconds() * 1000.0;
+  tm.completion_tokens = iter_->_tokens_generated;
+  tm.tool_call_count   = turn_tool_calls_;
+  tm.tool_error_count  = turn_tool_errors_;
+  tm.kv_usage_pct      = llama_->memory_kv_percent();
+  tm.files_read        = turn_files_read_;
+  tm.files_written     = turn_files_written_;
+  usage_log_.record_turn(tm);
+  log_write(LEVEL_DEBUG, "usage_log", "%s", usage_log_.summary().c_str());
+  if (usage_log_.kv_trending_high()) {
+    tui_.append_line(ICON_SYS + "KV usage trending high — consider restarting soon.");
+  }
+
   tui_.redraw_all();
   return true;
+}
+
+void Agent::dump_usage_log(const std::string &path) const {
+  usage_log_.dump(path);
 }
 
 void Agent::save_mtp_best_settings() {

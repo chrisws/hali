@@ -13,6 +13,7 @@ void logging_filter_test();
 void replace_test();
 void build_test();
 void table_test();
+void usage_log_test();
 
 #include "logging.h"
 
@@ -33,5 +34,6 @@ int main() {
   replace_test();
   build_test();
   table_test();
+  usage_log_test();
   return 0;
 }
