@@ -91,6 +91,14 @@ void Llama::mtp_init(const LlamaLoad &load) {
 // Feed a decoded batch to the speculative context (replaces sync_and_capture_mtp)
 // ---------------------------------------------------------------------------
 void Llama::sync_and_capture_mtp(const llama_token *tokens, int n_tokens, llama_pos pos_start) {
+  // Feed the recent-token ring buffer and suffix drafter (always, even if MTP is off)
+  for (int i = 0; i < n_tokens; ++i) {
+    push_recent(tokens[i]);
+  }
+  if (_suffix_enabled) {
+    _suffix.add_context(tokens, n_tokens);
+  }
+
   if (!_mtp.enabled || !_mtp.spec || n_tokens <= 0) {
     return;
   }
@@ -178,7 +186,28 @@ bool Llama::mtp_round(llama_token anchor, vector<llama_token> &accepted, llama_t
     common_speculative_draft(_mtp.spec.get());
   }
 
-  const int k = (int)_mtp.draft_toks.size();
+  int k = (int)_mtp.draft_toks.size();
+  bool from_suffix = false;
+
+  // ---- 1b. suffix fallback when MTP produced no drafts or low acceptance ---
+  if (_suffix_enabled && (k == 0 || (_mtp.win_filled > 8 && _mtp.win_drafted > 0 && (double)_mtp.win_accepted / (double)_mtp.win_drafted < 0.15))) {
+    llama_token recent[RECENT_BUF_SIZE];
+    if (get_recent(recent, _suffix_ngram)) {
+      auto suffix_drafts = _suffix.draft(recent, _suffix_ngram, _suffix_max_draft);
+      if (!suffix_drafts.empty()) {
+        _mtp.draft_toks = std::move(suffix_drafts);
+        k = (int)_mtp.draft_toks.size();
+        from_suffix = true;
+        _mtp.suffix_hits++;
+        if (log_is_enabled(LEVEL_DEBUG)) {
+          log_write(LEVEL_DEBUG, "mtp", "HALI: MTP: suffix fallback: %d draft tokens", k);
+        }
+      } else {
+        _mtp.suffix_misses++;
+      }
+    }
+  }
+
   if (k == 0) {
     // no drafts generated: just decode the anchor normally
     // (drafting may have left speculative entries in ctx_dft, clear them
@@ -258,7 +287,10 @@ bool Llama::mtp_round(llama_token anchor, vector<llama_token> &accepted, llama_t
   }
 
   // ---- 5. inform the speculative context of the acceptance ----------------
-  common_speculative_accept(_mtp.spec.get(), 0, (uint16_t)n_acc);
+  // Skip when drafts came from the suffix drafter (MTP head didn't generate them)
+  if (!from_suffix) {
+    common_speculative_accept(_mtp.spec.get(), 0, (uint16_t)n_acc);
+  }
 
   // ---- 6. rollback rejected positions --------------------------------------
   if (n_acc < k) {
@@ -284,6 +316,11 @@ bool Llama::mtp_round(llama_token anchor, vector<llama_token> &accepted, llama_t
   ++_mtp.rounds;
   _mtp.drafted += k;
   _mtp.accepted += n_acc;
+  if (from_suffix) {
+    _mtp.suffix_rounds++;
+    _mtp.suffix_drafted += k;
+    _mtp.suffix_accepted += n_acc;
+  }
   // update sliding window
   if (_mtp.win_filled == MtpState::WIN) {
     _mtp.win_drafted  -= _mtp.win[_mtp.win_idx].drafted;
@@ -293,6 +330,7 @@ bool Llama::mtp_round(llama_token anchor, vector<llama_token> &accepted, llama_t
     auto &w = _mtp.win[_mtp.win_idx];
     w.drafted  = k;
     w.accepted = n_acc;
+    w.source   = from_suffix ? 1 : 0;
     for (int i = 0; i < 4; ++i) {
       w.pos_acc[i] = (i < n_acc) ? 1 : 0;
     }
@@ -529,6 +567,48 @@ void Llama::mtp_adapt_eval() {
     }
   }
 
+  // 6. suffix adaptation (plan 08)
+  if (_suffix_enabled) {
+    // hit rate: fraction of suffix lookups that found a match
+    int total_lookups = _mtp.suffix_hits + _mtp.suffix_misses;
+    if (total_lookups >= 64) {
+      double hit_rate = (double)_mtp.suffix_hits / (double)total_lookups;
+      if (hit_rate < 0.05) {
+        if (log_is_enabled(LEVEL_DEBUG)) {
+          log_write(LEVEL_DEBUG, "mtp",
+                        "HALI: MTP: suffix hit rate %.1f%% over %d lookups — suffix is dead weight",
+                        hit_rate * 100.0, total_lookups);
+        }
+      }
+      // reset counters so we evaluate fresh each window
+      _mtp.suffix_hits = 0;
+      _mtp.suffix_misses = 0;
+    }
+    // adapt suffix_max_draft: if 2nd chained token is consistently rejected
+    // for suffix-sourced entries, drop to 1
+    if (_suffix_max_draft > 1 && _mtp.win_filled >= 16) {
+      int suffix_entries = 0;
+      int suffix_pos1_acc = 0;
+      for (int j = 0; j < _mtp.win_filled; ++j) {
+        if (_mtp.win[j].source == 1) {
+          suffix_entries++;
+          suffix_pos1_acc += _mtp.win[j].pos_acc[1];
+        }
+      }
+      if (suffix_entries >= 8) {
+        double pos1_rate = (double)suffix_pos1_acc / (double)suffix_entries;
+        if (pos1_rate < 0.15) {
+          if (log_is_enabled(LEVEL_DEBUG)) {
+            log_write(LEVEL_DEBUG, "mtp",
+                          "HALI: MTP: suffix pos_acc[1]=%.2f over %d entries — dropping suffix_max_draft to 1",
+                          pos1_rate, suffix_entries);
+          }
+          _suffix_max_draft = 1;
+        }
+      }
+    }
+  }
+
   _mtp.adapt.eval_counter = 0;
 }
 
@@ -548,6 +628,15 @@ void Llama::mtp_reset_state() {
   _mtp.last_limit   = 0;
   _mtp.adapt.eval_counter  = 0;
   _mtp.adapt.cooldown      = 0;
+  // reset suffix stats
+  _mtp.suffix_rounds   = 0;
+  _mtp.suffix_drafted  = 0;
+  _mtp.suffix_accepted = 0;
+  _mtp.suffix_hits     = 0;
+  _mtp.suffix_misses   = 0;
+  // Clear suffix drafter and recent buffer
+  _suffix.clear();
+  clear_recent();
   // reset adaptive params to config defaults so a new session
   // doesn't inherit a ratcheted-down state from the previous one
   _mtp.adapt.eff_n_max     = _mtp.n_max;

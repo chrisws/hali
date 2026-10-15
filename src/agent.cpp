@@ -189,6 +189,9 @@ bool Agent::setup_model() {
   load.mtp_p_min = cfg_.mtp_p_min_;
   load.mtp_pos_threshold = cfg_.mtp_pos_threshold_;
   load.mtp_adaptive = cfg_.mtp_adaptive_;
+  load.suffix_enabled = cfg_.suffix_enabled_;
+  load.suffix_ngram = cfg_.suffix_ngram_;
+  load.suffix_max_draft = cfg_.suffix_max_draft_;
 
   if (!llama_->load_model(load)) {
     tui_.dismiss_modal_popup();

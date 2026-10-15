@@ -199,6 +199,7 @@ add_executable(hali
   src/llama_sb_rag.cpp
   src/llama_sb.cpp
   src/llama_sb_mtp.cpp
+  src/llama_sb_suffix.cpp
   src/file.cpp
   src/agent.cpp
   src/agent_utils.cpp

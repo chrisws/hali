@@ -14,6 +14,7 @@ void replace_test();
 void build_test();
 void table_test();
 void usage_log_test();
+void suffix_drafter_test();
 
 #include "logging.h"
 
@@ -35,5 +36,6 @@ int main() {
   build_test();
   table_test();
   usage_log_test();
+  suffix_drafter_test();
   return 0;
 }

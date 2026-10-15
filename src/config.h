@@ -66,6 +66,11 @@ struct HaliConfig {
   bool  mtp_enabled_    = true;
   bool  mtp_adaptive_   = true;
 
+  // Suffix (n-gram) drafting (plan 08)
+  bool  suffix_enabled_ = true;
+  int   suffix_ngram_   = 4;
+  int   suffix_max_draft_ = 2;
+
   KVCachePreset kv_preset_ = KVCachePreset::Compact;
 
   // Context extension (relevant when VRAM caps n_ctx)

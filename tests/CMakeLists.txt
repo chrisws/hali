@@ -24,6 +24,7 @@ add_executable(hali_tests
   ../src/usage_log.cpp
   ../src/mcp_format.cpp
   ../src/sha1.cpp
+  ../src/llama_sb_suffix.cpp
   src/utf8_test.cpp
   src/file_test.cpp
   src/graph_test.cpp
@@ -40,6 +41,7 @@ add_executable(hali_tests
   src/build_test.cpp
   src/table_test.cpp
   src/usage_log_test.cpp
+  src/suffix_drafter_test.cpp
   src/main.cpp
 )
 
@@ -53,6 +55,8 @@ target_include_directories(hali_tests PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}
   ${CMAKE_CURRENT_SOURCE_DIR}/../yyjson/src
   ${CMAKE_CURRENT_SOURCE_DIR}/../src
+  ${CMAKE_CURRENT_SOURCE_DIR}/../llama.cpp/include
+  ${CMAKE_CURRENT_SOURCE_DIR}/../llama.cpp/ggml/include
 )
 
 find_package(CURL REQUIRED)

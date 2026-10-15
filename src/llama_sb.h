@@ -17,6 +17,7 @@
 #include "llama.h"
 #include "speculative.h"
 #include "sampling.h"
+#include "llama_sb_suffix.h"
 
 using namespace std;
 
@@ -91,6 +92,10 @@ struct LlamaLoad {
   float mtp_p_min = 0.0f;    // min probability threshold for draft acceptance
   float mtp_pos_threshold = 0.30f; // initial per-position acceptance threshold
   bool mtp_adaptive = true;  // enable self-tuning of MTP parameters
+  // Suffix drafting (plan 08)
+  bool suffix_enabled = false;
+  int  suffix_ngram = 4;
+  int  suffix_max_draft = 2;
 };
 
 // ---------------------------------------------------------------------------
@@ -140,12 +145,20 @@ struct MtpState {
   uint64_t drafted  = 0;
   uint64_t accepted = 0;
 
+  // --- suffix drafting stats (plan 08) ---------------------------------------
+  uint64_t suffix_rounds   = 0;
+  uint64_t suffix_drafted  = 0;
+  uint64_t suffix_accepted = 0;
+  int      suffix_hits     = 0;   // lookups that found a match
+  int      suffix_misses   = 0;   // lookups that missed
+
   // --- sliding window --------------------------------------------------------
   static constexpr int WIN = 32;
   struct WinEntry {
     int drafted;
     int accepted;
     int pos_acc[4] = {};   // per-position acceptance (plan 3)
+    int source = 0;        // 0=MTP, 1=suffix (plan 08)
   };
   WinEntry win[WIN] = {};
   int win_idx      = 0;
@@ -222,6 +235,11 @@ struct MtpState {
     , rounds(other.rounds)
     , drafted(other.drafted)
     , accepted(other.accepted)
+    , suffix_rounds(other.suffix_rounds)
+    , suffix_drafted(other.suffix_drafted)
+    , suffix_accepted(other.suffix_accepted)
+    , suffix_hits(other.suffix_hits)
+    , suffix_misses(other.suffix_misses)
     , win_idx(other.win_idx)
     , win_filled(other.win_filled)
     , win_drafted(other.win_drafted)
@@ -375,5 +393,29 @@ private:
 
   // MTP (Multi-Token Prediction) speculative decoding state
   MtpState _mtp;
+
+  // Suffix (n-gram) drafting (plan 08)
+  SuffixDrafter _suffix;
+  bool _suffix_enabled = false;
+  int  _suffix_ngram   = 4;
+  int  _suffix_max_draft = 2;
+
+  // Recent-token ring buffer (feeds the suffix drafter)
+  static constexpr int RECENT_BUF_SIZE = 16;
+  llama_token _recent_buf[RECENT_BUF_SIZE] = {};
+  int _recent_len = 0;
+  void push_recent(llama_token tok) {
+    _recent_buf[_recent_len % RECENT_BUF_SIZE] = tok;
+    _recent_len++;
+  }
+  bool get_recent(llama_token *out, int n) const {
+    if (n > _recent_len || n <= 0) { return false; }
+    int start = (_recent_len - n) % RECENT_BUF_SIZE;
+    for (int i = 0; i < n; ++i) {
+      out[i] = _recent_buf[(start + i) % RECENT_BUF_SIZE];
+    }
+    return true;
+  }
+  void clear_recent() { _recent_len = 0; }
 };
 #endif

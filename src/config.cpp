@@ -119,6 +119,11 @@ void HaliConfig::load_settings() {
   root.get_float("mtp_p_min", mtp_p_min_);
   root.get_float("mtp_pos_threshold", mtp_pos_threshold_);
   root.get_bool("mtp_adaptive", mtp_adaptive_);
+
+  // Suffix drafting (plan 08)
+  root.get_bool("suffix_enabled", suffix_enabled_);
+  root.get_int("suffix_ngram", suffix_ngram_);
+  root.get_int("suffix_max_draft", suffix_max_draft_);
 }
 
 // Persist the current cfg to ~/.config/hali/settings.json.
@@ -363,7 +368,10 @@ std::string HaliConfig::introspect() const {
     "  \"mtp_n_min\":         {},\n"
     "  \"mtp_p_min\":         {},\n"
     "  \"mtp_pos_threshold\": {},\n"
-    "  \"mtp_adaptive\":      {}\n"
+    "  \"mtp_adaptive\":      {},\n"
+    "  \"suffix_enabled\":    {},\n"
+    "  \"suffix_ngram\":      {},\n"
+    "  \"suffix_max_draft\":  {}\n"
     "}}\n";
   return std::format(tmpl,
                      model_path_,
@@ -389,6 +397,9 @@ std::string HaliConfig::introspect() const {
                      mtp_n_min_,
                      mtp_p_min_,
                      mtp_pos_threshold_,
-                     mtp_adaptive_);
+                     mtp_adaptive_,
+                     suffix_enabled_,
+                     suffix_ngram_,
+                     suffix_max_draft_);
 }
 
