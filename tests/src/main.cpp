@@ -15,6 +15,7 @@ void build_test();
 void table_test();
 void usage_log_test();
 void suffix_drafter_test();
+void audio_test();
 
 #include "logging.h"
 
@@ -37,5 +38,6 @@ int main() {
   table_test();
   usage_log_test();
   suffix_drafter_test();
+  audio_test();
   return 0;
 }

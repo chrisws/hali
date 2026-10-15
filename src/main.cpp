@@ -24,6 +24,7 @@
 #include "ui_text.h"
 #include "webview.h"
 #include "icon.h"
+#include "audio.h"
 
 //
 // Returns the history file path: ~/.config/hali/history.txt
@@ -141,6 +142,32 @@ static void handle_slash(const std::string &input, HaliConfig &cfg, Agent &agent
 
   if (verb == "/theme") {
     tui.toggle_theme();
+    return;
+  }
+
+  if (verb == "/audio") {
+    if (rest.empty()) {
+      // Toggle
+      bool new_state = !audio::is_enabled();
+      audio::set_enabled(new_state);
+      tui.append_line(ICON_SYS + std::string("Audio ") + (new_state ? "enabled." : "disabled."));
+    } else if (rest == "test") {
+      audio::play(audio::Event::TaskComplete);
+      tui.append_line(ICON_SYS + "Audio test played.");
+    } else if (rest.rfind("volume", 0) == 0) {
+      // /audio volume 0.7
+      auto space = rest.find(' ', 6);
+      if (space != std::string::npos) {
+        float v = std::stof(rest.substr(space + 1));
+        audio::set_volume(v);
+        tui.append_line(ICON_SYS + "Audio volume set to " + std::to_string(v));
+      } else {
+        tui.append_line(ICON_ERR + "Usage: /audio volume <0.0-1.0>");
+      }
+    } else {
+      tui.append_line(ICON_ERR + "Usage: /audio [test | volume <0.0-1.0>]");
+    }
+    tui.redraw_all();
     return;
   }
 
@@ -358,6 +385,11 @@ int main(int argc, char **argv) {
     }
   }
 
+  // ── Init Audio (plan 11) ──────────────────────────────────────────
+  audio::init();
+  audio::set_enabled(cfg.audio_enabled_);
+  audio::set_volume(cfg.audio_volume_);
+
   // ── Init TUI ──────────────────────────────────────────────────────
   Tui tui;
   tui.init();
@@ -460,6 +492,8 @@ int main(int argc, char **argv) {
   // Persist input history for the next session.
   cfg.user_run_allowed_.save(RunAllowed::default_path());
   tui.history_save(history_path());
+  audio::play(audio::Event::SessionEnd);
+  audio::shutdown();
   curl_close();
   return 0;
 }

@@ -71,6 +71,12 @@ struct HaliConfig {
   int   suffix_ngram_   = 4;
   int   suffix_max_draft_ = 2;
 
+  // Audio (plan 11)
+  bool  audio_enabled_    = true;
+  float audio_volume_     = 0.5f;
+  bool  audio_tool_tick_  = false;
+  bool  audio_user_prompt_ = false;
+
   KVCachePreset kv_preset_ = KVCachePreset::Compact;
 
   // Context extension (relevant when VRAM caps n_ctx)

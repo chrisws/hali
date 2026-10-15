@@ -25,6 +25,8 @@ add_executable(hali_tests
   ../src/mcp_format.cpp
   ../src/sha1.cpp
   ../src/llama_sb_suffix.cpp
+  ../src/audio.cpp
+  ../src/audio_impl.cpp
   src/utf8_test.cpp
   src/file_test.cpp
   src/graph_test.cpp
@@ -42,6 +44,7 @@ add_executable(hali_tests
   src/table_test.cpp
   src/usage_log_test.cpp
   src/suffix_drafter_test.cpp
+  src/audio_test.cpp
   src/main.cpp
 )
 

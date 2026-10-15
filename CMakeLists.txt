@@ -205,6 +205,8 @@ add_executable(hali
   src/agent_utils.cpp
   src/usage_log.cpp
   src/build.cpp
+  src/audio.cpp
+  src/audio_impl.cpp
   src/tui.cpp
   src/ui_text.cpp
   src/graph.cpp
@@ -221,6 +223,7 @@ target_include_directories(hali PRIVATE
   ${LLAMA_DIR}/common
   ${CMAKE_CURRENT_SOURCE_DIR}/src
   ${CMAKE_CURRENT_SOURCE_DIR}/yyjson/src
+  ${CMAKE_CURRENT_SOURCE_DIR}/libs
 )
 
 target_link_libraries(hali PRIVATE

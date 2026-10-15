@@ -18,6 +18,7 @@
 #include "llama.h"
 #include "config.h"
 #include "tui.h"
+#include "audio.h"
 #include "agent.h"
 #include "logging.h"
 #include "curl.h"
@@ -537,7 +538,7 @@ std::string Agent::process_tool(const std::string &cmd) {
   if (op == "TOOL:BUILD") {
     auto result = build_run(cfg_.sandbox_, arg1, [&](const std::string &msg) {
       tui_.show_tool(msg);
-    });
+    }, arg2);
     return result.success_ ? result.output_ : result.output_;
   }
   if (op == "TOOL:REPLACE") {
@@ -843,6 +844,7 @@ bool Agent::run_turn(const std::string &user_message) {
   }
 
   tui_.redraw_all();
+  audio::play(audio::Event::TaskComplete);
   return true;
 }
 
