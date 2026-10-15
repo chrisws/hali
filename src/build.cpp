@@ -77,7 +77,9 @@ static BuildResult build_cmake(const std::string &sandbox, const std::string &mo
                                const std::function<void(const std::string &)> &status) {
   const int nproc = std::thread::hardware_concurrency();
   const std::string build_dir = sandbox + "/build";
-  const std::string tests_build_dir = sandbox + "/tests/build";
+  const std::string tests_dir = sandbox + "/tests";
+  const std::string tests_build_dir = tests_dir + "/build";
+  const bool has_tests = fs::exists(tests_dir + "/CMakeLists.txt");
   std::string result;
   bool ok = true;
 
@@ -91,7 +93,7 @@ static BuildResult build_cmake(const std::string &sandbox, const std::string &mo
     result += "==> Build complete.\n";
   }
 
-  if (mode == "test" || mode == "all") {
+  if ((mode == "test" || mode == "all") && has_tests) {
     result += "==> Building unit tests...\n";
     auto out = run_command("make -C " + tests_build_dir + " -j" + std::to_string(nproc), status);
     if (out.find("Error") != std::string::npos || out.find("error") != std::string::npos) {
@@ -110,7 +112,9 @@ static BuildResult build_cmake(const std::string &sandbox, const std::string &mo
   if (mode == "clean") {
     result += "==> Cleaning build artifacts...\n";
     result += run_command("make -C " + build_dir + " clean", status);
-    result += run_command("make -C " + tests_build_dir + " clean", status);
+    if (has_tests) {
+      result += run_command("make -C " + tests_build_dir + " clean", status);
+    }
     result += "==> Clean complete.\n";
   }
 
@@ -369,10 +373,13 @@ static BuildResult setup_python(const std::string &sandbox,
 }
 
 BuildResult build_run(const std::string &sandbox, const std::string &mode,
-                      const std::function<void(const std::string &)> &status) {
-  const auto sys = detect_build_system(sandbox);
+                      const std::function<void(const std::string &)> &status,
+                      const std::string &subdir) {
+  const std::string root = subdir.empty() ? sandbox : sandbox + "/" + subdir;
+  const auto sys = detect_build_system(root);
   if (sys == BuildSystem::NONE) {
-    return {false, "ERROR: no recognised build system found in sandbox (looked for CMakeLists.txt, build.gradle, pom.xml, pyproject.toml, setup.py, requirements.txt, *.py)"};
+    return {false, "ERROR: no recognised build system found in " + root +
+                    " (looked for CMakeLists.txt, build.gradle, pom.xml, pyproject.toml, setup.py, requirements.txt, *.py)"};
   }
 
   std::string m = mode;
@@ -382,10 +389,10 @@ BuildResult build_run(const std::string &sandbox, const std::string &mode,
 
   if (m == "setup") {
     switch (sys) {
-      case BuildSystem::CMAKE:  return setup_cmake(sandbox, status);
-      case BuildSystem::MAVEN:  return setup_maven(sandbox, status);
-      case BuildSystem::GRADLE: return setup_gradle(sandbox, status);
-      case BuildSystem::PYTHON: return setup_python(sandbox, status);
+      case BuildSystem::CMAKE:  return setup_cmake(root, status);
+      case BuildSystem::MAVEN:  return setup_maven(root, status);
+      case BuildSystem::GRADLE: return setup_gradle(root, status);
+      case BuildSystem::PYTHON: return setup_python(root, status);
       default:                  return {false, "ERROR: unsupported build system"};
     }
   }
@@ -396,13 +403,13 @@ BuildResult build_run(const std::string &sandbox, const std::string &mode,
 
   switch (sys) {
     case BuildSystem::CMAKE:
-      return build_cmake(sandbox, m, status);
+      return build_cmake(root, m, status);
     case BuildSystem::GRADLE:
-      return build_gradle(sandbox, m, status);
+      return build_gradle(root, m, status);
     case BuildSystem::MAVEN:
-      return build_maven(sandbox, m, status);
+      return build_maven(root, m, status);
     case BuildSystem::PYTHON:
-      return build_python(sandbox, m, status);
+      return build_python(root, m, status);
     default:
       return {false, "ERROR: unsupported build system"};
   }

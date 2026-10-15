@@ -19,8 +19,10 @@ struct BuildResult {
 
 // mode: "setup" | "build" | "test" | "clean" | "all"
 // sandbox: root directory of the project
+// subdir: optional subdirectory to build as a sub-project (e.g. "tests")
 // status: callback for progress messages (e.g. tui.show_tool)
 BuildResult build_run(const std::string &sandbox, const std::string &mode,
-                      const std::function<void(const std::string &)> &status);
+                      const std::function<void(const std::string &)> &status,
+                      const std::string &subdir = "");
 
 #endif
