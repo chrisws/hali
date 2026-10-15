@@ -612,8 +612,18 @@ void Agent::invoke_tool(const std::string &buffer, const std::string_view templa
     tui_.append_line(ICON_ERR + "failed to evoke tool response: " + llama_->last_error());
   }
   if (llama_->is_memory_flush()) {
+    if (++flush_count_ > MAX_FLUSH_RETRIES) {
+      tui_.append_line(ICON_ERR + "Multiple memory flushes detected. Stopping auto-continue.");
+      tui_.redraw_all();
+      return;
+    }
     tui_.append_line(ICON_ERR + "Warning! - memory has been flushed!");
     reset_conversation(cfg_.build_system_prompt() + "\n" + format_session_md(tui_.get_chat()));
+    const std::string retry_content = TOOL_RESULT + result + memory_info_status();
+    if (!llama_->add_message(*iter_, "tool_result", retry_content)) {
+      tui_.append_line(ICON_ERR + "failed to re-inject tool result after flush");
+    }
+    tui_.append_line(ICON_SYS + "Auto-continuing after memory flush...");
   }
   tui_.redraw_all();
 };
@@ -643,15 +653,29 @@ bool Agent::run_turn(const std::string &user_message) {
     tui_.redraw_all();
     return false;
   }
+  flush_count_ = 0;
+  bool flushed = false;
   if (!llama_->add_message(*iter_, "user", effective_message)) {
     if (llama_->is_memory_flush()) {
+      if (++flush_count_ > MAX_FLUSH_RETRIES) {
+        tui_.append_line(ICON_ERR + "Multiple memory flushes detected. Stopping auto-continue.");
+        tui_.redraw_all();
+        return false;
+      }
       tui_.append_line(ICON_ERR + "Warning! - memory has been flushed!");
       reset_conversation(cfg_.build_system_prompt() + "\n" + format_session_md(tui_.get_chat()));
+      flushed = llama_->add_message(*iter_, "user",
+          "The session context was restored after a memory flush. "
+          "Continue with the pending actions from the session state.");
     } else {
       tui_.append_line(ICON_ERR + "add_message: " + llama_->last_error());
     }
+    if (!flushed) {
+      tui_.redraw_all();
+      return false;
+    }
+    tui_.append_line(ICON_SYS + "Auto-continuing from session context...");
     tui_.redraw_all();
-    return false;
   }
   tui_.append_line("Hali: ");
 

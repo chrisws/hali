@@ -51,6 +51,8 @@ struct Agent {
   std::unique_ptr<RagSession> rag_session_;
   bool model_loaded_ = false;
   std::string system_prompt_;
+  int flush_count_ = 0;
+  static constexpr int MAX_FLUSH_RETRIES = 3;
 
   std::string memory_info_status() const;
   std::string process_tool(const std::string &cmd);
