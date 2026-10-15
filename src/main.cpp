@@ -150,6 +150,23 @@ static void handle_slash(const std::string &input, HaliConfig &cfg, Agent &agent
     return;
   }
 
+  if (verb == "/session") {
+    std::string path = rest.empty()
+      ? cfg.sandbox_ + "/SESSION.md"
+      : rest;
+    std::error_code ec;
+    if (fs::exists(path, ec) && !ec) {
+      if (!tui.confirm_dialog("Overwrite " + path + "?")) {
+        tui.append_line(ICON_SYS + "Cancelled.");
+        tui.redraw_all();
+        return;
+      }
+    }
+    tui.append_line(ICON_TOOL + tui.save_session(path));
+    tui.redraw_all();
+    return;
+  }
+
   if (verb == "/settings") {
     ui::settings(tui, cfg);
     return;

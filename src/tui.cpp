@@ -21,6 +21,7 @@
 #include "icon.h"
 #include "string_utils.h"
 #include "logging.h"
+#include "file.h"
 
 // max scan for NCTYPE_PRESS in kity-term or NCTYPE_UNKNOWN in gnome terminal
 #define MAX_FIND_PRESS 4
@@ -847,6 +848,21 @@ std::string Tui::save_chat(const std::string &file) const {
 
   ofs.close();
   return std::format("Transcript saved to {}", file);
+}
+
+std::string Tui::save_session(const std::string &file) const {
+  auto lines = get_chat();
+  if (lines.empty()) {
+    return "Nothing to save";
+  }
+  std::string content = format_session_md(lines);
+  std::ofstream ofs(file);
+  if (!ofs) {
+    return std::format("Failed to save session to {}", file);
+  }
+  ofs << content;
+  ofs.close();
+  return std::format("Session saved to {}", file);
 }
 
 //

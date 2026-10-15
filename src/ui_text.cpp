@@ -21,6 +21,8 @@ void help(Tui &tui) {
   tui.append_line(ICON_SYS + "  /settings                show current settings");
   tui.append_line(ICON_SYS + "  /theme                   toggle the theme (F12)");
   tui.append_line(ICON_SYS + "  /set    <key> <value>    change a setting live");
+  tui.append_line(ICON_SYS + "  /save   [file]           save chat transcript (plain text)");
+  tui.append_line(ICON_SYS + "  /session [file]          save structured session snapshot");
   tui.append_line(ICON_SYS + "  /help                    this message");
   tui.append_line(ICON_SYS + "  exit / quit              exit Hali");
   tui.append_line(ICON_SYS + "Settable keys (via /set):");

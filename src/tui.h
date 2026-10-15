@@ -400,6 +400,7 @@ class Tui final: TuiContext {
   bool confirm_dialog(const std::string &prompt);
   std::string readline() { return input_.readline(*this); }
   std::string save_chat(const std::string &file) const;
+  std::string save_session(const std::string &file) const;
   std::vector<std::string> get_chat() const;
 
   // Modal popup overlay while a long operation runs.
