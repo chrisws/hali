@@ -340,34 +340,35 @@ std::string HaliConfig::build_system_prompt() const {
 std::string HaliConfig::introspect() const {
   static constexpr std::string_view tmpl =
     "{{\n"
-    "  \"model_path\":     \"{}\",\n"
-    "  \"embed_path\":     \"{}\",\n"
-    "  \"n_ctx\":          {},\n"
-    "  \"n_batch\":        {},\n"
-    "  \"n_gpu_layers\":   {},\n"
-    "  \"n_threads\":      {},\n"
-    "  \"n_threads_batch\":{},\n"
-    "  \"temperature\":    {},\n"
-    "  \"top_p\":          {},\n"
-    "  \"min_p\":          {},\n"
-    "  \"top_k\":          {},\n"
-    "  \"penalty_repeat\": {},\n"
-    "  \"penalty_freq\":   {},\n"
-    "  \"penalty_present\":{},\n"
-    "  \"penalty_last_n\": {},\n"
-    "  \"offload_kqv\":    {},\n"
-    "  \"kv_cache_preset\":{},\n"
-    "  \"rag_top_k\":      {},\n"
-    "  \"mtp_enabled\":    {},\n"
-    "  \"mtp_n_max\":      {},\n"
-    "  \"mtp_n_min\":      {},\n"
-    "  \"mtp_p_min\":      {},\n"
-    "  \"mtp_pos_threshold\":{},\n"
-    "  \"mtp_adaptive\":   {}\n"
+    "  \"model_path\":      \"{}\",\n"
+    "  \"embed_path\":      \"{}\",\n"
+    "  \"kv_cache_preset\": \"{}\",\n"
+    "  \"n_ctx\":             {},\n"
+    "  \"n_batch\":           {},\n"
+    "  \"n_gpu_layers\":      {},\n"
+    "  \"n_threads\":         {},\n"
+    "  \"n_threads_batch\":   {},\n"
+    "  \"temperature\":       {},\n"
+    "  \"top_p\":             {},\n"
+    "  \"min_p\":             {},\n"
+    "  \"top_k\":             {},\n"
+    "  \"penalty_repeat\":    {},\n"
+    "  \"penalty_freq\":      {},\n"
+    "  \"penalty_present\":   {},\n"
+    "  \"penalty_last_n\":    {},\n"
+    "  \"offload_kqv\":       {},\n"
+    "  \"rag_top_k\":         {},\n"
+    "  \"mtp_enabled\":       {},\n"
+    "  \"mtp_n_max\":         {},\n"
+    "  \"mtp_n_min\":         {},\n"
+    "  \"mtp_p_min\":         {},\n"
+    "  \"mtp_pos_threshold\": {},\n"
+    "  \"mtp_adaptive\":      {}\n"
     "}}\n";
   return std::format(tmpl,
                      model_path_,
                      embed_path_,
+                     kv_preset_to_string(),                     
                      n_ctx_,
                      n_batch_,
                      n_gpu_layers_,
@@ -382,7 +383,6 @@ std::string HaliConfig::introspect() const {
                      penalty_present_,
                      penalty_last_n_,
                      offload_kqv_,
-                     kv_preset_to_string(),
                      rag_top_k_,
                      mtp_enabled_,
                      mtp_n_max_,
