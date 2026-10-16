@@ -360,6 +360,21 @@ std::string HaliConfig::build_system_prompt() const {
     "<last few lines of conversation>\n"
     "```\n\n";
 
+  if (audio_enabled_) {
+    p +=
+      "## Additional Tools\n"
+      "  TOOL:PLAY   <notes>         play a melody (space-separated note tokens)\n\n"
+      "## TOOL:PLAY Rules\n"
+      "- Play melodies using space-separated note tokens.\n"
+      "- Notes: letter (A-G) + optional accidental (# or -) + octave digit (0-6) + optional :duration\n"
+      "  - C4 = middle C, D#5 = D sharp octave 5, E-3 = E flat octave 3\n"
+      "  - C4:0.5 = C4 with explicit 0.5s duration\n"
+      "- Control tokens: T<BPM> (tempo, default 120), V<0-100> (volume, default 50), L<1-64> (note length, default 4), P<beats> (pause)\n"
+      "- Example: TOOL:PLAY C4 E4 G4 C5 plays a C major arpeggio\n"
+      "- Example: TOOL:PLAY T120 V70 C4:0.3 D4:0.3 E4:0.3 P1 C5:0.5\n"
+      "- When the user asks you to play a tune, try your best interpretation, then ask for feedback.\n\n";
+  }
+
   p += mcp_context_;
 
   for (const auto &kf : knowledge_files_) {

@@ -8,13 +8,14 @@
 
 #include <cassert>
 #include <iostream>
+#include <vector>
+#include <utility>
 
 #include "audio.h"
 
 void audio_test() {
   // ── Default state ──────────────────────────────────────────────────
   assert(audio::is_enabled());
-  // No device should be open before init
   assert(!audio::is_available());
 
   // ── Volume clamping ────────────────────────────────────────────────
@@ -30,25 +31,32 @@ void audio_test() {
   assert(audio::is_enabled());
 
   // ── Safe no-op when no device ──────────────────────────────────────
-  // These should not crash even without a device
   audio::play_tone(440.0, 0.1, 0.5);
-  audio::play(audio::Event::TaskComplete);
-  audio::play(audio::Event::TaskError);
-  audio::play(audio::Event::ToolDone);
-  audio::play(audio::Event::SessionEnd);
-  audio::play(audio::Event::UserPrompt);
-
   auto melody = std::vector<std::pair<double, double>>{
     {523.25, 0.1}, {659.25, 0.1}
   };
   audio::play_melody(melody);
 
-  // ── init / shutdown on headless (no ALSA device) ───────────────────
-  // Should not crash; is_available() may be true or false depending
-  // on the environment, so we just verify no crash.
+  // ── init / shutdown round-trip ─────────────────────────────────────
+  // Exercises ma_context_init + ma_device_init + ma_context_uninit.
+  // On headless systems this may fail gracefully (no device), which
+  // is fine — we just verify no crash and clean state afterwards.
   audio::init(44100, 1);
+  bool was_available = audio::is_available();
   audio::shutdown();
   assert(!audio::is_available());
 
-  std::cout << "  audio_test: all assertions passed\n";
+  // ── Second round-trip (catches context/device leak) ────────────────
+  audio::init(48000, 1);
+  (void)audio::is_available();
+  audio::shutdown();
+  assert(!audio::is_available());
+
+  // ── Play after shutdown must not crash ─────────────────────────────
+  audio::play_tone(880.0, 0.05, 0.3);
+  audio::play_melody(melody);
+
+  std::cout << "  audio_test: all assertions passed"
+            << (was_available ? " (device was available)" : "")
+            << "\n";
 }

@@ -14,14 +14,6 @@
 
 namespace audio {
 
-enum class Event {
-  TaskComplete,  // short ascending arpeggio (~1.2 s)
-  TaskError,     // low buzz (~0.4 s)
-  ToolDone,      // single soft "tick" (~0.15 s)
-  SessionEnd,    // descending tone (~0.8 s)
-  UserPrompt,    // subtle "ding" when Hali is waiting for input
-};
-
 /**
  * @brief Initialize the audio subsystem.
  * Safe to call on headless systems — silently no-ops if no device found.
@@ -30,9 +22,6 @@ void init(int sample_rate = 44100, int channels = 1);
 
 /** @brief Shut down the audio device and free resources. */
 void shutdown();
-
-/** @brief Play a predefined event sound. */
-void play(Event event);
 
 /** @brief Play a single sine tone with exponential decay. */
 void play_tone(double freq_hz, double duration_s, double volume = 0.5);

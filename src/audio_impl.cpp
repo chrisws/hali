@@ -10,4 +10,4 @@
 // with MINIAUDIO_IMPLEMENTATION defined. It generates the full library.
 
 #define MINIAUDIO_IMPLEMENTATION
-#include "miniaudio/miniaudio.h"
+#include "miniaudio.h"

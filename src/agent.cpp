@@ -7,6 +7,7 @@
 //
 
 #include <algorithm>
+#include <cmath>
 #include <filesystem>
 #include <fstream>
 #include <mutex>
@@ -355,6 +356,113 @@ std::string Agent::restart() {
 }
 
 //
+// TOOL:PLAY — parse a note string and play it via the audio subsystem.
+// Format: space-separated tokens.
+//   Notes:  C4  D#5  E-3  A4:0.5   (letter [accidental] [octave] [:duration])
+//   Control: T120 (tempo BPM)  V50 (volume 0-100)  L4 (note length)  P2 (pause beats)
+//
+static std::string tool_play(const std::string &notes_str) {
+  if (!audio::is_available() || !audio::is_enabled()) {
+    return "ERROR: audio not available or disabled";
+  }
+
+  double tempo = 120.0;
+  double volume = 0.5;
+  double default_len = 4.0;
+
+  auto note_to_semitone = [](char note, char acc) -> int {
+    int idx;
+    switch (note) {
+      case 'C': idx = 0;  break;
+      case 'D': idx = 2;  break;
+      case 'E': idx = 4;  break;
+      case 'F': idx = 5;  break;
+      case 'G': idx = 7;  break;
+      case 'A': idx = 9;  break;
+      case 'B': idx = 11; break;
+      default:  return -1;
+    }
+    if (acc == '#' || acc == '+') idx++;
+    else if (acc == '-' || acc == 'b') idx--;
+    return idx;
+  };
+
+  auto midi_to_freq = [](int midi) -> double {
+    return 440.0 * pow(2.0, (midi - 69) / 12.0);
+  };
+
+  auto default_duration = [&]() -> double {
+    return (60.0 / tempo) * (4.0 / default_len);
+  };
+
+  std::vector<std::pair<double, double>> melody;
+
+  std::istringstream iss(notes_str);
+  std::string tok;
+  while (iss >> tok) {
+    if (tok.empty()) continue;
+    char c = tok[0];
+
+    if (c == 'T' && tok.size() > 1) {
+      tempo = std::stod(tok.substr(1));
+      continue;
+    }
+    if (c == 'V' && tok.size() > 1) {
+      volume = std::stod(tok.substr(1)) / 100.0;
+      continue;
+    }
+    if (c == 'L' && tok.size() > 1) {
+      default_len = std::stod(tok.substr(1));
+      continue;
+    }
+    if (c == 'P' && tok.size() > 1) {
+      double beats = std::stod(tok.substr(1));
+      double dur = (60.0 / tempo) * beats;
+      melody.emplace_back(0.0, dur);
+      continue;
+    }
+
+    if (c >= 'A' && c <= 'G') {
+      int pos = 1;
+      char acc = 0;
+      if (pos < (int)tok.size() && (tok[pos] == '#' || tok[pos] == '-' || tok[pos] == 'b' || tok[pos] == '+')) {
+        acc = tok[pos];
+        pos++;
+      }
+      int octave = 4;
+      if (pos < (int)tok.size() && isdigit((unsigned char)tok[pos])) {
+        octave = tok[pos] - '0';
+        pos++;
+      }
+      double dur = default_duration();
+      if (pos < (int)tok.size() && tok[pos] == ':') {
+        pos++;
+        dur = std::stod(tok.substr(pos));
+      }
+      int semi = note_to_semitone(c, acc);
+      if (semi < 0) {
+        return "ERROR: invalid note: " + tok;
+      }
+      int midi = (octave + 1) * 12 + semi;
+      melody.emplace_back(midi_to_freq(midi), dur);
+      continue;
+    }
+
+    return "ERROR: unrecognized token: " + tok;
+  }
+
+  if (melody.empty()) {
+    return "ERROR: no notes to play";
+  }
+
+  for (const auto &note : melody) {
+    audio::play_tone(note.first, note.second, volume);
+  }
+
+  return "OK: played " + std::to_string(melody.size()) + " notes";
+}
+
+//
 // Tool dispatch
 //
 std::string Agent::process_tool(const std::string &cmd) {
@@ -577,6 +685,10 @@ std::string Agent::process_tool(const std::string &cmd) {
     }
     tui_.append_lines(result.rows);
     return "OK";
+  }
+  if (op == "TOOL:PLAY") {
+    tui_.show_tool("play: " + arg1);
+    return tool_play(arg1);
   }
   return "ERROR: unknown tool: [" + op + "]";
 }
@@ -844,7 +956,6 @@ bool Agent::run_turn(const std::string &user_message) {
   }
 
   tui_.redraw_all();
-  audio::play(audio::Event::TaskComplete);
   return true;
 }
 
