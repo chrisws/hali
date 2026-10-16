@@ -1,16 +1,52 @@
 {
-  "model_path":     "/home/chrisws/models/qwen/Qwen3.8-27B-GSQ-RCO-IQ3_S-mtp.gguf",
-  "n_gpu_layers":   64,
-  "embed_path":     "",
-  "n_ctx":          60000,
-  "n_batch":        128,
-  "temperature":    0.2,
-  "top_p":          0.2,
-  "min_p":          0,
-  "top_k":          60,
-  "penalty_repeat": 1,
-  "penalty_last_n": 256,
-  "offload_kqv":   true,
-  "rag_top_k":      5,
-  "kv_cache_preset": "f16"
+  "model": {
+    "path":              "/home/chrisws/models/Swift-1.5-Qwen3.8-27B-GSQ-RCO-IQ3_S-mtp.gguf",
+    "kv_cache_preset":   "f16",
+    "n_ctx":             50000,
+    "n_batch":           512,
+    "n_gpu_layers":      64,
+    "n_threads":         16,
+    "n_threads_batch":   16,
+    "temperature":       0.2,
+    "top_p":             0.2,
+    "min_p":             0,
+    "top_k":             60,
+    "penalty_repeat":    1,
+    "penalty_freq":      0,
+    "penalty_present":   0,
+    "penalty_last_n":    256,
+    "offload_kqv":       true
+  },
+  "rag": {
+    "embed_path":        "",
+    "top_k":             5
+  },
+  "mtp": {
+    "enabled":       true,
+    "n_max":         3,
+    "n_min":         1,
+    "p_min":         0,
+    "pos_threshold": 0.35,
+    "adaptive":      true
+  },
+  "suffix": {
+    "enabled":   false,
+    "ngram":     4,
+    "max_draft": 2
+  },
+  "audio": {
+    "enabled":     false,
+    "volume":      0.5,
+    "tool_tick":   false,
+    "user_prompt": false
+  },
+  "mcp": {
+    "host": "127.0.0.1",
+    "port": 64342
+  },
+  "logging": {
+    "level":  "1",
+    "file":   "",
+    "filter": ""
+  }
 }

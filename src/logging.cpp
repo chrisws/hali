@@ -47,17 +47,17 @@ static LogLevel get_level(const std::string& level) {
   return result;
 }
 
-void log_open(const std::string& level) {
+void log_open(const std::string& level, const std::string& file, const std::string& filter) {
   std::lock_guard<std::mutex> lock(g_log_mutex);
   g_log_console = false;
 
   std::string level_str = level;
-  std::string file_path;
-  std::string filter_str;
-  bool has_file = false;
-  bool has_filter = false;
+  std::string file_path = file;
+  std::string filter_str = filter;
+  bool has_file = !file_path.empty();
+  bool has_filter = !filter_str.empty();
 
-  // Check if the argument is a path to an existing file (JSON config)
+  // Check if the level argument is actually a path to an existing JSON config file
   std::error_code ec;
   if (!level.empty() && fs::is_regular_file(level, ec)) {
     std::ifstream ifs(level);
@@ -70,11 +70,11 @@ void log_open(const std::string& level) {
       if (root.get_str("level", val)) {
         level_str = val;
       }
-      if (root.get_str("file", val)) {
+      if (root.get_str("file", val) && val.empty() == false) {
         file_path = val;
         has_file = true;
       }
-      if (root.get_str("filter", val)) {
+      if (root.get_str("filter", val) && val.empty() == false) {
         filter_str = val;
         has_filter = true;
       }
@@ -83,7 +83,7 @@ void log_open(const std::string& level) {
 
   g_level.store(get_level(level_str));
 
-  // Category filter: JSON config takes precedence over env var
+  // Category filter: explicit param > JSON config > env var
   g_log_filter_active = false;
   g_log_categories.clear();
   std::string effective_filter;

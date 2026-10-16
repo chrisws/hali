@@ -112,7 +112,7 @@ static BuildResult build_cmake(const std::string &sandbox, const std::string &mo
   if (mode == "clean") {
     result += "==> Cleaning build artifacts...\n";
     result += run_command("make -C " + build_dir + " clean", status);
-    if (has_tests) {
+    if (fs::exists(tests_build_dir)) {
       result += run_command("make -C " + tests_build_dir + " clean", status);
     }
     result += "==> Clean complete.\n";

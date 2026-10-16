@@ -27,6 +27,8 @@ add_executable(hali_tests
   ../src/llama_sb_suffix.cpp
   ../src/audio.cpp
   ../src/audio_impl.cpp
+  ../src/config.cpp
+  src/gpu_info_stub.cpp
   src/utf8_test.cpp
   src/file_test.cpp
   src/graph_test.cpp
@@ -45,6 +47,7 @@ add_executable(hali_tests
   src/usage_log_test.cpp
   src/suffix_drafter_test.cpp
   src/audio_test.cpp
+  src/config_test.cpp
   src/main.cpp
 )
 
@@ -60,6 +63,9 @@ target_include_directories(hali_tests PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/../src
   ${CMAKE_CURRENT_SOURCE_DIR}/../llama.cpp/include
   ${CMAKE_CURRENT_SOURCE_DIR}/../llama.cpp/ggml/include
+  ${CMAKE_CURRENT_SOURCE_DIR}/../llama.cpp/common
+  ${CMAKE_CURRENT_SOURCE_DIR}/../libs
+  ${CMAKE_CURRENT_SOURCE_DIR}/../llama.cpp/vendor
 )
 
 find_package(CURL REQUIRED)

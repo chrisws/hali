@@ -148,6 +148,7 @@ void init(int sample_rate, int channels) {
 
   ma_device_config config = ma_device_config_init(ma_device_type_playback);
   config.sampleRate = (ma_uint32)sample_rate;
+  config.playback.channels = (ma_uint32)channels;
   config.dataCallback = data_callback;
   config.pUserData = nullptr;
 

@@ -1,0 +1,247 @@
+// This file is part of Hali
+//
+// Copyright(C) 2026 Chris Warren-Smith.
+//
+// This program is distributed under the terms of the GPL v2.0
+// Download the GNU Public License (GPL) from www.gnu.org
+//
+
+#include <iostream>
+#include <cassert>
+#include <string>
+#include <fstream>
+#include <filesystem>
+
+#include "config.h"
+#include "json.h"
+
+using namespace std;
+
+static void test_set_value_float() {
+  HaliConfig cfg;
+  bool reparam = false;
+  string msg;
+
+  int rc = cfg.set_value("temperature", "0.5", reparam, msg);
+  assert(rc == 0);
+  assert(cfg.temperature_ == 0.5f);
+  assert(reparam == true);
+
+  rc = cfg.set_value("top_p", "0.9", reparam, msg);
+  assert(rc == 0);
+  assert(cfg.top_p_ == 0.9f);
+  assert(reparam == true);
+
+  rc = cfg.set_value("min_p", "0.1", reparam, msg);
+  assert(rc == 0);
+  assert(cfg.min_p_ == 0.1f);
+  assert(reparam == true);
+
+  cout << "test_set_value_float passed" << endl;
+}
+
+static void test_set_value_int() {
+  HaliConfig cfg;
+  bool reparam = false;
+  string msg;
+
+  int rc = cfg.set_value("top_k", "40", reparam, msg);
+  assert(rc == 0);
+  assert(cfg.top_k_ == 40);
+  assert(reparam == true);
+
+  rc = cfg.set_value("penalty_last_n", "512", reparam, msg);
+  assert(rc == 0);
+  assert(cfg.penalty_last_n_ == 512);
+  assert(reparam == true);
+
+  rc = cfg.set_value("rag_top_k", "10", reparam, msg);
+  assert(rc == 0);
+  assert(cfg.rag_top_k_ == 10);
+  assert(reparam == false);
+
+  cout << "test_set_value_int passed" << endl;
+}
+
+static void test_set_value_bool() {
+  HaliConfig cfg;
+  bool reparam = false;
+  string msg;
+
+  int rc = cfg.set_value("offload_kqv", "true", reparam, msg);
+  assert(rc == 0);
+  assert(cfg.offload_kqv_ == true);
+
+  rc = cfg.set_value("offload_kqv", "false", reparam, msg);
+  assert(rc == 0);
+  assert(cfg.offload_kqv_ == false);
+
+  cout << "test_set_value_bool passed" << endl;
+}
+
+static void test_set_value_unknown_key() {
+  HaliConfig cfg;
+  bool reparam = false;
+  string msg;
+
+  int rc = cfg.set_value("nonexistent", "1", reparam, msg);
+  assert(rc == 1);
+
+  cout << "test_set_value_unknown_key passed" << endl;
+}
+
+static void test_set_value_parse_error() {
+  HaliConfig cfg;
+  bool reparam = false;
+  string msg;
+
+  int rc = cfg.set_value("temperature", "not_a_number", reparam, msg);
+  assert(rc == 2);
+  assert(!msg.empty());
+
+  cout << "test_set_value_parse_error passed" << endl;
+}
+
+static void test_set_value_run_allowed() {
+  HaliConfig cfg;
+  bool reparam = false;
+  string msg;
+
+  int rc = cfg.set_value("run_allowed", "ls,cat,grep", reparam, msg);
+  assert(rc == 0);
+  assert(cfg.run_allowed_.size() == 3);
+  assert(cfg.run_allowed_[0] == "ls");
+  assert(cfg.run_allowed_[1] == "cat");
+  assert(cfg.run_allowed_[2] == "grep");
+
+  rc = cfg.set_value("run_allowed", "none", reparam, msg);
+  assert(rc == 0);
+  assert(cfg.run_allowed_.empty());
+
+  cout << "test_set_value_run_allowed passed" << endl;
+}
+
+static void test_set_value_gpu_layers() {
+  HaliConfig cfg;
+  bool reparam = false;
+  string msg;
+
+  int rc = cfg.set_value("n_gpu_layers", "48", reparam, msg);
+  assert(rc == 0);
+  assert(cfg.n_gpu_layers_ == 48);
+  assert(msg.find("next /model load") != string::npos);
+
+  cout << "test_set_value_gpu_layers passed" << endl;
+}
+
+static void test_introspect_nested() {
+  HaliConfig cfg;
+  cfg.model_path_ = "/tmp/test.gguf";
+  cfg.rag_top_k_ = 8;
+  cfg.mtp_enabled_ = true;
+  cfg.mtp_n_max_ = 5;
+  cfg.mcp_host_ = "10.0.0.1";
+  cfg.mcp_port_ = 9999;
+  cfg.log_level_str_ = "2";
+
+  string json = cfg.introspect();
+
+  // Verify nested structure
+  assert(json.find("\"model\"") != string::npos);
+  assert(json.find("\"rag\"") != string::npos);
+  assert(json.find("\"mtp\"") != string::npos);
+  assert(json.find("\"suffix\"") != string::npos);
+  assert(json.find("\"audio\"") != string::npos);
+  assert(json.find("\"mcp\"") != string::npos);
+  assert(json.find("\"logging\"") != string::npos);
+
+  // Verify values are present
+  assert(json.find("/tmp/test.gguf") != string::npos);
+  assert(json.find("10.0.0.1") != string::npos);
+  assert(json.find("9999") != string::npos);
+
+  // Verify it's valid JSON
+  auto doc = json::parse(json);
+  assert(doc.is_valid());
+  auto root = doc.get_root();
+  assert(root.is_object());
+
+  auto model = root.get_child("model");
+  assert(model.is_object());
+  string path;
+  assert(model.get_str("path", path));
+  assert(path == "/tmp/test.gguf");
+
+  auto rag = root.get_child("rag");
+  assert(rag.is_object());
+  int rag_k = 0;
+  assert(rag.get_int("top_k", rag_k));
+  assert(rag_k == 8);
+  string embed;
+  assert(rag.get_str("embed_path", embed));
+  assert(embed == "");
+
+  auto mcp = root.get_child("mcp");
+  assert(mcp.is_object());
+  string host;
+  int port = 0;
+  assert(mcp.get_str("host", host));
+  assert(mcp.get_int("port", port));
+  assert(host == "10.0.0.1");
+  assert(port == 9999);
+
+  cout << "test_introspect_nested passed" << endl;
+}
+
+static void test_load_settings_nested() {
+  // Write a temp config file
+  const string path = "/tmp/hali_test_config.json";
+  const string content =
+    "{\n"
+    "  \"model\": { \"path\": \"/tmp/a.gguf\", \"n_ctx\": 1234, \"temperature\": 0.7 },\n"
+    "  \"rag\": { \"embed_path\": \"/tmp/bert.gguf\", \"top_k\": 12 },\n"
+    "  \"mtp\": { \"enabled\": false, \"n_max\": 7 },\n"
+    "  \"mcp\": { \"host\": \"192.168.1.1\", \"port\": 8080 },\n"
+    "  \"logging\": { \"level\": \"3\", \"file\": \"/tmp/test.log\" }\n"
+    "}\n";
+  {
+    ofstream f(path);
+    f << content;
+  }
+
+  HaliConfig cfg;
+  cfg.set_config(path);
+  cfg.load_settings();
+
+  assert(cfg.model_path_ == "/tmp/a.gguf");
+  assert(cfg.n_ctx_ == 1234);
+  assert(cfg.temperature_ == 0.7f);
+  assert(cfg.rag_top_k_ == 12);
+  assert(cfg.embed_path_ == "/tmp/bert.gguf");
+  assert(cfg.mtp_enabled_ == false);
+  assert(cfg.mtp_n_max_ == 7);
+  assert(cfg.mcp_host_ == "192.168.1.1");
+  assert(cfg.mcp_port_ == 8080);
+  assert(cfg.log_level_str_ == "3");
+  assert(cfg.log_file_ == "/tmp/test.log");
+
+  // Cleanup
+  std::error_code ec;
+  std::filesystem::remove(path, ec);
+
+  cout << "test_load_settings_nested passed" << endl;
+}
+
+void config_test() {
+  cout << "=== Config Tests (plan 12) ===\n\n";
+  test_set_value_float();
+  test_set_value_int();
+  test_set_value_bool();
+  test_set_value_unknown_key();
+  test_set_value_parse_error();
+  test_set_value_run_allowed();
+  test_set_value_gpu_layers();
+  test_introspect_nested();
+  test_load_settings_nested();
+  cout << "\nAll config tests passed!\n" << endl;
+}

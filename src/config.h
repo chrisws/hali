@@ -33,6 +33,10 @@ struct HaliConfig {
   void load_settings();
   void set_config(const std::string &config);
 
+  // Returns 0=ok, 1=unknown key, 2=parse error
+  int set_value(const std::string &key, const std::string &val,
+                bool &needs_reparam, std::string &msg);
+
   std::string model_path_;
   std::string embed_path_;
   std::string backup_path_;
@@ -66,13 +70,22 @@ struct HaliConfig {
   bool  mtp_enabled_    = true;
   bool  mtp_adaptive_   = true;
 
+  // MCP (plan 12)
+  std::string mcp_host_;
+  int   mcp_port_       = 0;
+
+  // Logging (plan 12)
+  std::string log_level_str_ = "1";
+  std::string log_file_;
+  std::string log_filter_;
+
   // Suffix (n-gram) drafting (plan 08)
   bool  suffix_enabled_ = true;
   int   suffix_ngram_   = 4;
   int   suffix_max_draft_ = 2;
 
   // Audio (plan 11)
-  bool  audio_enabled_    = true;
+  bool  audio_enabled_    = false;
   float audio_volume_     = 0.5f;
   bool  audio_tool_tick_  = false;
   bool  audio_user_prompt_ = false;

@@ -35,6 +35,10 @@ class Client {
 
   bool enabled() const { return enabled_; }
   void enable() { enabled_ = true; }
+  void set_settings(const std::string &host, int port) {
+    settings_.host_ = host;
+    settings_.port_ = port;
+  }
 
   bool connect();
   void disconnect();

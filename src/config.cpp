@@ -75,7 +75,6 @@ void HaliConfig::load_settings() {
   std::ostringstream oss; oss << f.rdbuf();
   std::string json = oss.str();
 
-  // Parse JSON using json::JsonMutDoc
   auto doc = json::parse(json);
   if (!doc.is_valid()) {
     return;
@@ -83,53 +82,78 @@ void HaliConfig::load_settings() {
 
   auto root = doc.get_root();
 
-  // String fields
-  root.get_str("model_path", model_path_);
-  root.get_str("embed_path", embed_path_);
+  // ── model section ──────────────────────────────────────────────
+  auto model = root.get_child("model");
+  if (model.is_object()) {
+    model.get_str("path", model_path_);
+    std::string kv_preset;
+    model.get_str("kv_cache_preset", kv_preset);
+    kv_preset_ = to_kv_preset(kv_preset);
+    model.get_int("n_ctx", n_ctx_);
+    model.get_int("n_batch", n_batch_);
+    model.get_int("n_gpu_layers", n_gpu_layers_);
+    model.get_int("top_k", top_k_);
+    model.get_int("penalty_last_n", penalty_last_n_);
+    model.get_int("n_threads", n_threads_);
+    model.get_int("n_threads_batch", n_threads_batch_);
+    model.get_float("temperature", temperature_);
+    model.get_float("top_p", top_p_);
+    model.get_float("min_p", min_p_);
+    model.get_float("penalty_repeat", penalty_repeat_);
+    model.get_float("penalty_freq", penalty_freq_);
+    model.get_float("penalty_present", penalty_present_);
+    model.get_bool("offload_kqv", offload_kqv_);
+  }
 
-  std::string kv_preset;
-  root.get_str("kv_cache_preset", kv_preset);
-  kv_preset_ = to_kv_preset(kv_preset);
+  // ── rag section ────────────────────────────────────────────────
+  auto rag = root.get_child("rag");
+  if (rag.is_object()) {
+    rag.get_str("embed_path", embed_path_);
+    rag.get_int("top_k", rag_top_k_);
+  }
 
-  // Integer fields
-  root.get_int("n_ctx", n_ctx_);
-  root.get_int("n_batch", n_batch_);
-  root.get_int("n_gpu_layers", n_gpu_layers_);
-  root.get_int("top_k", top_k_);
-  root.get_int("penalty_last_n", penalty_last_n_);
-  root.get_int("rag_top_k", rag_top_k_);
-  root.get_int("n_threads", n_threads_);
-  root.get_int("n_threads_batch", n_threads_batch_);
+  // ── mtp section ────────────────────────────────────────────────
+  auto mtp = root.get_child("mtp");
+  if (mtp.is_object()) {
+    mtp.get_bool("enabled", mtp_enabled_);
+    mtp.get_int("n_max", mtp_n_max_);
+    mtp.get_int("n_min", mtp_n_min_);
+    mtp.get_float("p_min", mtp_p_min_);
+    mtp.get_float("pos_threshold", mtp_pos_threshold_);
+    mtp.get_bool("adaptive", mtp_adaptive_);
+  }
 
-  // Float fields
-  root.get_float("temperature", temperature_);
-  root.get_float("top_p", top_p_);
-  root.get_float("min_p", min_p_);
-  root.get_float("penalty_repeat", penalty_repeat_);
-  root.get_float("penalty_freq", penalty_freq_);
-  root.get_float("penalty_present", penalty_present_);
+  // ── suffix section ─────────────────────────────────────────────
+  auto suffix = root.get_child("suffix");
+  if (suffix.is_object()) {
+    suffix.get_bool("enabled", suffix_enabled_);
+    suffix.get_int("ngram", suffix_ngram_);
+    suffix.get_int("max_draft", suffix_max_draft_);
+  }
 
-  // bool fields
-  root.get_bool("offload_kqv", offload_kqv_);
-  root.get_bool("mtp_enabled", mtp_enabled_);
+  // ── audio section ──────────────────────────────────────────────
+  auto audio = root.get_child("audio");
+  if (audio.is_object()) {
+    audio.get_bool("enabled", audio_enabled_);
+    audio.get_float("volume", audio_volume_);
+    audio.get_bool("tool_tick", audio_tool_tick_);
+    audio.get_bool("user_prompt", audio_user_prompt_);
+  }
 
-  // MTP (Multi-Token Prediction) fields
-  root.get_int("mtp_n_max", mtp_n_max_);
-  root.get_int("mtp_n_min", mtp_n_min_);
-  root.get_float("mtp_p_min", mtp_p_min_);
-  root.get_float("mtp_pos_threshold", mtp_pos_threshold_);
-  root.get_bool("mtp_adaptive", mtp_adaptive_);
+  // ── mcp section (plan 12) ──────────────────────────────────────
+  auto mcp = root.get_child("mcp");
+  if (mcp.is_object()) {
+    mcp.get_str("host", mcp_host_);
+    mcp.get_int("port", mcp_port_);
+  }
 
-  // Suffix drafting (plan 08)
-  root.get_bool("suffix_enabled", suffix_enabled_);
-  root.get_int("suffix_ngram", suffix_ngram_);
-  root.get_int("suffix_max_draft", suffix_max_draft_);
-
-  // Audio (plan 11)
-  root.get_bool("audio_enabled", audio_enabled_);
-  root.get_float("audio_volume", audio_volume_);
-  root.get_bool("audio_tool_tick", audio_tool_tick_);
-  root.get_bool("audio_user_prompt", audio_user_prompt_);
+  // ── logging section (plan 12) ──────────────────────────────────
+  auto logging = root.get_child("logging");
+  if (logging.is_object()) {
+    logging.get_str("level", log_level_str_);
+    logging.get_str("file", log_file_);
+    logging.get_str("filter", log_filter_);
+  }
 }
 
 // Persist the current cfg to ~/.config/hali/settings.json.
@@ -351,42 +375,61 @@ std::string HaliConfig::build_system_prompt() const {
 std::string HaliConfig::introspect() const {
   static constexpr std::string_view tmpl =
     "{{\n"
-    "  \"model_path\":      \"{}\",\n"
-    "  \"embed_path\":      \"{}\",\n"
-    "  \"kv_cache_preset\": \"{}\",\n"
-    "  \"n_ctx\":             {},\n"
-    "  \"n_batch\":           {},\n"
-    "  \"n_gpu_layers\":      {},\n"
-    "  \"n_threads\":         {},\n"
-    "  \"n_threads_batch\":   {},\n"
-    "  \"temperature\":       {},\n"
-    "  \"top_p\":             {},\n"
-    "  \"min_p\":             {},\n"
-    "  \"top_k\":             {},\n"
-    "  \"penalty_repeat\":    {},\n"
-    "  \"penalty_freq\":      {},\n"
-    "  \"penalty_present\":   {},\n"
-    "  \"penalty_last_n\":    {},\n"
-    "  \"offload_kqv\":       {},\n"
-    "  \"rag_top_k\":         {},\n"
-    "  \"mtp_enabled\":       {},\n"
-    "  \"mtp_n_max\":         {},\n"
-    "  \"mtp_n_min\":         {},\n"
-    "  \"mtp_p_min\":         {},\n"
-    "  \"mtp_pos_threshold\": {},\n"
-    "  \"mtp_adaptive\":      {},\n"
-    "  \"suffix_enabled\":    {},\n"
-    "  \"suffix_ngram\":      {},\n"
-    "  \"suffix_max_draft\":  {},\n"
-    "  \"audio_enabled\":     {},\n"
-    "  \"audio_volume\":      {},\n"
-    "  \"audio_tool_tick\":   {},\n"
-    "  \"audio_user_prompt\": {}\n"
+    "  \"model\": {{\n"
+    "    \"path\":              \"{}\",\n"
+    "    \"kv_cache_preset\":   \"{}\",\n"
+    "    \"n_ctx\":             {},\n"
+    "    \"n_batch\":           {},\n"
+    "    \"n_gpu_layers\":      {},\n"
+    "    \"n_threads\":         {},\n"
+    "    \"n_threads_batch\":   {},\n"
+    "    \"temperature\":       {},\n"
+    "    \"top_p\":             {},\n"
+    "    \"min_p\":             {},\n"
+    "    \"top_k\":             {},\n"
+    "    \"penalty_repeat\":    {},\n"
+    "    \"penalty_freq\":      {},\n"
+    "    \"penalty_present\":   {},\n"
+    "    \"penalty_last_n\":    {},\n"
+    "    \"offload_kqv\":       {}\n"
+    "  }},\n"
+    "  \"rag\": {{\n"
+    "    \"embed_path\":        \"{}\",\n"
+    "    \"top_k\":             {}\n"
+    "  }},\n"
+    "  \"mtp\": {{\n"
+    "    \"enabled\":       {},\n"
+    "    \"n_max\":         {},\n"
+    "    \"n_min\":         {},\n"
+    "    \"p_min\":         {},\n"
+    "    \"pos_threshold\": {},\n"
+    "    \"adaptive\":      {}\n"
+    "  }},\n"
+    "  \"suffix\": {{\n"
+    "    \"enabled\":   {},\n"
+    "    \"ngram\":     {},\n"
+    "    \"max_draft\": {}\n"
+    "  }},\n"
+    "  \"audio\": {{\n"
+    "    \"enabled\":     {},\n"
+    "    \"volume\":      {},\n"
+    "    \"tool_tick\":   {},\n"
+    "    \"user_prompt\": {}\n"
+    "  }},\n"
+    "  \"mcp\": {{\n"
+    "    \"host\": \"{}\",\n"
+    "    \"port\": {}\n"
+    "  }},\n"
+    "  \"logging\": {{\n"
+    "    \"level\":  \"{}\",\n"
+    "    \"file\":   \"{}\",\n"
+    "    \"filter\": \"{}\"\n"
+    "  }}\n"
     "}}\n";
   return std::format(tmpl,
+                     // model
                      model_path_,
-                     embed_path_,
-                     kv_preset_to_string(),                     
+                     kv_preset_to_string(),
                      n_ctx_,
                      n_batch_,
                      n_gpu_layers_,
@@ -401,19 +444,91 @@ std::string HaliConfig::introspect() const {
                      penalty_present_,
                      penalty_last_n_,
                      offload_kqv_,
+                     // rag
+                     embed_path_,
                      rag_top_k_,
+                     // mtp
                      mtp_enabled_,
                      mtp_n_max_,
                      mtp_n_min_,
                      mtp_p_min_,
                      mtp_pos_threshold_,
                      mtp_adaptive_,
+                     // suffix
                      suffix_enabled_,
                      suffix_ngram_,
                      suffix_max_draft_,
+                     // audio
                      audio_enabled_,
                      audio_volume_,
                      audio_tool_tick_,
-                     audio_user_prompt_);
+                     audio_user_prompt_,
+                     // mcp
+                     mcp_host_,
+                     mcp_port_,
+                     // logging
+                     log_level_str_,
+                     log_file_,
+                     log_filter_);
 }
 
+
+//
+// /set command handler (plan 12)
+// Returns 0=ok, 1=unknown key, 2=parse error
+//
+int HaliConfig::set_value(const std::string &key, const std::string &val,
+                          bool &needs_reparam, std::string &msg) {
+  needs_reparam = false;
+  msg.clear();
+  try {
+    if (key == "temperature") {
+      temperature_ = std::stof(val); needs_reparam = true;
+    } else if (key == "top_p") {
+      top_p_ = std::stof(val); needs_reparam = true;
+    } else if (key == "min_p") {
+      min_p_ = std::stof(val); needs_reparam = true;
+    } else if (key == "top_k") {
+      top_k_ = std::stoi(val); needs_reparam = true;
+    } else if (key == "penalty_repeat") {
+      penalty_repeat_ = std::stof(val); needs_reparam = true;
+    } else if (key == "penalty_last_n") {
+      penalty_last_n_ = std::stoi(val); needs_reparam = true;
+    } else if (key == "rag_top_k") {
+      rag_top_k_ = std::stoi(val);
+    } else if (key == "offload_kqv") {
+      offload_kqv_ = (val == "true");
+    } else if (key == "n_gpu_layers") {
+      n_gpu_layers_ = std::stoi(val);
+      msg = "n_gpu_layers will take effect on next /model load.";
+    } else if (key == "run_allowed") {
+      run_allowed_.clear();
+      if (val != "none") {
+        std::istringstream iss(val);
+        std::string tok;
+        while (std::getline(iss, tok, ',')) {
+          tok.erase(0, tok.find_first_not_of(" \t"));
+          tok.erase(tok.find_last_not_of(" \t") + 1);
+          if (!tok.empty()) {
+            run_allowed_.push_back(tok);
+          }
+        }
+      }
+      if (run_allowed_.empty()) {
+        msg = "run_allowed cleared — all sandbox programs permitted.";
+      } else {
+        std::string list;
+        for (const auto &e : run_allowed_) {
+          list += e + " ";
+        }
+        msg = "run_allowed: " + list;
+      }
+    } else {
+      return 1;
+    }
+  } catch (const std::exception &ex) {
+    msg = ex.what();
+    return 2;
+  }
+  return 0;
+}

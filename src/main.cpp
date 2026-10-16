@@ -201,8 +201,6 @@ static void handle_slash(const std::string &input, HaliConfig &cfg, Agent &agent
 
   if (verb == "/set") {
     // Usage: /set <key> <value>
-    // Parses the key and value, updates cfg in place, re-applies generation
-    // params if needed, and saves settings to disk.
     auto sp2 = rest.find(' ');
     std::string key = (sp2 == std::string::npos) ? rest : rest.substr(0, sp2);
     std::string val = (sp2 == std::string::npos) ? "" : rest.substr(sp2 + 1);
@@ -213,54 +211,22 @@ static void handle_slash(const std::string &input, HaliConfig &cfg, Agent &agent
       tui.redraw_all(); return;
     }
 
-    bool ok = true;
     bool needs_reparam = false;
-    try {
-      if (key == "temperature")    { cfg.temperature_    = std::stof(val); needs_reparam = true; }
-      else if (key == "top_p")     { cfg.top_p_          = std::stof(val); needs_reparam = true; }
-      else if (key == "min_p")     { cfg.min_p_          = std::stof(val); needs_reparam = true; }
-      else if (key == "top_k")     { cfg.top_k_          = std::stoi(val); needs_reparam = true; }
-      else if (key == "penalty_repeat") { cfg.penalty_repeat_ = std::stof(val); needs_reparam = true; }
-      else if (key == "penalty_last_n") { cfg.penalty_last_n_ = std::stoi(val); needs_reparam = true; }
-      else if (key == "rag_top_k")      { cfg.rag_top_k_      = std::stoi(val); }
-      else if (key == "offload_kqv")    { cfg.offload_kqv_    = (val == "true"); }
-      else if (key == "n_gpu_layers")   {
-        cfg.n_gpu_layers_ = std::stoi(val);
-        tui.append_line(ICON_SYS + "n_gpu_layers will take effect on next /model load.");
-      } else if (key == "run_allowed") {
-        // Accept a comma-separated list of basenames, or "none" to clear.
-        cfg.run_allowed_.clear();
-        if (val != "none") {
-          std::istringstream iss(val);
-          std::string tok;
-          while (std::getline(iss, tok, ',')) {
-            tok.erase(0, tok.find_first_not_of(" \t"));
-            tok.erase(tok.find_last_not_of(" \t") + 1);
-            if (!tok.empty()) cfg.run_allowed_.push_back(tok);
-          }
-        }
-        if (cfg.run_allowed_.empty()) {
-          tui.append_line(ICON_SYS + "run_allowed cleared — all sandbox programs permitted.");
-        } else {
-          std::string list;
-          for (const auto &e : cfg.run_allowed_) list += e + " ";
-          tui.append_line(ICON_SYS + "run_allowed: " + list);
-        }
-      } else {
-        tui.append_line(ICON_ERR + "Unknown key '" + key + "'.  Try /help for list.");
-        ok = false;
-      }
-    } catch (const std::exception &ex) {
-      tui.append_line(ICON_ERR + "/set: " + ex.what());
-      ok = false;
-    }
-
-    if (ok) {
+    std::string msg;
+    int rc = cfg.set_value(key, val, needs_reparam, msg);
+    if (rc == 0) {
       if (needs_reparam && agent.model_loaded()) {
         agent.apply_generation_params();
       }
       cfg.save_settings();
+      if (!msg.empty()) {
+        tui.append_line(ICON_SYS + msg);
+      }
       tui.append_line(ICON_SYS + "" + key + " = " + val);
+    } else if (rc == 1) {
+      tui.append_line(ICON_ERR + "Unknown key '" + key + "'.  Try /help for list.");
+    } else {
+      tui.append_line(ICON_ERR + "/set: " + msg);
     }
     tui.redraw_all();
     return;
@@ -313,6 +279,7 @@ int main(int argc, char **argv) {
   };
 
   bool do_mcp_test = false;
+  std::string cli_log_level;
   mcp::Client mcp_client;
 
   for (int i = 1; i < argc; ++i) {
@@ -341,7 +308,7 @@ int main(int argc, char **argv) {
     } else if (a == "-c" || a == "--config") {
       cfg.set_config(take_next(a.c_str()));
     } else if (a == "-l" || a == "--log") {
-      log_open(take_next(a.c_str()));
+      cli_log_level = take_next(a.c_str());
     } else if (a == "-t" || a == "--think") {
       cfg.thinking_ = false;
     } else if (a == "-n" || a == "--prompt-permission") {
@@ -362,6 +329,13 @@ int main(int argc, char **argv) {
   // ── Load persisted settings first (provides defaults) ─────────────
   cfg.load_settings();
 
+  // ── Init logging: CLI -l overrides config defaults ───────────────
+  if (!cli_log_level.empty()) {
+    log_open(cli_log_level);
+  } else {
+    log_open(cfg.log_level_str_, cfg.log_file_, cfg.log_filter_);
+  }
+
   // ── Init curl globally ────────────────────────────────────────────
   curl_init();
 
@@ -375,6 +349,9 @@ int main(int argc, char **argv) {
   }
 
   if (mcp_client.enabled()) {
+    if (!cfg.mcp_host_.empty() && cfg.mcp_port_ > 0) {
+      mcp_client.set_settings(cfg.mcp_host_, cfg.mcp_port_);
+    }
     cfg.mcp_context_ = mcp_client.get_system_context(cfg.mcp_filter_);
   }
 
@@ -386,9 +363,9 @@ int main(int argc, char **argv) {
   }
 
   // ── Init Audio (plan 11) ──────────────────────────────────────────
-  audio::init();
-  audio::set_enabled(cfg.audio_enabled_);
-  audio::set_volume(cfg.audio_volume_);
+  // audio::init();
+  // audio::set_enabled(cfg.audio_enabled_);
+  // audio::set_volume(cfg.audio_volume_);
 
   // ── Init TUI ──────────────────────────────────────────────────────
   Tui tui;
@@ -492,8 +469,8 @@ int main(int argc, char **argv) {
   // Persist input history for the next session.
   cfg.user_run_allowed_.save(RunAllowed::default_path());
   tui.history_save(history_path());
-  audio::play(audio::Event::SessionEnd);
-  audio::shutdown();
+  // audio::play(audio::Event::SessionEnd);
+  // audio::shutdown();
   curl_close();
   return 0;
 }
