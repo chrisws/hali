@@ -9,6 +9,7 @@
 #ifndef AUDIO_H
 #define AUDIO_H
 
+#include <string>
 #include <vector>
 #include <utility>
 
@@ -43,6 +44,23 @@ void set_volume(float v);
 
 /** @brief Returns true if audio is currently enabled. */
 bool is_enabled();
+
+/**
+ * @brief Result of parsing a note script.
+ */
+struct ScriptResult {
+  std::string error;
+  std::vector<std::pair<double, double>> melody;
+};
+
+/**
+ * @brief Parse a note script string into a melody.
+ * Format: space-separated tokens.
+ *   Notes:  C4  D#5  E-3  A4:0.5   (letter [accidental] [octave] [:duration])
+ *   Control: T120 (tempo BPM)  V50 (volume 0-100)  L4 (note length)  P2 (pause beats)
+ * @return Parsed melody and/or error message.
+ */
+ScriptResult play_script(const std::string &notes_str);
 
 } // namespace audio
 

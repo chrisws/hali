@@ -152,7 +152,7 @@ static void handle_slash(const std::string &input, HaliConfig &cfg, Agent &agent
       audio::set_enabled(new_state);
       tui.append_line(ICON_SYS + std::string("Audio ") + (new_state ? "enabled." : "disabled."));
     } else if (rest == "test") {
-      audio::play(audio::Event::TaskComplete);
+      audio::play_tone(440.0, 0.5, 0.5);
       tui.append_line(ICON_SYS + "Audio test played.");
     } else if (rest.rfind("volume", 0) == 0) {
       // /audio volume 0.7
@@ -363,9 +363,9 @@ int main(int argc, char **argv) {
   }
 
   // ── Init Audio (plan 11) ──────────────────────────────────────────
-  // audio::init();
-  // audio::set_enabled(cfg.audio_enabled_);
-  // audio::set_volume(cfg.audio_volume_);
+  audio::init();
+  audio::set_enabled(cfg.audio_enabled_);
+  audio::set_volume(cfg.audio_volume_);
 
   // ── Init TUI ──────────────────────────────────────────────────────
   Tui tui;
@@ -469,8 +469,7 @@ int main(int argc, char **argv) {
   // Persist input history for the next session.
   cfg.user_run_allowed_.save(RunAllowed::default_path());
   tui.history_save(history_path());
-  // audio::play(audio::Event::SessionEnd);
-  // audio::shutdown();
+  audio::shutdown();
   curl_close();
   return 0;
 }

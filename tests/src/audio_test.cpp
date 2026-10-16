@@ -7,11 +7,17 @@
 //
 
 #include <cassert>
+#include <cmath>
 #include <iostream>
+#include <string>
 #include <vector>
 #include <utility>
 
 #include "audio.h"
+
+static bool freq_close(double a, double b, double eps = 0.01) {
+  return std::fabs(a - b) < eps;
+}
 
 void audio_test() {
   // ── Default state ──────────────────────────────────────────────────
@@ -55,6 +61,105 @@ void audio_test() {
   // ── Play after shutdown must not crash ─────────────────────────────
   audio::play_tone(880.0, 0.05, 0.3);
   audio::play_melody(melody);
+
+  // ── play_script: empty input ───────────────────────────────────────
+  {
+    auto r = audio::play_script("");
+    assert(!r.error.empty());
+    assert(r.melody.empty());
+  }
+
+  // ── play_script: single note C4 ────────────────────────────────────
+  {
+    auto r = audio::play_script("C4");
+    assert(r.error.empty());
+    assert(r.melody.size() == 1);
+    assert(freq_close(r.melody[0].first, 261.63));   // C4 ≈ 261.63 Hz
+    assert(freq_close(r.melody[0].second, 0.5));     // default: 120bpm, L4 → 0.5s
+  }
+
+  // ── play_script: A4 = 440 Hz exactly ───────────────────────────────
+  {
+    auto r = audio::play_script("A4");
+    assert(r.error.empty());
+    assert(r.melody.size() == 1);
+    assert(freq_close(r.melody[0].first, 440.0));
+  }
+
+  // ── play_script: multiple notes ────────────────────────────────────
+  {
+    auto r = audio::play_script("C4 E4 G4 C5");
+    assert(r.error.empty());
+    assert(r.melody.size() == 4);
+    assert(freq_close(r.melody[0].first, 261.63));   // C4
+    assert(freq_close(r.melody[1].first, 329.63));   // E4
+    assert(freq_close(r.melody[2].first, 392.00));   // G4
+    assert(freq_close(r.melody[3].first, 523.25));   // C5
+  }
+
+  // ── play_script: sharps and flats ──────────────────────────────────
+  {
+    auto r = audio::play_script("C#4 Db4");
+    assert(r.error.empty());
+    assert(r.melody.size() == 2);
+    assert(freq_close(r.melody[0].first, 277.18));   // C#4
+    assert(freq_close(r.melody[1].first, 277.18));   // Db4 = C#4
+  }
+
+  // ── play_script: explicit duration ─────────────────────────────────
+  {
+    auto r = audio::play_script("C4:0.25");
+    assert(r.error.empty());
+    assert(r.melody.size() == 1);
+    assert(freq_close(r.melody[0].second, 0.25));
+  }
+
+  // ── play_script: tempo affects default duration ────────────────────
+  {
+    auto r = audio::play_script("T60 C4");
+    assert(r.error.empty());
+    assert(r.melody.size() == 1);
+    assert(freq_close(r.melody[0].second, 1.0));     // 60bpm, L4 → 1.0s
+  }
+
+  // ── play_script: note length L2 ────────────────────────────────────
+  {
+    auto r = audio::play_script("L2 C4");
+    assert(r.error.empty());
+    assert(r.melody.size() == 1);
+    assert(freq_close(r.melody[0].second, 1.0));     // 120bpm, L2 → 1.0s
+  }
+
+  // ── play_script: pause token ───────────────────────────────────────
+  {
+    auto r = audio::play_script("C4 P1 C4");
+    assert(r.error.empty());
+    assert(r.melody.size() == 3);
+    assert(r.melody[1].first == 0.0);                // pause = 0 Hz
+    assert(freq_close(r.melody[1].second, 0.5));     // 1 beat at 120bpm
+  }
+
+  // ── play_script: invalid note letter ───────────────────────────────
+  {
+    auto r = audio::play_script("H4");
+    assert(!r.error.empty());
+    assert(r.melody.empty());
+  }
+
+  // ── play_script: unrecognized token ────────────────────────────────
+  {
+    auto r = audio::play_script("C4 XYZ");
+    assert(!r.error.empty());
+  }
+
+  // ── play_script: octave range ──────────────────────────────────────
+  {
+    auto r = audio::play_script("C0 C8");
+    assert(r.error.empty());
+    assert(r.melody.size() == 2);
+    assert(freq_close(r.melody[0].first, 16.35));    // C0 ≈ 16.35 Hz
+    assert(freq_close(r.melody[1].first, 4186.01));  // C8 ≈ 4186.01 Hz
+  }
 
   std::cout << "  audio_test: all assertions passed"
             << (was_available ? " (device was available)" : "")

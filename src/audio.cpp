@@ -12,9 +12,12 @@
 #include <cstring>
 #include <deque>
 #include <mutex>
+#include <sstream>
+#include <string>
 #include <vector>
 
 #include "miniaudio.h"
+#include "logging.h"
 
 namespace audio {
 
@@ -214,6 +217,107 @@ void set_volume(float v) {
 
 bool is_enabled() {
   return g_enabled;
+}
+
+ScriptResult play_script(const std::string &notes_str) {
+  ScriptResult result;
+
+  log_write(LEVEL_DEBUG, "audio", "play_script: [%s]", notes_str.c_str());
+
+  double tempo = 120.0;
+  double volume = 0.5;
+  double default_len = 4.0;
+
+  auto note_to_semitone = [](char note, char acc) -> int {
+    int idx;
+    switch (note) {
+      case 'C': idx = 0;  break;
+      case 'D': idx = 2;  break;
+      case 'E': idx = 4;  break;
+      case 'F': idx = 5;  break;
+      case 'G': idx = 7;  break;
+      case 'A': idx = 9;  break;
+      case 'B': idx = 11; break;
+      default:  return -1;
+    }
+    if (acc == '#' || acc == '+') idx++;
+    else if (acc == '-' || acc == 'b') idx--;
+    return idx;
+  };
+
+  auto midi_to_freq = [](int midi) -> double {
+    return 440.0 * pow(2.0, (midi - 69) / 12.0);
+  };
+
+  auto default_duration = [&]() -> double {
+    return (60.0 / tempo) * (4.0 / default_len);
+  };
+
+  std::istringstream iss(notes_str);
+  std::string tok;
+  while (iss >> tok) {
+    if (tok.empty()) continue;
+    char c = tok[0];
+
+    if (c == 'T' && tok.size() > 1) {
+      tempo = std::stod(tok.substr(1));
+      continue;
+    }
+    if (c == 'V' && tok.size() > 1) {
+      volume = std::stod(tok.substr(1)) / 100.0;
+      continue;
+    }
+    if (c == 'L' && tok.size() > 1) {
+      default_len = std::stod(tok.substr(1));
+      continue;
+    }
+    if (c == 'P' && tok.size() > 1) {
+      double beats = std::stod(tok.substr(1));
+      double dur = (60.0 / tempo) * beats;
+      result.melody.emplace_back(0.0, dur);
+      continue;
+    }
+
+    if (c >= 'A' && c <= 'G') {
+      int pos = 1;
+      char acc = 0;
+      if (pos < (int)tok.size() && (tok[pos] == '#' || tok[pos] == '-' || tok[pos] == 'b' || tok[pos] == '+')) {
+        acc = tok[pos];
+        pos++;
+      }
+      int octave = 4;
+      if (pos < (int)tok.size() && isdigit((unsigned char)tok[pos])) {
+        octave = tok[pos] - '0';
+        pos++;
+      }
+      double dur = default_duration();
+      if (pos < (int)tok.size() && tok[pos] == ':') {
+        pos++;
+        dur = std::stod(tok.substr(pos));
+      }
+      int semi = note_to_semitone(c, acc);
+      if (semi < 0) {
+        result.error = "ERROR: invalid note: " + tok;
+        return result;
+      }
+      int midi = (octave + 1) * 12 + semi;
+      result.melody.emplace_back(midi_to_freq(midi), dur);
+      continue;
+    }
+
+    result.error = "ERROR: unrecognized token: " + tok;
+    return result;
+  }
+
+  if (result.melody.empty()) {
+    result.error = "ERROR: no notes to play";
+    return result;
+  }
+
+  log_write(LEVEL_DEBUG, "audio", "play_script: %zu notes, tempo=%.0f, volume=%.2f, default_len=%.1f",
+            result.melody.size(), tempo, volume, default_len);
+
+  return result;
 }
 
 } // namespace audio
