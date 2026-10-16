@@ -36,53 +36,6 @@
 //
 constexpr std::string SESSION_MD = "SESSION.md";
 
-static constexpr size_t MAX_READ_SIZE = 32 * 1024; // 32 KB
-
-static std::string read_file(const std::string &path) {
-  std::error_code ec;
-  auto size = fs::file_size(path, ec);
-  if (ec) {
-    return "ERROR: cannot open [" + path + "]";
-  }
-  if (size > MAX_READ_SIZE) {
-    return std::format("ERROR: file too large (%zu bytes). Use TOOL:SEARCH to read specific sections.", size);
-  }
-  std::ifstream f(path, std::ios::binary);
-  if (!f) {
-    return "ERROR: cannot open [" + path + "]";
-  }
-  std::ostringstream oss; oss << f.rdbuf();
-  return oss.str();
-}
-
-static bool make_dir(const std::string &path) {
-  try {
-    std::filesystem::path p(path);
-    if (fs::exists(p)) {
-      return true;
-    }
-    std::error_code ec;
-    return fs::create_directories(p, ec);
-  }
-  catch (const std::filesystem::filesystem_error &e) {
-    log_write(LEVEL_DEBUG, "agent", "mkdir failed [%s]", e.what());
-    return false;
-  }
-}
-
-static std::string list_dir(const std::string &path) {
-  std::ostringstream oss;
-  std::error_code ec;
-  for (const auto &e : fs::directory_iterator(path, ec)) {
-    if (ec) break;
-    std::string name = e.path().filename().string();
-    if (name.empty() || name[0] == '.') continue;
-    oss << (e.is_directory() ? "[" + name + "]" : name) << "\n";
-  }
-  const auto result = oss.str();
-  return utils::is_blank(result) ? "[.]" : result;
-}
-
 static std::string tool_run(HaliConfig &cfg, Tui &tui, const std::string &arg1, const std::string &arg2) {
   const std::string args = arg1 + " " + arg2;
   if (cfg.permission_prompt_ && !tui.confirm_dialog(std::format("Allow {} {} to run?", arg1, arg2))) {
@@ -397,7 +350,7 @@ std::string Agent::process_tool(const std::string &cmd) {
   }
   if (op == "TOOL:LIST") {
     std::string dir = resolve_path(cfg_.sandbox_, arg1);
-    if (!path_in_sandbox(cfg_.sandbox_, dir)) {
+    if (!path_allowed(cfg_.sandbox_, cfg_.extra_dirs_, dir)) {
       return "ERROR: path outside sandbox";
     }
     tui_.show_tool("listing: " + dir);
@@ -405,7 +358,7 @@ std::string Agent::process_tool(const std::string &cmd) {
   }
   if (op == "TOOL:EXISTS") {
     std::string p = resolve_path(cfg_.sandbox_, arg1);
-    if (!path_in_sandbox(cfg_.sandbox_, p)) {
+    if (!path_allowed(cfg_.sandbox_, cfg_.extra_dirs_, p)) {
       return "ERROR: path outside sandbox";
     }
     tui_.show_tool("checking: " + p);
@@ -415,7 +368,7 @@ std::string Agent::process_tool(const std::string &cmd) {
     tui_.show_tool("reading: " + arg1);
     turn_files_read_++;
     std::string p = resolve_path(cfg_.sandbox_, arg1);
-    if (!path_in_sandbox(cfg_.sandbox_, p)) {
+    if (!path_allowed(cfg_.sandbox_, cfg_.extra_dirs_, p)) {
       return "ERROR: path outside sandbox";
     }
     return read_file(p);
@@ -432,7 +385,7 @@ std::string Agent::process_tool(const std::string &cmd) {
     } else {
       path_part = sa.path_and_flags;
     }
-    return tool_search(cfg_.sandbox_, sa.pattern, path_part, flags_part);
+    return tool_search(cfg_.sandbox_, sa.pattern, path_part, flags_part, cfg_.extra_dirs_);
   }
   if (op == "TOOL:WRITE") {
     tui_.show_tool("writing: " + arg1);

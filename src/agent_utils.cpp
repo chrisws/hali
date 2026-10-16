@@ -235,6 +235,18 @@ bool path_in_sandbox(const std::string &sandbox, const std::string &path) {
   return tstr == base.string() || tstr.compare(0, bstr.size(), bstr) == 0;
 }
 
+bool path_allowed(const std::string &sandbox, const std::vector<std::string> &extra_dirs, const std::string &path) {
+  if (path_in_sandbox(sandbox, path)) {
+    return true;
+  }
+  for (const auto &dir : extra_dirs) {
+    if (path_in_sandbox(dir, path)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 //
 // Tool argument splitting
 //
@@ -456,12 +468,31 @@ std::string search_single_file(const std::string &filepath, const std::string &p
     return "";
   }
 
+  // Split pattern on '|' for alternation support
+  std::vector<std::string> sub_patterns;
+  {
+    std::string remaining = pattern;
+    size_t pos;
+    while ((pos = remaining.find('|')) != std::string::npos) {
+      sub_patterns.push_back(remaining.substr(0, pos));
+      remaining = remaining.substr(pos + 1);
+    }
+    sub_patterns.push_back(remaining);
+  }
+
+  auto line_matches = [&](const std::string &line) -> bool {
+    for (const auto &sp : sub_patterns) {
+      if (!sp.empty() && line.find(sp) != std::string::npos) return true;
+    }
+    return false;
+  };
+
   std::ostringstream oss;
   int match_count = 0;
   size_t last_end = 0;
 
   for (size_t i = range_start; i < range_end; i++) {
-    if (lines[i].find(pattern) == std::string::npos) continue;
+    if (!line_matches(lines[i])) continue;
 
     match_count++;
 
@@ -501,14 +532,10 @@ std::string search_single_file(const std::string &filepath, const std::string &p
   return oss.str();
 }
 
-std::string tool_search(const std::string &sandbox, const std::string &pattern, const std::string &path_arg, const std::string &flags_str) {
-  if (has_shell_metachars(pattern)) {
-    return "ERROR: invalid pattern";
-  }
-
+std::string tool_search(const std::string &sandbox, const std::string &pattern, const std::string &path_arg, const std::string &flags_str, const std::vector<std::string> &extra_dirs) {
   SearchFlags flags = parse_search_flags(flags_str);
   std::string path = resolve_path(sandbox, path_arg);
-  if (!path_in_sandbox(sandbox, path)) {
+  if (!path_allowed(sandbox, extra_dirs, path)) {
     return "ERROR: path outside sandbox";
   }
 

@@ -64,9 +64,11 @@ struct JsonMutValue {
   bool is_arr() const { return value_ && yyjson_mut_is_arr(value_); }
   bool set_str(const std::string &key, const std::string &value);
   bool set_int(const std::string &key, int value);
+  bool set_float(const std::string &key, float value);
   bool set_bool(const std::string &key, bool value);
   bool set_empty_obj(const std::string &key);
   bool set_obj(const std::string &key, const std::string &value);
+  bool set_arr(const std::string &key, const std::vector<std::string> &values);
   JsonMutValue get_child(const std::string &key) const;
 
   private:

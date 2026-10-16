@@ -20,9 +20,12 @@ void help(Tui &tui) {
   tui.append_line(ICON_SYS + "  /clear                   reset conversation");
   tui.append_line(ICON_SYS + "  /settings                show current settings");
   tui.append_line(ICON_SYS + "  /theme                   toggle the theme (F12)");
+  tui.append_line(ICON_SYS + "  /audio  [test|volume <v>]  enable/disable audio, test tone, set volume");
   tui.append_line(ICON_SYS + "  /set    <key> <value>    change a setting live");
   tui.append_line(ICON_SYS + "  /save   [file]           save chat transcript (plain text)");
   tui.append_line(ICON_SYS + "  /session [file]          save structured session snapshot");
+  tui.append_line(ICON_SYS + "  /allow  [path]           allow read access to a directory");
+  tui.append_line(ICON_SYS + "  /revoke <name>           remove an approved RUN command");
   tui.append_line(ICON_SYS + "  /help                    this message");
   tui.append_line(ICON_SYS + "  exit / quit              exit Hali");
   tui.append_line(ICON_SYS + "Settable keys (via /set):");
@@ -91,6 +94,7 @@ void usage() {
             "  /memory                  KV / VRAM / layer stats\n"
             "  /settings                show current settings\n"
             "  /clear                   reset conversation\n"
+            "  /allow  [path]           allow read access to a directory\n"
             "  /help                    list commands\n"
             );
 }

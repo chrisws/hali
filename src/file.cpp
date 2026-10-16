@@ -17,6 +17,7 @@
 #include "string_utils.h"
 #include "patch.h"
 #include "icon.h"
+#include "logging.h"
 
 namespace fs = std::filesystem;
 
@@ -401,6 +402,62 @@ std::string tool_write_backup(const std::string &backup_path, const std::string 
   }
 
   return "created at " + final_name;
+}
+
+//
+// read_file - read a file up to MAX_READ_SIZE bytes
+//
+static constexpr size_t MAX_READ_SIZE = 32 * 1024; // 32 KB
+
+std::string read_file(const std::string &path) {
+  std::error_code ec;
+  auto size = fs::file_size(path, ec);
+  if (ec) {
+    return "ERROR: cannot open [" + path + "]";
+  }
+  if (size > MAX_READ_SIZE) {
+    return std::format("ERROR: file too large (%zu bytes). Use TOOL:SEARCH to read specific sections.", size);
+  }
+  std::ifstream f(path, std::ios::binary);
+  if (!f) {
+    return "ERROR: cannot open [" + path + "]";
+  }
+  std::ostringstream oss; oss << f.rdbuf();
+  return oss.str();
+}
+
+//
+// make_dir - create a directory (and parents), returns true on success
+//
+bool make_dir(const std::string &path) {
+  try {
+    std::filesystem::path p(path);
+    if (fs::exists(p)) {
+      return true;
+    }
+    std::error_code ec;
+    return fs::create_directories(p, ec);
+  }
+  catch (const std::filesystem::filesystem_error &e) {
+    log_write(LEVEL_DEBUG, "agent", "mkdir failed [%s]", e.what());
+    return false;
+  }
+}
+
+//
+// list_dir - list directory contents, directories in [brackets]
+//
+std::string list_dir(const std::string &path) {
+  std::ostringstream oss;
+  std::error_code ec;
+  for (const auto &e : fs::directory_iterator(path, ec)) {
+    if (ec) break;
+    std::string name = e.path().filename().string();
+    if (name.empty() || name[0] == '.') continue;
+    oss << (e.is_directory() ? "[" + name + "]" : name) << "\n";
+  }
+  const auto result = oss.str();
+  return utils::is_blank(result) ? "[.]" : result;
 }
 
 //

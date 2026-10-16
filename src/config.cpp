@@ -8,7 +8,6 @@
 
 #include <string>
 #include <fstream>
-#include <format>
 #include <sstream>
 
 #include "config.h"
@@ -154,6 +153,15 @@ void HaliConfig::load_settings() {
     logging.get_str("file", log_file_);
     logging.get_str("filter", log_filter_);
   }
+
+  // ── extra_dirs section ─────────────────────────────────────────
+  std::vector<json::JsonValue> dirs;
+  if (root.get_array("extra_dirs", dirs)) {
+    extra_dirs_.clear();
+    for (const auto &d : dirs) {
+      extra_dirs_.emplace_back(d.get_str());
+    }
+  }
 }
 
 // Persist the current cfg to ~/.config/hali/settings.json.
@@ -272,6 +280,7 @@ std::string HaliConfig::build_system_prompt() const {
 
     "## SEARCH Tool Notes\n"
     "- `<pattern>` is a single token; use quotes for multi-word: `\"hello world\"`\n"
+    "- Use `|` for alternation: `foo|bar` matches lines containing either `foo` or `bar`\n"
     "- Flags: --recursive --line-numbers --context=<n> --include=<glob> --files-only --name --lines=<start>,<end>\n"
     "- `--context=<n>` shows n lines before/after each match\n"
     "- `--lines=<start>,<end>` restricts search to a line range (like sed -n)\n"
@@ -390,103 +399,74 @@ std::string HaliConfig::build_system_prompt() const {
 }
 
 std::string HaliConfig::introspect() const {
-  static constexpr std::string_view tmpl =
-    "{{\n"
-    "  \"model\": {{\n"
-    "    \"path\":              \"{}\",\n"
-    "    \"kv_cache_preset\":   \"{}\",\n"
-    "    \"n_ctx\":             {},\n"
-    "    \"n_batch\":           {},\n"
-    "    \"n_gpu_layers\":      {},\n"
-    "    \"n_threads\":         {},\n"
-    "    \"n_threads_batch\":   {},\n"
-    "    \"temperature\":       {},\n"
-    "    \"top_p\":             {},\n"
-    "    \"min_p\":             {},\n"
-    "    \"top_k\":             {},\n"
-    "    \"penalty_repeat\":    {},\n"
-    "    \"penalty_freq\":      {},\n"
-    "    \"penalty_present\":   {},\n"
-    "    \"penalty_last_n\":    {},\n"
-    "    \"offload_kqv\":       {}\n"
-    "  }},\n"
-    "  \"rag\": {{\n"
-    "    \"embed_path\":        \"{}\",\n"
-    "    \"top_k\":             {}\n"
-    "  }},\n"
-    "  \"mtp\": {{\n"
-    "    \"enabled\":       {},\n"
-    "    \"n_max\":         {},\n"
-    "    \"n_min\":         {},\n"
-    "    \"p_min\":         {},\n"
-    "    \"pos_threshold\": {},\n"
-    "    \"adaptive\":      {}\n"
-    "  }},\n"
-    "  \"suffix\": {{\n"
-    "    \"enabled\":   {},\n"
-    "    \"ngram\":     {},\n"
-    "    \"max_draft\": {}\n"
-    "  }},\n"
-    "  \"audio\": {{\n"
-    "    \"enabled\":     {},\n"
-    "    \"volume\":      {},\n"
-    "    \"tool_tick\":   {},\n"
-    "    \"user_prompt\": {}\n"
-    "  }},\n"
-    "  \"mcp\": {{\n"
-    "    \"host\": \"{}\",\n"
-    "    \"port\": {}\n"
-    "  }},\n"
-    "  \"logging\": {{\n"
-    "    \"level\":  \"{}\",\n"
-    "    \"file\":   \"{}\",\n"
-    "    \"filter\": \"{}\"\n"
-    "  }}\n"
-    "}}\n";
-  return std::format(tmpl,
-                     // model
-                     model_path_,
-                     kv_preset_to_string(),
-                     n_ctx_,
-                     n_batch_,
-                     n_gpu_layers_,
-                     n_threads_,
-                     n_threads_batch_,
-                     temperature_,
-                     top_p_,
-                     min_p_,
-                     top_k_,
-                     penalty_repeat_,
-                     penalty_freq_,
-                     penalty_present_,
-                     penalty_last_n_,
-                     offload_kqv_,
-                     // rag
-                     embed_path_,
-                     rag_top_k_,
-                     // mtp
-                     mtp_enabled_,
-                     mtp_n_max_,
-                     mtp_n_min_,
-                     mtp_p_min_,
-                     mtp_pos_threshold_,
-                     mtp_adaptive_,
-                     // suffix
-                     suffix_enabled_,
-                     suffix_ngram_,
-                     suffix_max_draft_,
-                     // audio
-                     audio_enabled_,
-                     audio_volume_,
-                     audio_tool_tick_,
-                     audio_user_prompt_,
-                     // mcp
-                     mcp_host_,
-                     mcp_port_,
-                     // logging
-                     log_level_str_,
-                     log_file_,
-                     log_filter_);
+  auto doc = json::parse_mutable("");
+  if (!doc.is_valid()) {
+    return "{}";
+  }
+
+  auto root = doc.get_root();
+
+  // model
+  auto model = root.get_child("model");
+  model.set_str("path", model_path_);
+  model.set_str("kv_cache_preset", kv_preset_to_string());
+  model.set_int("n_ctx", n_ctx_);
+  model.set_int("n_batch", n_batch_);
+  model.set_int("n_gpu_layers", n_gpu_layers_);
+  model.set_int("n_threads", n_threads_);
+  model.set_int("n_threads_batch", n_threads_batch_);
+  model.set_float("temperature", temperature_);
+  model.set_float("top_p", top_p_);
+  model.set_float("min_p", min_p_);
+  model.set_int("top_k", top_k_);
+  model.set_float("penalty_repeat", penalty_repeat_);
+  model.set_float("penalty_freq", penalty_freq_);
+  model.set_float("penalty_present", penalty_present_);
+  model.set_int("penalty_last_n", penalty_last_n_);
+  model.set_bool("offload_kqv", offload_kqv_);
+
+  // rag
+  auto rag = root.get_child("rag");
+  rag.set_str("embed_path", embed_path_);
+  rag.set_int("top_k", rag_top_k_);
+
+  // mtp
+  auto mtp = root.get_child("mtp");
+  mtp.set_bool("enabled", mtp_enabled_);
+  mtp.set_int("n_max", mtp_n_max_);
+  mtp.set_int("n_min", mtp_n_min_);
+  mtp.set_float("p_min", mtp_p_min_);
+  mtp.set_float("pos_threshold", mtp_pos_threshold_);
+  mtp.set_bool("adaptive", mtp_adaptive_);
+
+  // suffix
+  auto suffix = root.get_child("suffix");
+  suffix.set_bool("enabled", suffix_enabled_);
+  suffix.set_int("ngram", suffix_ngram_);
+  suffix.set_int("max_draft", suffix_max_draft_);
+
+  // audio
+  auto audio = root.get_child("audio");
+  audio.set_bool("enabled", audio_enabled_);
+  audio.set_float("volume", audio_volume_);
+  audio.set_bool("tool_tick", audio_tool_tick_);
+  audio.set_bool("user_prompt", audio_user_prompt_);
+
+  // mcp
+  auto mcp = root.get_child("mcp");
+  mcp.set_str("host", mcp_host_);
+  mcp.set_int("port", mcp_port_);
+
+  // logging
+  auto logging = root.get_child("logging");
+  logging.set_str("level", log_level_str_);
+  logging.set_str("file", log_file_);
+  logging.set_str("filter", log_filter_);
+
+  // extra_dirs
+  root.set_arr("extra_dirs", extra_dirs_);
+
+  return doc.to_string(json::WriteFlag::Pretty);
 }
 
 

@@ -100,6 +100,9 @@ struct HaliConfig {
   // Empty means "allow anything inside the sandbox" (original behaviour).
   std::vector<std::string> run_allowed_;
   std::vector<std::string> knowledge_files_;
+
+  // Extra directories allowed for read-only access (READ, SEARCH, LIST, EXISTS)
+  std::vector<std::string> extra_dirs_;
   RunAllowed user_run_allowed_;
 
   // MCP support

@@ -353,6 +353,62 @@ static void test_path_in_sandbox() {
 }
 
 //
+// path_allowed tests (extra-dirs feature)
+//
+// Requires real directories on disk because fs::canonical is used.
+//
+
+static void test_path_allowed() {
+  const string sandbox = "/tmp/hali_test_sandbox_pa";
+  const string extra1  = "/tmp/hali_test_extra1";
+  const string extra2  = "/tmp/hali_test_extra2";
+  fs::create_directories(sandbox + "/src");
+  fs::create_directories(extra1 + "/docs");
+  fs::create_directories(extra2);
+
+  vector<string> no_extra;
+  vector<string> one_extra  = {extra1};
+  vector<string> two_extra  = {extra1, extra2};
+
+  // Inside sandbox, no extra dirs needed
+  assert(path_allowed(sandbox, no_extra, sandbox) == true);
+  assert(path_allowed(sandbox, no_extra, sandbox + "/src") == true);
+
+  // Outside sandbox, no extra dirs → denied
+  assert(path_allowed(sandbox, no_extra, "/etc/passwd") == false);
+  assert(path_allowed(sandbox, no_extra, extra1) == false);
+
+  // Outside sandbox, inside extra dir → allowed
+  assert(path_allowed(sandbox, one_extra, extra1) == true);
+  assert(path_allowed(sandbox, one_extra, extra1 + "/docs") == true);
+
+  // Outside sandbox, outside all extra dirs → denied
+  assert(path_allowed(sandbox, one_extra, "/etc/passwd") == false);
+  assert(path_allowed(sandbox, one_extra, extra2) == false);
+
+  // Multiple extra dirs
+  assert(path_allowed(sandbox, two_extra, extra1 + "/docs") == true);
+  assert(path_allowed(sandbox, two_extra, extra2) == true);
+  assert(path_allowed(sandbox, two_extra, "/etc/passwd") == false);
+
+  // Traversal escape from sandbox → denied
+  assert(path_allowed(sandbox, no_extra, sandbox + "/../../etc/passwd") == false);
+
+  // Traversal escape from extra dir → denied
+  assert(path_allowed(sandbox, one_extra, extra1 + "/../../etc/passwd") == false);
+
+  // Sandbox itself is always allowed even with extra dirs
+  assert(path_allowed(sandbox, two_extra, sandbox + "/src") == true);
+
+  // Clean up
+  fs::remove_all(sandbox);
+  fs::remove_all(extra1);
+  fs::remove_all(extra2);
+
+  cout << "test_path_allowed passed" << endl;
+}
+
+//
 // TOOL:SEARCH tests (P1-3)
 //
 
@@ -600,6 +656,128 @@ static void test_search_lines_flag() {
   cout << "test_search_lines_flag passed" << endl;
 }
 
+static void test_search_alternation() {
+  const string test_file = "/tmp/hali_test_alternation.txt";
+  {
+    ofstream out(test_file);
+    out << "int main() { return 0; }\n";
+    out << "void helper() { return; }\n";
+    out << "class Widget { };\n";
+    out << "int compute() { return 42; }\n";
+    out << "void cleanup() { }\n";
+  }
+
+  SearchFlags f;
+  f.line_numbers = true;
+
+  // Basic alternation: match "int" OR "void"
+  string result = search_single_file(test_file, "int|void", f);
+  assert(result.find("int main()") != string::npos);
+  assert(result.find("void helper()") != string::npos);
+  assert(result.find("int compute()") != string::npos);
+  assert(result.find("void cleanup()") != string::npos);
+  // "class Widget" should NOT match
+  assert(result.find("class Widget") == string::npos);
+
+  // Three-way alternation: "int|void|class"
+  string result3 = search_single_file(test_file, "int|void|class", f);
+  assert(result3.find("class Widget") != string::npos);
+  assert(result3.find("int main()") != string::npos);
+  assert(result3.find("void helper()") != string::npos);
+
+  // Single pattern (no pipe) still works
+  string single = search_single_file(test_file, "int", f);
+  assert(single.find("int main()") != string::npos);
+  assert(single.find("void helper()") == string::npos);
+
+  // Count mode with alternation
+  SearchFlags fc;
+  fc.count = true;
+  string count_result = search_single_file(test_file, "int|void", fc);
+  assert(count_result == "4");
+
+  // No match with alternation
+  string no_match = search_single_file(test_file, "foo|bar", f);
+  assert(no_match.empty());
+
+  // Empty sub-pattern is skipped: "int|" should only match "int"
+  string empty_sub = search_single_file(test_file, "int|", f);
+  assert(empty_sub.find("int main()") != string::npos);
+  assert(empty_sub.find("void helper()") == string::npos);
+
+  // Alternation with line numbers
+  SearchFlags fln;
+  fln.line_numbers = true;
+  string ln_result = search_single_file(test_file, "Widget|compute", fln);
+  assert(ln_result.find("3:class Widget") != string::npos);
+  assert(ln_result.find("4:int compute()") != string::npos);
+
+  // Clean up
+  remove(test_file.c_str());
+
+  cout << "test_search_alternation passed" << endl;
+}
+
+static void test_tool_search_alternation() {
+  const string sandbox = "/tmp/hali_test_alt_sandbox";
+  fs::create_directories(sandbox + "/src");
+
+  {
+    ofstream out(sandbox + "/src/main.cpp");
+    out << "int main() { return 0; }\n";
+    out << "void setup() { }\n";
+  }
+  {
+    ofstream out(sandbox + "/src/util.cpp");
+    out << "int helper() { return 1; }\n";
+    out << "void teardown() { }\n";
+  }
+
+  // Alternation in tool_search (end-to-end)
+  string result = tool_search(sandbox, "main|teardown", "src/", "--recursive");
+  assert(result.find("int main()") != string::npos);
+  assert(result.find("void teardown()") != string::npos);
+  assert(result.find("void setup()") == string::npos);
+  assert(result.find("int helper()") == string::npos);
+
+  // Clean up
+  fs::remove_all(sandbox);
+
+  cout << "test_tool_search_alternation passed" << endl;
+}
+
+static void test_search_cannot_execute_shell() {
+  const string test_file = "/tmp/hali_test_rm_safety.txt";
+  {
+    ofstream out(test_file);
+    out << "target file for rm safety test\n";
+  }
+
+  // File must exist before the search
+  assert(fs::exists(test_file));
+
+  // Attempt to "execute" rm via a search pattern
+  string result = tool_search("/tmp", "x; rm " + test_file, test_file, "");
+  // Should just be a no-match string search, not a shell command
+  assert(result == "no matches");
+
+  // File must still exist — search cannot execute shell commands
+  assert(fs::exists(test_file));
+
+  // Also try with pipe and && variants
+  tool_search("/tmp", "x | rm " + test_file, test_file, "");
+  assert(fs::exists(test_file));
+
+  tool_search("/tmp", "x && rm " + test_file, test_file, "");
+  assert(fs::exists(test_file));
+
+  // Cleanup
+  remove(test_file.c_str());
+  assert(!fs::exists(test_file));
+
+  cout << "test_search_cannot_execute_shell passed" << endl;
+}
+
 static void test_tool_search() {
   const string sandbox = "/tmp/hali_test_search_sandbox";
   fs::create_directories(sandbox + "/src");
@@ -637,10 +815,6 @@ static void test_tool_search() {
   // Traversal escape
   string traversal = tool_search(sandbox, "foo", "../../etc/", "");
   assert(traversal.find("ERROR") != string::npos);
-
-  // Shell metacharacters in pattern
-  string metachars = tool_search(sandbox, "foo; rm -rf /", "src/main.cpp", "");
-  assert(metachars.find("ERROR") != string::npos);
 
   // Clean up
   fs::remove_all(sandbox);
@@ -954,6 +1128,7 @@ void agent_utils_test() {
   RUN_TEST(test_join_path_absolute_override);
   RUN_TEST(test_resolve_path);
   RUN_TEST(test_path_in_sandbox);
+  RUN_TEST(test_path_allowed);
   RUN_TEST(test_unwrap_quotes);
   RUN_TEST(test_unwrap_mirror_pairs);
   RUN_TEST(test_unwrap_html_tags);
@@ -969,6 +1144,9 @@ void agent_utils_test() {
   RUN_TEST(test_has_shell_metachars);
   RUN_TEST(test_search_single_file);
   RUN_TEST(test_search_lines_flag);
+  RUN_TEST(test_search_alternation);
+  RUN_TEST(test_tool_search_alternation);
+  RUN_TEST(test_search_cannot_execute_shell);
   RUN_TEST(test_tool_search);
   RUN_TEST(test_tool_search_name);
   RUN_TEST(test_parse_search_args);

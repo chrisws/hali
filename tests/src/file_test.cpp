@@ -989,6 +989,139 @@ static void test_tool_append_log() {
 }
 
 //
+// read_file tests
+//
+
+static void test_read_file_basic() {
+  const string path = "/tmp/hali_test_read_file.txt";
+  {
+    ofstream f(path);
+    f << "hello world";
+  }
+  string result = read_file(path);
+  assert(result == "hello world");
+  remove(path.c_str());
+  cout << "test_read_file_basic passed" << endl;
+}
+
+static void test_read_file_not_found() {
+  string result = read_file("/tmp/hali_test_nonexistent_xyz.txt");
+  assert(result.find("ERROR: cannot open") != string::npos);
+  cout << "test_read_file_not_found passed" << endl;
+}
+
+static void test_read_file_too_large() {
+  const string path = "/tmp/hali_test_read_large.txt";
+  {
+    ofstream f(path, ios::binary);
+    // Write 33 KB (exceeds 32 KB limit)
+    string big(33 * 1024, 'x');
+    f.write(big.data(), big.size());
+  }
+  string result = read_file(path);
+  assert(result.find("ERROR: file too large") != string::npos);
+  remove(path.c_str());
+  cout << "test_read_file_too_large passed" << endl;
+}
+
+static void test_read_file_empty() {
+  const string path = "/tmp/hali_test_read_empty.txt";
+  {
+    ofstream f(path);
+  }
+  string result = read_file(path);
+  assert(result.empty());
+  remove(path.c_str());
+  cout << "test_read_file_empty passed" << endl;
+}
+
+//
+// make_dir tests
+//
+
+static void test_make_dir_new() {
+  const string path = "/tmp/hali_test_mkdir_new/sub";
+  fs::remove_all(path);
+  bool result = make_dir(path);
+  assert(result == true);
+  assert(fs::exists(path));
+  fs::remove_all("/tmp/hali_test_mkdir_new");
+  cout << "test_make_dir_new passed" << endl;
+}
+
+static void test_make_dir_existing() {
+  const string path = "/tmp/hali_test_mkdir_existing";
+  fs::create_directories(path);
+  bool result = make_dir(path);
+  assert(result == true);
+  fs::remove_all(path);
+  cout << "test_make_dir_existing passed" << endl;
+}
+
+static void test_make_dir_nested() {
+  const string path = "/tmp/hali_test_mkdir_nested/a/b/c";
+  fs::remove_all("/tmp/hali_test_mkdir_nested");
+  bool result = make_dir(path);
+  assert(result == true);
+  assert(fs::exists(path));
+  fs::remove_all("/tmp/hali_test_mkdir_nested");
+  cout << "test_make_dir_nested passed" << endl;
+}
+
+//
+// list_dir tests
+//
+
+static void test_list_dir_basic() {
+  const string dir = "/tmp/hali_test_listdir";
+  fs::remove_all(dir);
+  fs::create_directories(dir + "/subdir");
+  {
+    ofstream f(dir + "/file1.txt");
+    f << "a";
+  }
+  {
+    ofstream f(dir + "/file2.txt");
+    f << "b";
+  }
+  string result = list_dir(dir);
+  assert(result.find("[subdir]") != string::npos);
+  assert(result.find("file1.txt") != string::npos);
+  assert(result.find("file2.txt") != string::npos);
+  fs::remove_all(dir);
+  cout << "test_list_dir_basic passed" << endl;
+}
+
+static void test_list_dir_empty() {
+  const string dir = "/tmp/hali_test_listdir_empty";
+  fs::remove_all(dir);
+  fs::create_directories(dir);
+  string result = list_dir(dir);
+  assert(result == "[.]");
+  fs::remove_all(dir);
+  cout << "test_list_dir_empty passed" << endl;
+}
+
+static void test_list_dir_hides_dotfiles() {
+  const string dir = "/tmp/hali_test_listdir_dot";
+  fs::remove_all(dir);
+  fs::create_directories(dir);
+  {
+    ofstream f(dir + "/.hidden");
+    f << "x";
+  }
+  {
+    ofstream f(dir + "/visible.txt");
+    f << "y";
+  }
+  string result = list_dir(dir);
+  assert(result.find(".hidden") == string::npos);
+  assert(result.find("visible.txt") != string::npos);
+  fs::remove_all(dir);
+  cout << "test_list_dir_hides_dotfiles passed" << endl;
+}
+
+//
 // Internal path validation tests (P2-1 defense in depth)
 //
 
@@ -1089,6 +1222,22 @@ void file_test() {
   test_no_errors_section();
   test_whitespace_lines();
   cout << "\nAll format_session tests passed!\n" << endl;
+
+  test_read_file_basic();
+  test_read_file_not_found();
+  test_read_file_too_large();
+  test_read_file_empty();
+  cout << "\nAll read_file tests passed!\n" << endl;
+
+  test_make_dir_new();
+  test_make_dir_existing();
+  test_make_dir_nested();
+  cout << "\nAll make_dir tests passed!\n" << endl;
+
+  test_list_dir_basic();
+  test_list_dir_empty();
+  test_list_dir_hides_dotfiles();
+  cout << "\nAll list_dir tests passed!\n" << endl;
 
   test_file_internal_validation();
   cout << "\nAll file internal validation tests passed!\n" << endl;

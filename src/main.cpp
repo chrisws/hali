@@ -36,7 +36,235 @@ static std::string history_path() {
 }
 
 //
-// Slash command handler
+// ── Slash command support functions ──────────────────────────────────────
+//
+
+//
+// /model – pick or set the inference model
+//
+static void slash_model(const std::string &rest, HaliConfig &cfg, Agent &agent, Tui &tui) {
+  std::string path = rest;
+  if (path.empty()) {
+    tui.append_line(ICON_SYS + "Opening model picker…");
+    tui.redraw_all();
+    path = tui.file_picker(cfg.sandbox_, "Model File");
+    if (path.empty()) {
+      tui.append_line(ICON_SYS + "/model cancelled.");
+      tui.redraw_all();
+      return;
+    }
+  }
+  cfg.model_path_ = path;
+  if (agent.setup_model()) {
+    std::string sysp = cfg.build_system_prompt();
+    agent.reset_conversation(sysp);
+    cfg.save_settings();
+  }
+  tui.redraw_all();
+}
+
+//
+// /embed – pick or set the embedding model
+//
+static void slash_embed(const std::string &rest, HaliConfig &cfg, Agent &agent, Tui &tui) {
+  std::string path = rest;
+  if (path.empty()) {
+    tui.append_line(ICON_SYS + "Opening embedding model picker…");
+    tui.redraw_all();
+    path = tui.file_picker(cfg.sandbox_, "Embedding Model");
+    if (path.empty()) {
+      tui.append_line(ICON_SYS + "/embed cancelled.");
+      tui.redraw_all();
+      return;
+    }
+  }
+  cfg.embed_path_ = path;
+  if (agent.setup_embed(path)) {
+    cfg.save_settings();
+  }
+  tui.redraw_all();
+}
+
+//
+// /rag – index a folder or load a .bin index
+//
+static void slash_rag(const std::string &rest, HaliConfig &cfg, Agent &agent, Tui &tui) {
+  std::string path = rest;
+  if (path.empty()) {
+    path = tui.rag_folder_picker(cfg.sandbox_);
+    if (path.empty()) {
+      tui.append_line(ICON_SYS + "RAG indexing cancelled.");
+      tui.redraw_all();
+      return;
+    }
+  }
+  if (path.ends_with(".bin")) {
+    tui.append_line(ICON_SYS + "Loading index: " + path);
+    tui.redraw_all();
+    agent.rag_load_index(path);
+  } else {
+    tui.append_line(ICON_SYS + "Indexing: " + path);
+    tui.redraw_all();
+    agent.rag_index(path);
+  }
+  tui.append_line(ICON_SYS + "done");
+  tui.redraw_all();
+}
+
+//
+// /audio – toggle, test, or set volume
+//
+static void slash_audio(const std::string &rest, Tui &tui) {
+  if (rest.empty()) {
+    bool new_state = !audio::is_enabled();
+    audio::set_enabled(new_state);
+    tui.append_line(ICON_SYS + std::string("Audio ") + (new_state ? "enabled." : "disabled."));
+  } else if (rest == "test") {
+    audio::play_tone(440.0, 0.5, 0.5);
+    tui.append_line(ICON_SYS + "Audio test played.");
+  } else if (rest.rfind("volume", 0) == 0) {
+    auto space = rest.find(' ', 6);
+    if (space != std::string::npos) {
+      float v = std::stof(rest.substr(space + 1));
+      audio::set_volume(v);
+      tui.append_line(ICON_SYS + "Audio volume set to " + std::to_string(v));
+    } else {
+      tui.append_line(ICON_ERR + "Usage: /audio volume <0.0-1.0>");
+    }
+  } else {
+    tui.append_line(ICON_ERR + "Usage: /audio [test | volume <0.0-1.0>]");
+  }
+  tui.redraw_all();
+}
+
+//
+// /set <key> <value> – update a config value at runtime
+//
+static void slash_set(const std::string &rest, HaliConfig &cfg, Agent &agent, Tui &tui) {
+  auto sp = rest.find(' ');
+  std::string key = (sp == std::string::npos) ? rest : rest.substr(0, sp);
+  std::string val = (sp == std::string::npos) ? "" : rest.substr(sp + 1);
+  val.erase(0, val.find_first_not_of(" \t"));
+
+  if (key.empty() || val.empty()) {
+    tui.append_line(ICON_ERR + "Usage: /set <key> <value>");
+    tui.redraw_all();
+    return;
+  }
+
+  bool needs_reparam = false;
+  std::string msg;
+  int rc = cfg.set_value(key, val, needs_reparam, msg);
+  if (rc == 0) {
+    if (needs_reparam && agent.model_loaded()) {
+      agent.apply_generation_params();
+    }
+    cfg.save_settings();
+    if (!msg.empty()) {
+      tui.append_line(ICON_SYS + msg);
+    }
+    tui.append_line(ICON_SYS + "" + key + " = " + val);
+  } else if (rc == 1) {
+    tui.append_line(ICON_ERR + "Unknown key '" + key + "'.  Try /help for list.");
+  } else {
+    tui.append_line(ICON_ERR + "/set: " + msg);
+  }
+  tui.redraw_all();
+}
+
+//
+// /revoke <name> – remove an approved RUN command
+//
+static void slash_revoke(const std::string &rest, HaliConfig &cfg, Tui &tui) {
+  if (rest.empty()) {
+    tui.append_line(ICON_ERR + "Usage: /revoke <name>");
+    tui.redraw_all();
+    return;
+  }
+  if (cfg.user_run_allowed_.remove(rest)) {
+    cfg.run_allowed_.erase(
+      std::remove(cfg.run_allowed_.begin(), cfg.run_allowed_.end(), rest),
+      cfg.run_allowed_.end());
+    cfg.user_run_allowed_.save(RunAllowed::default_path());
+    tui.append_line(ICON_SYS + "Revoked: " + rest);
+  } else {
+    tui.append_line(ICON_ERR + "Not found in approved list: " + rest);
+  }
+  tui.redraw_all();
+}
+
+//
+// /allow [remove] <path> – manage extra allowed directories
+//
+static void slash_allow(const std::string &rest, HaliConfig &cfg, Tui &tui) {
+  if (rest.empty()) {
+    if (cfg.extra_dirs_.empty()) {
+      tui.append_line(ICON_SYS + "No extra directories allowed.");
+    } else {
+      tui.append_line(ICON_SYS + "Extra directories:");
+      for (const auto &d : cfg.extra_dirs_) {
+        tui.append_line(ICON_SYS + "  " + d);
+      }
+    }
+    tui.redraw_all();
+    return;
+  }
+  if (rest == "remove") {
+    auto sp = rest.find(' ', 7);
+    std::string path = (sp == std::string::npos) ? "" : rest.substr(sp + 1);
+    path.erase(0, path.find_first_not_of(" \t"));
+    if (path.empty()) {
+      tui.append_line(ICON_ERR + "Usage: /allow remove <path>");
+      tui.redraw_all();
+      return;
+    }
+    auto it = std::find(cfg.extra_dirs_.begin(), cfg.extra_dirs_.end(), path);
+    if (it != cfg.extra_dirs_.end()) {
+      cfg.extra_dirs_.erase(it);
+      cfg.save_settings();
+      tui.append_line(ICON_SYS + "Removed: " + path);
+    } else {
+      tui.append_line(ICON_ERR + "Not found: " + path);
+    }
+    tui.redraw_all();
+    return;
+  }
+  // /allow <path> – add a directory
+  std::error_code ec;
+  if (!fs::is_directory(rest, ec) || ec) {
+    tui.append_line(ICON_ERR + "Not a directory: " + rest);
+    tui.redraw_all();
+    return;
+  }
+  if (std::find(cfg.extra_dirs_.begin(), cfg.extra_dirs_.end(), rest) == cfg.extra_dirs_.end()) {
+    cfg.extra_dirs_.emplace_back(rest);
+    cfg.save_settings();
+    tui.append_line(ICON_SYS + "Allowed: " + rest);
+  } else {
+    tui.append_line(ICON_SYS + "Already allowed: " + rest);
+  }
+  tui.redraw_all();
+}
+
+//
+// /session [path] – save the current session to a file
+//
+static void slash_session(const std::string &rest, HaliConfig &cfg, Tui &tui) {
+  std::string path = rest.empty() ? cfg.sandbox_ + "/SESSION.md" : rest;
+  std::error_code ec;
+  if (fs::exists(path, ec) && !ec) {
+    if (!tui.confirm_dialog("Overwrite " + path + "?")) {
+      tui.append_line(ICON_SYS + "Cancelled.");
+      tui.redraw_all();
+      return;
+    }
+  }
+  tui.append_line(ICON_TOOL + tui.save_session(path));
+  tui.redraw_all();
+}
+
+//
+// Slash command dispatcher
 //
 static void handle_slash(const std::string &input, HaliConfig &cfg, Agent &agent, Tui &tui) {
   auto sp = input.find(' ');
@@ -51,77 +279,18 @@ static void handle_slash(const std::string &input, HaliConfig &cfg, Agent &agent
     ui::help(tui);
     return;
   }
-  // ── /model ──────────────────────────────────────────────────────────────
-  // If no path is given, open the file picker so the user can browse to a
-  // GGUF.  The picker starts in the current sandbox directory.
   if (verb == "/model") {
-    if (rest.empty()) {
-      tui.append_line(ICON_SYS + "Opening model picker…");
-      tui.redraw_all();
-      rest = tui.file_picker(cfg.sandbox_, "Model File");
-      if (rest.empty()) {
-        tui.append_line(ICON_SYS + "/model cancelled.");
-        tui.redraw_all();
-        return;
-      }
-    }
-    cfg.model_path_ = rest;
-    if (agent.setup_model()) {
-      std::string sysp = cfg.build_system_prompt();
-      agent.reset_conversation(sysp);
-      cfg.save_settings();
-    }
-    tui.redraw_all();
+    slash_model(rest, cfg, agent, tui);
     return;
   }
-
-  // ── /embed ──────────────────────────────────────────────────────────────
-  // If no path is given, open the file picker so the user can browse to an
-  // embedding GGUF.
   if (verb == "/embed") {
-    if (rest.empty()) {
-      tui.append_line(ICON_SYS + "Opening embedding model picker…");
-      tui.redraw_all();
-      rest = tui.file_picker(cfg.sandbox_, "Embedding Model");
-      if (rest.empty()) {
-        tui.append_line(ICON_SYS + "/embed cancelled.");
-        tui.redraw_all();
-        return;
-      }
-    }
-    cfg.embed_path_ = rest;
-    if (agent.setup_embed(rest)) {
-      cfg.save_settings();
-    }
+    slash_embed(rest, cfg, agent, tui);
     return;
   }
-
-  // ── /rag ────────────────────────────────────────────────────────────────
   if (verb == "/rag") {
-    std::string path = rest;
-    if (path.empty()) {
-      // Launch the interactive folder picker starting from the sandbox.
-      path = tui.rag_folder_picker(cfg.sandbox_);
-      if (path.empty()) {
-        tui.append_line(ICON_SYS + "RAG indexing cancelled.");
-        tui.redraw_all();
-        return;
-      }
-    }
-    if (path.ends_with(".bin")) {
-      tui.append_line(ICON_SYS + "Loading index: " + path);
-      tui.redraw_all();
-      agent.rag_load_index(path);
-    } else {
-      tui.append_line(ICON_SYS + "Indexing: " + path);
-      tui.redraw_all();
-      agent.rag_index(path);
-    }
-    tui.append_line(ICON_SYS + "done");
-    tui.redraw_all();
+    slash_rag(rest, cfg, agent, tui);
     return;
   }
-
   if (verb == "/memory") {
     std::istringstream iss(agent.memory_info_text());
     std::string line;
@@ -131,7 +300,6 @@ static void handle_slash(const std::string &input, HaliConfig &cfg, Agent &agent
     tui.redraw_all();
     return;
   }
-
   if (verb == "/clear") {
     std::string sysp = cfg.build_system_prompt();
     agent.reset_conversation(sysp);
@@ -139,119 +307,37 @@ static void handle_slash(const std::string &input, HaliConfig &cfg, Agent &agent
     tui.redraw_all();
     return;
   }
-
   if (verb == "/theme") {
     tui.toggle_theme();
     return;
   }
-
   if (verb == "/audio") {
-    if (rest.empty()) {
-      // Toggle
-      bool new_state = !audio::is_enabled();
-      audio::set_enabled(new_state);
-      tui.append_line(ICON_SYS + std::string("Audio ") + (new_state ? "enabled." : "disabled."));
-    } else if (rest == "test") {
-      audio::play_tone(440.0, 0.5, 0.5);
-      tui.append_line(ICON_SYS + "Audio test played.");
-    } else if (rest.rfind("volume", 0) == 0) {
-      // /audio volume 0.7
-      auto space = rest.find(' ', 6);
-      if (space != std::string::npos) {
-        float v = std::stof(rest.substr(space + 1));
-        audio::set_volume(v);
-        tui.append_line(ICON_SYS + "Audio volume set to " + std::to_string(v));
-      } else {
-        tui.append_line(ICON_ERR + "Usage: /audio volume <0.0-1.0>");
-      }
-    } else {
-      tui.append_line(ICON_ERR + "Usage: /audio [test | volume <0.0-1.0>]");
-    }
-    tui.redraw_all();
+    slash_audio(rest, tui);
     return;
   }
-
   if (verb == "/save") {
     tui.append_line(ICON_TOOL + tui.save_chat(rest));
     tui.redraw_all();
     return;
   }
-
   if (verb == "/session") {
-    std::string path = rest.empty()
-      ? cfg.sandbox_ + "/SESSION.md"
-      : rest;
-    std::error_code ec;
-    if (fs::exists(path, ec) && !ec) {
-      if (!tui.confirm_dialog("Overwrite " + path + "?")) {
-        tui.append_line(ICON_SYS + "Cancelled.");
-        tui.redraw_all();
-        return;
-      }
-    }
-    tui.append_line(ICON_TOOL + tui.save_session(path));
-    tui.redraw_all();
+    slash_session(rest, cfg, tui);
     return;
   }
-
   if (verb == "/settings") {
     ui::settings(tui, cfg);
     return;
   }
-
   if (verb == "/set") {
-    // Usage: /set <key> <value>
-    auto sp2 = rest.find(' ');
-    std::string key = (sp2 == std::string::npos) ? rest : rest.substr(0, sp2);
-    std::string val = (sp2 == std::string::npos) ? "" : rest.substr(sp2 + 1);
-    val.erase(0, val.find_first_not_of(" \t"));
-
-    if (key.empty() || val.empty()) {
-      tui.append_line(ICON_ERR + "Usage: /set <key> <value>");
-      tui.redraw_all(); return;
-    }
-
-    bool needs_reparam = false;
-    std::string msg;
-    int rc = cfg.set_value(key, val, needs_reparam, msg);
-    if (rc == 0) {
-      if (needs_reparam && agent.model_loaded()) {
-        agent.apply_generation_params();
-      }
-      cfg.save_settings();
-      if (!msg.empty()) {
-        tui.append_line(ICON_SYS + msg);
-      }
-      tui.append_line(ICON_SYS + "" + key + " = " + val);
-    } else if (rc == 1) {
-      tui.append_line(ICON_ERR + "Unknown key '" + key + "'.  Try /help for list.");
-    } else {
-      tui.append_line(ICON_ERR + "/set: " + msg);
-    }
-    tui.redraw_all();
+    slash_set(rest, cfg, agent, tui);
     return;
   }
-
-  // ── /revoke ─────────────────────────────────────────────────────────────
-  // Usage: /revoke <name>
-  // Removes a previously approved RUN command from the persistent list.
   if (verb == "/revoke") {
-    if (rest.empty()) {
-      tui.append_line(ICON_ERR + "Usage: /revoke <name>");
-      tui.redraw_all();
-      return;
-    }
-    if (cfg.user_run_allowed_.remove(rest)) {
-      // Also remove from the active run_allowed_ list if present
-      cfg.run_allowed_.erase(
-        std::remove(cfg.run_allowed_.begin(), cfg.run_allowed_.end(), rest),
-        cfg.run_allowed_.end());
-      cfg.user_run_allowed_.save(RunAllowed::default_path());
-      tui.append_line(ICON_SYS + "Revoked: " + rest);
-    } else {
-      tui.append_line(ICON_ERR + "Not found in approved list: " + rest);
-    }
-    tui.redraw_all();
+    slash_revoke(rest, cfg, tui);
+    return;
+  }
+  if (verb == "/allow") {
+    slash_allow(rest, cfg, tui);
     return;
   }
 

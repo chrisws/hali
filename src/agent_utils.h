@@ -22,6 +22,7 @@ std::string strip_code_fences(const std::string &filename, const std::string &sr
 //
 std::string resolve_path(const std::string &sandbox, const std::string &p);
 bool path_in_sandbox(const std::string &sandbox, const std::string &path);
+bool path_allowed(const std::string &sandbox, const std::vector<std::string> &extra_dirs, const std::string &path);
 
 //
 // Tool argument splitting
@@ -59,7 +60,7 @@ SearchFlags parse_search_flags(const std::string &flags_str);
 bool matches_include(const std::string &filename, const std::string &glob);
 bool has_shell_metachars(const std::string &pattern);
 std::string search_single_file(const std::string &filepath, const std::string &pattern, const SearchFlags &flags);
-std::string tool_search(const std::string &sandbox, const std::string &pattern, const std::string &path_arg, const std::string &flags_str);
+std::string tool_search(const std::string &sandbox, const std::string &pattern, const std::string &path_arg, const std::string &flags_str, const std::vector<std::string> &extra_dirs = {});
 
 //
 // TOOL:REPLACE

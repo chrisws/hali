@@ -19,5 +19,8 @@ std::string tool_patch_validate(const std::string& filename, const std::string& 
 std::string tool_write(const std::string &path, const std::string &data);
 std::string tool_write_backup(const std::string &backup_path, const std::string &path);
 std::string tool_write_validate(const std::string &path, const std::string &data);
+std::string read_file(const std::string &path);
+bool make_dir(const std::string &path);
+std::string list_dir(const std::string &path);
 
 #endif
