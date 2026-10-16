@@ -586,8 +586,11 @@ std::string Agent::process_tool(const std::string &cmd) {
     if (!result.error.empty()) {
       return result.error;
     }
-    audio::play_melody(result.melody);
-    return "OK: played " + std::to_string(result.melody.size()) + " notes";
+    audio::play_events(result.events);
+    size_t total = 0;
+    for (const auto &ev : result.events) total += ev.size();
+    return "OK: played " + std::to_string(total) + " notes in "
+           + std::to_string(result.events.size()) + " events";
   }
   return "ERROR: unknown tool: [" + op + "]";
 }

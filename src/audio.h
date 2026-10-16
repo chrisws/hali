@@ -33,6 +33,26 @@ void play_tone(double freq_hz, double duration_s, double volume = 0.5);
  */
 void play_melody(const std::vector<std::pair<double, double>> &notes);
 
+/**
+ * @brief Play multiple notes simultaneously (a chord).
+ * @param notes vector of {freq_hz, duration_s} pairs, all starting together.
+ */
+void play_chord(const std::vector<std::pair<double, double>> &notes);
+
+/**
+ * @brief A single playback event: one or more simultaneous notes.
+ *        A single-note event is sequential; multi-note events are chords.
+ */
+using NoteEvent = std::vector<std::pair<double, double>>;
+
+/**
+ * @brief Play a sequence of events. Each event contains one or more
+ *        simultaneous notes. Events play sequentially; notes within
+ *        an event play together.
+ * @param events vector of NoteEvent (each a vector of {freq_hz, duration_s}).
+ */
+void play_events(const std::vector<NoteEvent> &events);
+
 /** @brief Returns true if an audio output device was found. */
 bool is_available();
 
@@ -50,7 +70,7 @@ bool is_enabled();
  */
 struct ScriptResult {
   std::string error;
-  std::vector<std::pair<double, double>> melody;
+  std::vector<NoteEvent> events;
 };
 
 /**

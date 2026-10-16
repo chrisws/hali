@@ -8,6 +8,7 @@
 
 #include "audio.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstring>
 #include <deque>
@@ -29,47 +30,48 @@ static constexpr int MAX_RAMP = 512;
 static constexpr int RAMP_SCALE = 20;
 static constexpr int MAX_QUEUE_SIZE = 250;
 
-
 // ── Sound ───────────────────────────────────────────────────────────────────
 
 struct Sound {
   uint32_t total_samples;
   uint32_t sampled;
+  uint32_t delay_samples;
   uint32_t faded_in;
   uint32_t fade_out;
   float amplitude;
   float increment;
+  float phase;
 
-  Sound(double freq_hz, double duration_s, float volume)
+  Sound(double freq_hz, double duration_s, float volume, uint32_t delay = 0)
     : total_samples((uint32_t)(duration_s * SAMPLE_RATE)),
       sampled(0),
+      delay_samples(delay),
       faded_in(0),
       fade_out(0),
       amplitude(volume),
-      increment((float)(PI2 * freq_hz / SAMPLE_RATE)) {
+      increment((float)(PI2 * freq_hz / SAMPLE_RATE)),
+      phase(0.0f) {
     faded_in = fade_out = std::min((int)total_samples / RAMP_SCALE, MAX_RAMP);
   }
 
-  bool ready() const { return sampled < total_samples; }
+  bool active() const { return sampled < delay_samples + total_samples; }
 
-  float sample(float &phase) {
+  float sample() {
+    if (sampled < delay_samples) {
+      sampled++;
+      return 0.0f;
+    }
+    uint32_t eff = sampled - delay_samples;
     float result = sinf(phase) * amplitude;
-    sampled++;
     phase = fmodf(phase + increment, PI2);
+    sampled++;
 
-    if (faded_in != 0 && sampled < faded_in) {
-      result *= (float)sampled / (float)faded_in;
-    } else if (fade_out != 0 && (total_samples - sampled) < fade_out) {
-      result *= (float)(total_samples - sampled) / (float)fade_out;
+    if (faded_in != 0 && eff < faded_in) {
+      result *= (float)eff / (float)faded_in;
+    } else if (fade_out != 0 && (total_samples - eff) < fade_out) {
+      result *= (float)(total_samples - eff) / (float)fade_out;
     }
     return result;
-  }
-
-  void sync(Sound *prev) {
-    if (prev && prev->increment == increment) {
-      faded_in = 0;
-      prev->fade_out = 0;
-    }
   }
 };
 
@@ -83,34 +85,14 @@ static float g_volume = 0.5f;
 
 static std::mutex g_lock;
 static std::deque<Sound *> g_queue;
-static float g_phase = 0.0f;
 
 // ── Queue helpers ───────────────────────────────────────────────────────────
 
-static Sound *front() {
-  std::lock_guard<std::mutex> lock(g_lock);
-  Sound *result = nullptr;
-  while (!g_queue.empty()) {
-    result = g_queue.front();
-    if (result->ready()) {
-      break;
-    }
-    delete result;
-    g_queue.pop_front();
-    result = nullptr;
-  }
-  return result;
-}
-
-static void add(double freq_hz, double duration_s, float volume) {
+static void add(double freq_hz, double duration_s, float volume,
+                uint32_t delay_samples = 0) {
   std::lock_guard<std::mutex> lock(g_lock);
   if (g_queue.size() >= MAX_QUEUE_SIZE) return;
-  Sound *prev = g_queue.empty() ? nullptr : g_queue.back();
-  Sound *sound = new Sound(freq_hz, duration_s, volume * g_volume);
-  g_queue.push_back(sound);
-  if (prev) {
-    sound->sync(prev);
-  }
+  g_queue.push_back(new Sound(freq_hz, duration_s, volume * g_volume, delay_samples));
 }
 
 static void clear_queue() {
@@ -128,18 +110,29 @@ static void data_callback(ma_device *device, void *output,
   (void)input;
   float *out = static_cast<float *>(output);
 
-  Sound *sound = front();
-  for (ma_uint32 i = 0; i < frame_count; i++) {
-    if (sound == nullptr) {
-      out[i] = 0.0f;
-    } else {
-      out[i] = sound->sample(g_phase);
-      if (!sound->ready()) {
-        sound = front();
+  // Snapshot active sounds and remove finished ones
+  std::vector<Sound *> active;
+  {
+    std::lock_guard<std::mutex> lock(g_lock);
+    for (auto it = g_queue.begin(); it != g_queue.end();) {
+      if ((*it)->active()) {
+        active.push_back(*it);
+        ++it;
+      } else {
+        delete *it;
+        it = g_queue.erase(it);
       }
     }
   }
 
+  // Mix all active sounds together
+  for (ma_uint32 i = 0; i < frame_count; i++) {
+    float sum = 0.0f;
+    for (auto *s : active) {
+      sum += s->sample();
+    }
+    out[i] = std::max(-1.0f, std::min(1.0f, sum));
+  }
 }
 
 // ── Device management ───────────────────────────────────────────────────────
@@ -184,7 +177,6 @@ void shutdown() {
     g_device_open = false;
   }
   clear_queue();
-  g_phase = 0.0f;
 }
 
 void play_tone(double freq_hz, double duration_s, double volume) {
@@ -193,12 +185,31 @@ void play_tone(double freq_hz, double duration_s, double volume) {
   ensure_started();
 }
 
-void play_melody(const std::vector<std::pair<double, double>> &notes) {
+void play_events(const std::vector<NoteEvent> &events) {
   if (!g_enabled) return;
-  for (const auto &note : notes) {
-    add(note.first, note.second, 1.0f);
+  uint32_t delay = 0;
+  for (const auto &event : events) {
+    double max_dur = 0.0;
+    for (const auto &note : event) {
+      add(note.first, note.second, 1.0f, delay);
+      max_dur = std::max(max_dur, note.second);
+    }
+    delay += (uint32_t)(max_dur * SAMPLE_RATE);
   }
   ensure_started();
+}
+
+void play_melody(const std::vector<std::pair<double, double>> &notes) {
+  std::vector<NoteEvent> events;
+  events.reserve(notes.size());
+  for (const auto &note : notes) {
+    events.push_back({note});
+  }
+  play_events(events);
+}
+
+void play_chord(const std::vector<std::pair<double, double>> &notes) {
+  play_events({notes});
 }
 
 bool is_available() {
@@ -253,69 +264,142 @@ ScriptResult play_script(const std::string &notes_str) {
     return (60.0 / tempo) * (4.0 / default_len);
   };
 
+  // Parse a single note token (no brackets) into {freq, dur}.
+  // Returns false on error.
+  auto parse_note = [&](const std::string &tok, double &freq, double &dur) -> bool {
+    char c = tok[0];
+    if (c < 'A' || c > 'G') return false;
+    int pos = 1;
+    char acc = 0;
+    if (pos < (int)tok.size() && (tok[pos] == '#' || tok[pos] == '-' || tok[pos] == 'b' || tok[pos] == '+')) {
+      acc = tok[pos];
+      pos++;
+    }
+    int octave = 4;
+    if (pos < (int)tok.size() && isdigit((unsigned char)tok[pos])) {
+      octave = tok[pos] - '0';
+      pos++;
+    }
+    dur = default_duration();
+    if (pos < (int)tok.size() && tok[pos] == ':') {
+      pos++;
+      dur = std::stod(tok.substr(pos));
+    }
+    int semi = note_to_semitone(c, acc);
+    if (semi < 0) return false;
+    int midi = (octave + 1) * 12 + semi;
+    freq = midi_to_freq(midi);
+    return true;
+  };
+
   std::istringstream iss(notes_str);
   std::string tok;
+  bool in_chord = false;
+  NoteEvent chord;
+
   while (iss >> tok) {
     if (tok.empty()) continue;
-    char c = tok[0];
 
-    if (c == 'T' && tok.size() > 1) {
-      tempo = std::stod(tok.substr(1));
-      continue;
-    }
-    if (c == 'V' && tok.size() > 1) {
-      volume = std::stod(tok.substr(1)) / 100.0;
-      continue;
-    }
-    if (c == 'L' && tok.size() > 1) {
-      default_len = std::stod(tok.substr(1));
-      continue;
-    }
-    if (c == 'P' && tok.size() > 1) {
-      double beats = std::stod(tok.substr(1));
-      double dur = (60.0 / tempo) * beats;
-      result.melody.emplace_back(0.0, dur);
-      continue;
-    }
-
-    if (c >= 'A' && c <= 'G') {
-      int pos = 1;
-      char acc = 0;
-      if (pos < (int)tok.size() && (tok[pos] == '#' || tok[pos] == '-' || tok[pos] == 'b' || tok[pos] == '+')) {
-        acc = tok[pos];
-        pos++;
-      }
-      int octave = 4;
-      if (pos < (int)tok.size() && isdigit((unsigned char)tok[pos])) {
-        octave = tok[pos] - '0';
-        pos++;
-      }
-      double dur = default_duration();
-      if (pos < (int)tok.size() && tok[pos] == ':') {
-        pos++;
-        dur = std::stod(tok.substr(pos));
-      }
-      int semi = note_to_semitone(c, acc);
-      if (semi < 0) {
-        result.error = "ERROR: invalid note: " + tok;
+    // Strip bracket markers
+    if (tok[0] == '[') {
+      if (in_chord) {
+        result.error = "ERROR: nested chord bracket";
         return result;
       }
-      int midi = (octave + 1) * 12 + semi;
-      result.melody.emplace_back(midi_to_freq(midi), dur);
-      continue;
+      in_chord = true;
+      chord.clear();
+      tok = tok.substr(1);
+      if (tok.empty()) continue;
+    }
+    bool close_chord = false;
+    double chord_dur_override = -1.0;
+    size_t close_pos = tok.find(']');
+    if (close_pos != std::string::npos) {
+      if (!in_chord) {
+        result.error = "ERROR: unexpected ']': " + tok;
+        return result;
+      }
+      close_chord = true;
+      if (close_pos + 1 < tok.size() && tok[close_pos + 1] == ':') {
+        chord_dur_override = std::stod(tok.substr(close_pos + 2));
+      }
+      tok = tok.substr(0, close_pos);
+      if (tok.empty()) {
+        // was just "]" with no note
+        if (chord.empty()) {
+          result.error = "ERROR: empty chord";
+          return result;
+        }
+        if (chord_dur_override >= 0.0) {
+          for (auto &n : chord) n.second = chord_dur_override;
+        }
+        result.events.push_back(chord);
+        in_chord = false;
+        continue;
+      }
     }
 
-    result.error = "ERROR: unrecognized token: " + tok;
+    char c = tok[0];
+
+    // Control tokens (only valid outside chords)
+    if (!in_chord) {
+      if (c == 'T' && tok.size() > 1) {
+        tempo = std::stod(tok.substr(1));
+        continue;
+      }
+      if (c == 'V' && tok.size() > 1) {
+        volume = std::stod(tok.substr(1)) / 100.0;
+        continue;
+      }
+      if (c == 'L' && tok.size() > 1) {
+        default_len = std::stod(tok.substr(1));
+        continue;
+      }
+      if (c == 'P' && tok.size() > 1) {
+        double beats = std::stod(tok.substr(1));
+        double dur = (60.0 / tempo) * beats;
+        result.events.push_back({{0.0, dur}});
+        if (close_chord) { in_chord = false; }
+        continue;
+      }
+    }
+
+    // Note token
+    double freq = 0.0, dur = 0.0;
+    if (!parse_note(tok, freq, dur)) {
+      result.error = "ERROR: invalid note: " + tok;
+      return result;
+    }
+
+    if (in_chord) {
+      chord.emplace_back(freq, dur);
+    } else {
+      result.events.push_back({{freq, dur}});
+    }
+
+    if (close_chord) {
+      if (chord_dur_override >= 0.0) {
+        for (auto &n : chord) n.second = chord_dur_override;
+      }
+      result.events.push_back(chord);
+      in_chord = false;
+    }
+  }
+
+  if (in_chord) {
+    result.error = "ERROR: unclosed chord bracket";
     return result;
   }
 
-  if (result.melody.empty()) {
+  if (result.events.empty()) {
     result.error = "ERROR: no notes to play";
     return result;
   }
 
-  log_write(LEVEL_DEBUG, "audio", "play_script: %zu notes, tempo=%.0f, volume=%.2f, default_len=%.1f",
-            result.melody.size(), tempo, volume, default_len);
+  size_t total_notes = 0;
+  for (const auto &ev : result.events) total_notes += ev.size();
+  log_write(LEVEL_DEBUG, "audio", "play_script: %zu events (%zu notes), tempo=%.0f, volume=%.2f, default_len=%.1f",
+            result.events.size(), total_notes, tempo, volume, default_len);
 
   return result;
 }
