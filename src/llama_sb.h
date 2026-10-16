@@ -151,6 +151,9 @@ struct MtpState {
   uint64_t suffix_accepted = 0;
   int      suffix_hits     = 0;   // lookups that found a match
   int      suffix_misses   = 0;   // lookups that missed
+  bool     suffix_active   = false; // hysteresis: currently in suffix mode
+  int      suffix_low_hit_streak = 0; // consecutive evals with hit_rate < 0.05
+  bool     suffix_disabled = false;   // circuit breaker: suffix turned off
 
   // --- sliding window --------------------------------------------------------
   static constexpr int WIN = 32;

@@ -189,8 +189,31 @@ bool Llama::mtp_round(llama_token anchor, vector<llama_token> &accepted, llama_t
   int k = (int)_mtp.draft_toks.size();
   bool from_suffix = false;
 
-  // ---- 1b. suffix fallback when MTP produced no drafts or low acceptance ---
-  if (_suffix_enabled && (k == 0 || (_mtp.win_filled > 8 && _mtp.win_drafted > 0 && (double)_mtp.win_accepted / (double)_mtp.win_drafted < 0.15))) {
+  // ---- 1b. suffix fallback with hysteresis band ---------------------------
+  // Enter suffix mode: no drafts (immediate) or sustained very low acceptance.
+  // Exit suffix mode: acceptance has clearly recovered.
+  // The band (0.10 in / 0.25 out) prevents flapping at the boundary.
+  if (_suffix_enabled) {
+    double win_frac = (_mtp.win_drafted > 0)
+      ? (double)_mtp.win_accepted / (double)_mtp.win_drafted : 1.0;
+    if (!_mtp.suffix_active) {
+      if (k == 0 || (_mtp.win_filled > 8 && win_frac < 0.10)) {
+        _mtp.suffix_active = true;
+        if (log_is_enabled(LEVEL_DEBUG)) {
+          log_write(LEVEL_DEBUG, "mtp", "HALI: MTP: entering suffix mode (win_frac=%.2f)", win_frac);
+        }
+      }
+    } else {
+      if (_mtp.win_filled > 8 && win_frac > 0.25) {
+        _mtp.suffix_active = false;
+        if (log_is_enabled(LEVEL_DEBUG)) {
+          log_write(LEVEL_DEBUG, "mtp", "HALI: MTP: exiting suffix mode (win_frac=%.2f)", win_frac);
+        }
+      }
+    }
+  }
+
+  if (_suffix_enabled && _mtp.suffix_active) {
     llama_token recent[RECENT_BUF_SIZE];
     if (get_recent(recent, _suffix_ngram)) {
       auto suffix_drafts = _suffix.draft(recent, _suffix_ngram, _suffix_max_draft);
@@ -377,11 +400,24 @@ int Llama::compute_effective_n_max() {
   }
   int k = 0;
   for (int i = 0; i < _mtp.n_max; ++i) {
+    // Only count entries where position i was actually drafted.
+    // Positions above the current eff_n_max were never attempted, so
+    // their pos_acc is 0 by default — not evidence of rejection.
+    int drafted_at_i = 0;
     int sum = 0;
     for (int j = 0; j < _mtp.win_filled; ++j) {
-      sum += _mtp.win[j].pos_acc[i];
+      if (_mtp.win[j].drafted > i) {
+        drafted_at_i++;
+        sum += _mtp.win[j].pos_acc[i];
+      }
     }
-    double rate = (double)sum / (double)_mtp.win_filled;
+    // If position i was rarely drafted in this window, we lack reliable
+    // data — treat it as a pass (optimistic) so the limit can recover.
+    if (drafted_at_i < _mtp.win_filled / 2) {
+      k = i + 1;
+      continue;
+    }
+    double rate = (double)sum / (double)drafted_at_i;
     // Hysteresis: extending beyond current eff_n_max requires a higher bar
     double threshold = (i >= _mtp.adapt.eff_n_max)
       ? _mtp.adapt.pos_threshold + 0.05
@@ -531,11 +567,13 @@ void Llama::mtp_adapt_eval() {
       log_write(LEVEL_DEBUG, "mtp", "HALI: MTP: adaptive n_max %d -> %d", _mtp.adapt.eff_n_max, new_nmax);
     }
     _mtp.adapt.eff_n_max = new_nmax;
-    _mtp.adapt.cooldown = 32;
+    _mtp.adapt.cooldown = 96;  // 3 windows to stabilise at the new limit
   }
 
-  // 2. p_min
-  adapt_p_min();
+  // 2. p_min — disabled: the adapted value is never wired to the draft API
+  // (p_min is baked into the speculative object at init time). Re-enable
+  // once common_speculative_draft_params supports per-round p_min.
+  // adapt_p_min();
 
   // 3. n_min (circuit breaker)
   adapt_n_min();
@@ -543,24 +581,19 @@ void Llama::mtp_adapt_eval() {
   // 4. meta: pos_threshold
   adapt_pos_threshold();
 
-  // 5. gradual reversion toward best when t/s drops below 80% of best
+  // 5. Hard reversion to best when t/s drops below 80% of best.
+  // Snap directly (not interpolate) and enter a longer cooldown so the
+  // window stabilises before the next adaptation cycle.
   if (_mtp.adapt.best.valid && _mtp.adapt.current_tps < _mtp.adapt.best.tps * 0.80) {
-    if (_mtp.adapt.eff_n_max < _mtp.adapt.best.eff_n_max) {
-      _mtp.adapt.eff_n_max++;
-    } else if (_mtp.adapt.eff_n_max > _mtp.adapt.best.eff_n_max) {
-      _mtp.adapt.eff_n_max--;
-    }
-    if (_mtp.adapt.n_min < _mtp.adapt.best.n_min) {
-      _mtp.adapt.n_min++;
-    } else if (_mtp.adapt.n_min > _mtp.adapt.best.n_min) {
-      _mtp.adapt.n_min--;
-    }
-    _mtp.adapt.p_min         += 0.25f * (_mtp.adapt.best.p_min - _mtp.adapt.p_min);
-    _mtp.adapt.pos_threshold += 0.25f * (_mtp.adapt.best.pos_threshold - _mtp.adapt.pos_threshold);
+    _mtp.adapt.eff_n_max     = _mtp.adapt.best.eff_n_max;
+    _mtp.adapt.n_min         = _mtp.adapt.best.n_min;
+    _mtp.adapt.p_min         = _mtp.adapt.best.p_min;
+    _mtp.adapt.pos_threshold = _mtp.adapt.best.pos_threshold;
+    _mtp.adapt.cooldown      = 96;  // 3 windows of stability
     if (log_is_enabled(LEVEL_DEBUG)) {
       log_write(LEVEL_DEBUG, "mtp",
-                    "HALI: MTP: reverting toward best (tps %.1f < %.1f*0.8): "
-                    "n_max=%d p_min=%.2f n_min=%d pos_thr=%.2f",
+                    "HALI: MTP: reverting to best (tps %.1f < %.1f*0.8): "
+                    "n_max=%d p_min=%.2f n_min=%d pos_thr=%.2f cooldown=96",
                     _mtp.adapt.current_tps, _mtp.adapt.best.tps,
                     _mtp.adapt.eff_n_max, _mtp.adapt.p_min,
                     _mtp.adapt.n_min, _mtp.adapt.pos_threshold);
@@ -568,25 +601,36 @@ void Llama::mtp_adapt_eval() {
   }
 
   // 6. suffix adaptation (plan 08)
-  if (_suffix_enabled) {
-    // hit rate: fraction of suffix lookups that found a match
-    int total_lookups = _mtp.suffix_hits + _mtp.suffix_misses;
-    if (total_lookups >= 64) {
-      double hit_rate = (double)_mtp.suffix_hits / (double)total_lookups;
-      if (hit_rate < 0.05) {
-        if (log_is_enabled(LEVEL_DEBUG)) {
-          log_write(LEVEL_DEBUG, "mtp",
-                        "HALI: MTP: suffix hit rate %.1f%% over %d lookups — suffix is dead weight",
-                        hit_rate * 100.0, total_lookups);
+  if (_suffix_enabled && !_mtp.suffix_disabled) {
+    // --- hit rate circuit breaker (only evaluate when suffix is primary) ---
+    if (_mtp.suffix_active) {
+      int total_lookups = _mtp.suffix_hits + _mtp.suffix_misses;
+      if (total_lookups >= 64) {
+        double hit_rate = (double)_mtp.suffix_hits / (double)total_lookups;
+        if (hit_rate < 0.05) {
+          _mtp.suffix_low_hit_streak++;
+          if (log_is_enabled(LEVEL_DEBUG)) {
+            log_write(LEVEL_DEBUG, "mtp",
+                          "HALI: MTP: suffix hit rate %.1f%% over %d lookups (streak=%d)",
+                          hit_rate * 100.0, total_lookups, _mtp.suffix_low_hit_streak);
+          }
+          if (_mtp.suffix_low_hit_streak >= 3) {
+            _mtp.suffix_disabled = true;
+            _mtp.suffix_active = false;
+            if (log_is_enabled(LEVEL_DEBUG)) {
+              log_write(LEVEL_DEBUG, "mtp",
+                            "HALI: MTP: suffix DISABLED (hit rate < 5%% for 3 consecutive evals)");
+            }
+          }
+        } else {
+          _mtp.suffix_low_hit_streak = 0;
         }
+        _mtp.suffix_hits = 0;
+        _mtp.suffix_misses = 0;
       }
-      // reset counters so we evaluate fresh each window
-      _mtp.suffix_hits = 0;
-      _mtp.suffix_misses = 0;
     }
-    // adapt suffix_max_draft: if 2nd chained token is consistently rejected
-    // for suffix-sourced entries, drop to 1
-    if (_suffix_max_draft > 1 && _mtp.win_filled >= 16) {
+    // --- adapt suffix_max_draft with recovery path ---
+    if (_mtp.win_filled >= 16) {
       int suffix_entries = 0;
       int suffix_pos1_acc = 0;
       for (int j = 0; j < _mtp.win_filled; ++j) {
@@ -597,13 +641,20 @@ void Llama::mtp_adapt_eval() {
       }
       if (suffix_entries >= 8) {
         double pos1_rate = (double)suffix_pos1_acc / (double)suffix_entries;
-        if (pos1_rate < 0.15) {
+        if (_suffix_max_draft > 1 && pos1_rate < 0.15) {
           if (log_is_enabled(LEVEL_DEBUG)) {
             log_write(LEVEL_DEBUG, "mtp",
                           "HALI: MTP: suffix pos_acc[1]=%.2f over %d entries — dropping suffix_max_draft to 1",
                           pos1_rate, suffix_entries);
           }
           _suffix_max_draft = 1;
+        } else if (_suffix_max_draft == 1 && pos1_rate > 0.40) {
+          if (log_is_enabled(LEVEL_DEBUG)) {
+            log_write(LEVEL_DEBUG, "mtp",
+                          "HALI: MTP: suffix pos_acc[1]=%.2f over %d entries — restoring suffix_max_draft to 2",
+                          pos1_rate, suffix_entries);
+          }
+          _suffix_max_draft = 2;
         }
       }
     }
@@ -634,6 +685,9 @@ void Llama::mtp_reset_state() {
   _mtp.suffix_accepted = 0;
   _mtp.suffix_hits     = 0;
   _mtp.suffix_misses   = 0;
+  _mtp.suffix_active   = false;
+  _mtp.suffix_low_hit_streak = 0;
+  _mtp.suffix_disabled = false;
   // Clear suffix drafter and recent buffer
   _suffix.clear();
   clear_recent();

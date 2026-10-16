@@ -68,7 +68,8 @@ struct AdaptiveState {
   int   n_min         = 1;
 };
 
-// Mirrors Llama::compute_effective_n_max()
+// Mirrors Llama::compute_effective_n_max() (post-fix: only count positions
+// that were actually drafted in the window)
 static int compute_effective_n_max(const WinState &w, int n_max,
                                    int eff_n_max, float pos_threshold) {
   if (w.filled < 16) {
@@ -76,7 +77,21 @@ static int compute_effective_n_max(const WinState &w, int n_max,
   }
   int k = 0;
   for (int i = 0; i < n_max; ++i) {
-    double rate = w.pos_rate(i);
+    int drafted_at_i = 0;
+    int sum = 0;
+    for (int j = 0; j < w.filled; ++j) {
+      if (w.entries[j].drafted > i) {
+        drafted_at_i++;
+        sum += w.entries[j].pos_acc[i];
+      }
+    }
+    // If position i was rarely drafted, we lack reliable data —
+    // treat it as a pass (optimistic) so the limit can recover.
+    if (drafted_at_i < w.filled / 2) {
+      k = i + 1;
+      continue;
+    }
+    double rate = (double)sum / (double)drafted_at_i;
     double threshold = (i >= eff_n_max)
       ? pos_threshold + 0.05
       : pos_threshold;
@@ -346,6 +361,150 @@ static void test_cooldown_blocks_eval() {
   cout << "test_cooldown_blocks_eval passed" << endl;
 }
 
+// ---------------------------------------------------------------------------
+// New tests for post-fix behaviour
+// ---------------------------------------------------------------------------
+
+// Ratchet deadlock fix: positions above current eff_n_max that were never
+// drafted should get an optimistic pass, allowing recovery.
+static void test_compute_nmax_ratchet_recovery() {
+  // Simulate: eff_n_max dropped to 2, so position 2 was never drafted.
+  // Window has 32 entries all with drafted=2 (pos 2 never attempted).
+  // pos_acc[2] is all zeros (default), but we have no data → optimistic pass.
+  WinState w;
+  for (int i = 0; i < 32; ++i) { w.add(2, 2); }
+  // Position 0: rate = 1.0 (always drafted, always accepted)
+  // Position 1: rate = 1.0 (always drafted, always accepted)
+  // Position 2: drafted_at_i = 0 < 16 → optimistic pass
+  // Result: eff_n_max should recover to 3
+  assert(compute_effective_n_max(w, 3, 2, 0.30f) == 3);
+  cout << "test_compute_nmax_ratchet_recovery passed" << endl;
+}
+
+// Mixed window: some entries drafted 3, some drafted 2.
+// Position 2 has data from the entries that drafted 3.
+static void test_compute_nmax_mixed_window() {
+  // 16 entries with drafted=3, accepted=3 (pos 2 always accepted)
+  // 16 entries with drafted=2, accepted=2 (pos 2 never attempted)
+  // drafted_at_i for pos 2 = 16, which is >= 32/2 = 16 → use real data
+  // rate = 16/16 = 1.0 → passes
+  WinState w;
+  for (int i = 0; i < 16; ++i) { w.add(3, 3); }
+  for (int i = 0; i < 16; ++i) { w.add(2, 2); }
+  assert(compute_effective_n_max(w, 3, 2, 0.30f) == 3);
+
+  // Now: 16 entries with drafted=3, accepted=2 (pos 2 rejected)
+  // 16 entries with drafted=2, accepted=2
+  // drafted_at_i for pos 2 = 16 >= 16 → use real data
+  // rate = 0/16 = 0.0 → fails
+  WinState w2;
+  for (int i = 0; i < 16; ++i) { w2.add(3, 2); }
+  for (int i = 0; i < 16; ++i) { w2.add(2, 2); }
+  assert(compute_effective_n_max(w2, 3, 2, 0.30f) == 2);
+  cout << "test_compute_nmax_mixed_window passed" << endl;
+}
+
+// Hard reversion: when tps < best*0.8, snap all params to best values.
+struct BestState {
+  int   eff_n_max     = 3;
+  float p_min         = 0.0f;
+  int   n_min         = 1;
+  float pos_threshold = 0.42f;
+  double tps          = 38.7;
+  bool   valid        = true;
+};
+
+static void apply_hard_reversion(AdaptiveState &a, const BestState &best,
+                                 double current_tps) {
+  if (best.valid && current_tps < best.tps * 0.80) {
+    a.eff_n_max     = best.eff_n_max;
+    a.n_min         = best.n_min;
+    a.p_min         = best.p_min;
+    a.pos_threshold = best.pos_threshold;
+    a.cooldown      = 96;
+  }
+}
+
+static void test_hard_reversion_snaps() {
+  AdaptiveState a;
+  a.eff_n_max     = 2;
+  a.p_min         = 0.15f;
+  a.n_min         = 0;
+  a.pos_threshold = 0.25f;
+
+  BestState best;
+  apply_hard_reversion(a, best, 25.0);  // 25 < 38.7*0.8=30.96 → triggers
+
+  assert(a.eff_n_max     == 3);
+  assert(fabsf(a.p_min - 0.0f) < 1e-6f);
+  assert(a.n_min         == 1);
+  assert(fabsf(a.pos_threshold - 0.42f) < 1e-6f);
+  assert(a.cooldown      == 96);
+  cout << "test_hard_reversion_snaps passed" << endl;
+}
+
+static void test_hard_reversion_no_trigger() {
+  AdaptiveState a;
+  a.eff_n_max     = 2;
+  a.pos_threshold = 0.25f;
+
+  BestState best;
+  apply_hard_reversion(a, best, 35.0);  // 35 > 38.7*0.8=30.96 → no trigger
+
+  assert(a.eff_n_max     == 2);  // unchanged
+  assert(fabsf(a.pos_threshold - 0.25f) < 1e-6f);  // unchanged
+  assert(a.cooldown      == 0);  // no cooldown set
+  cout << "test_hard_reversion_no_trigger passed" << endl;
+}
+
+// Suffix hysteresis: enter at < 0.10, exit at > 0.25
+struct SuffixHysteresis {
+  bool active = false;
+  void update(int win_filled, int win_drafted, int win_accepted, int k) {
+    double win_frac = (win_drafted > 0)
+      ? (double)win_accepted / (double)win_drafted : 1.0;
+    if (!active) {
+      if (k == 0 || (win_filled > 8 && win_frac < 0.10)) {
+        active = true;
+      }
+    } else {
+      if (win_filled > 8 && win_frac > 0.25) {
+        active = false;
+      }
+    }
+  }
+};
+
+static void test_suffix_hysteresis_band() {
+  SuffixHysteresis sh;
+
+  // Start: not active, good acceptance → stays off
+  sh.update(32, 96, 72, 3);  // frac = 0.75
+  assert(!sh.active);
+
+  // Acceptance drops to 0.08 → enters suffix mode
+  sh.update(32, 96, 8, 2);   // frac = 0.083
+  assert(sh.active);
+
+  // Acceptance at 0.15 (in the dead zone) → stays in suffix mode
+  sh.update(32, 96, 15, 2);  // frac = 0.156
+  assert(sh.active);
+
+  // Acceptance at 0.20 (still in dead zone) → stays in suffix mode
+  sh.update(32, 96, 20, 2);  // frac = 0.208
+  assert(sh.active);
+
+  // Acceptance recovers to 0.30 → exits suffix mode
+  sh.update(32, 96, 30, 3);  // frac = 0.3125
+  assert(!sh.active);
+
+  // Immediate entry: k=0 always triggers
+  SuffixHysteresis sh2;
+  sh2.update(32, 96, 72, 0);  // k=0
+  assert(sh2.active);
+  cout << "test_suffix_hysteresis_band passed" << endl;
+}
+
 void mtp_adaptive_test() {
   cout << "=== MTP Adaptive Self-Tuning Tests ===\n\n";
   test_pos_acc_tracking();
@@ -361,5 +520,11 @@ void mtp_adaptive_test() {
   test_adapt_pos_threshold();
   test_reset_preserves_adaptive();
   test_cooldown_blocks_eval();
+  // New post-fix tests
+  test_compute_nmax_ratchet_recovery();
+  test_compute_nmax_mixed_window();
+  test_hard_reversion_snaps();
+  test_hard_reversion_no_trigger();
+  test_suffix_hysteresis_band();
   cout << "\nAll MTP adaptive tests passed!\n" << endl;
 }
