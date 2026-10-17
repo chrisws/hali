@@ -58,6 +58,12 @@ std::string HaliConfig::settings_path() const {
   return base + "/.config/hali/settings.json";
 }
 
+std::string history_path() {
+  const char *home = getenv("HOME");
+  std::string base = home ? std::string(home) : ".";
+  return base + "/.config/hali/history.txt";
+}
+
 void HaliConfig::set_config(const std::string &config) {
   if (fs::exists(config)) {
     config_ = config;

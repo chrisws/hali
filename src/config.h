@@ -19,6 +19,11 @@
 namespace fs = std::filesystem;
 
 //
+// Returns the input history file path: ~/.config/hali/history.txt
+//
+std::string history_path();
+
+//
 // HaliConfig
 //
 struct HaliConfig {

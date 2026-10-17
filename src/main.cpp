@@ -27,15 +27,6 @@
 #include "audio.h"
 
 //
-// Returns the history file path: ~/.config/hali/history.txt
-//
-static std::string history_path() {
-  const char *home = getenv("HOME");
-  std::string base = home ? std::string(home) : ".";
-  return base + "/.config/hali/history.txt";
-}
-
-//
 // ── Slash command support functions ──────────────────────────────────────
 //
 
@@ -120,8 +111,8 @@ static void slash_audio(const std::string &rest, Tui &tui) {
     audio::set_enabled(new_state);
     tui.append_line(ICON_SYS + std::string("Audio ") + (new_state ? "enabled." : "disabled."));
   } else if (rest == "test") {
-    audio::play_tone(440.0, 0.5, 0.5);
-    tui.append_line(ICON_SYS + "Audio test played.");
+    audio::play_test();
+    tui.append_line(ICON_SYS + "Audio test played (polyphonic).");
   } else if (rest.rfind("volume", 0) == 0) {
     auto space = rest.find(' ', 6);
     if (space != std::string::npos) {
@@ -535,6 +526,9 @@ int main(int argc, char **argv) {
       handle_slash(input, cfg, agent, tui);
     } else {
       agent.run_turn(input);
+      if (cfg.audio_user_prompt_) {
+        audio::play_user_prompt();
+      }
     }
   }
 
