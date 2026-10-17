@@ -32,11 +32,13 @@ static bool g_log_filter_active = false;
 static LogLevel get_level(const std::string& level) {
   static const std::unordered_map<std::string, LogLevel> loggingMap = {
     {"0", LEVEL_DEBUG},
-    {"1", LEVEL_DEBUG},
-    {"2", LEVEL_INFO},
-    {"3", LEVEL_WARNING},
-    {"4", LEVEL_ERROR},
-    {"5", LEVEL_ERROR},
+    {"1", LEVEL_INFO},
+    {"2", LEVEL_WARNING},
+    {"3", LEVEL_ERROR},
+    {"debug", LEVEL_DEBUG},
+    {"info", LEVEL_INFO},
+    {"warning", LEVEL_WARNING},
+    {"error", LEVEL_ERROR},
   };
   LogLevel result = LEVEL_INFO;
   if (!level.empty()) {
@@ -159,7 +161,7 @@ void log_write(LogLevel level, const char* category, const char* format, ...) {
     return;
   }
 
-  if (g_log_filter_active && category &&
+  if (g_log_filter_active && level == g_level.load() && category &&
       g_log_categories.find(category) == g_log_categories.end()) {
     return;
   }
