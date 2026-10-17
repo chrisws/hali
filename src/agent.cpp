@@ -38,19 +38,13 @@ constexpr std::string SESSION_MD = "SESSION.md";
 
 static std::string tool_run(HaliConfig &cfg, Tui &tui, const std::string &arg1, const std::string &arg2) {
   const std::string args = arg1 + " " + arg2;
-  if (cfg.permission_prompt_ && !tui.confirm_dialog(std::format("Allow {} {} to run?", arg1, arg2))) {
-    return "ERROR: prevented by user";
-  } else {
-    bool permitted = ranges::any_of(cfg.run_allowed_, [&](const std::string &a) {return a == args;});
-    if (!permitted || hasDangerousPatterns(args, cfg.run_allowed_)) {
-      if (!tui.confirm_dialog(std::format("Allow {} {} to run?", arg1, arg2))) {
-        return "ERROR: '" + args + "' is not permitted to run.";
-      } else {
-        // remember the user confirmed the full command line
-        cfg.run_allowed_.emplace_back(args);
-        cfg.user_run_allowed_.add(args);
-      }
+  bool permitted = ranges::any_of(cfg.run_allowed_, [&](const std::string &a) {return a == args;});
+  if (!permitted) {
+    if (!tui.confirm_dialog(std::format("Allow {} {} to run?", arg1, arg2))) {
+      return "ERROR: '" + args + "' is not permitted to run.";
     }
+    cfg.run_allowed_.emplace_back(args);
+    cfg.user_run_allowed_.add(args);
   }
   const std::string command = args + " 2>&1";
   tui.show_tool("running: " + command);
