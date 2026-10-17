@@ -189,7 +189,8 @@ bool JsonMutValue::set_int(const std::string &key, int value) {
 
 bool JsonMutValue::set_float(const std::string &key, float value) {
   if (!is_valid()) return false;
-  return yyjson_mut_obj_add(value_, yyjson_mut_strcpy(doc_, key.c_str()), yyjson_mut_real(doc_, value));
+  double rounded = std::round(static_cast<double>(value) * 10000.0) / 10000.0;
+  return yyjson_mut_obj_add(value_, yyjson_mut_strcpy(doc_, key.c_str()), yyjson_mut_real(doc_, rounded));
 }
 
 bool JsonMutValue::set_bool(const std::string &key, bool value) {

@@ -232,6 +232,57 @@ static void test_load_settings_nested() {
   cout << "test_load_settings_nested passed" << endl;
 }
 
+static void test_introspect_float_precision() {
+  HaliConfig cfg;
+  cfg.temperature_ = 0.2f;
+  cfg.top_p_ = 0.95f;
+  cfg.min_p_ = 0.0f;
+  cfg.penalty_repeat_ = 1.0f;
+
+  string json = cfg.introspect();
+
+  // Must not contain full-precision float artifacts
+  assert(json.find("0.20000000298023224") == string::npos);
+  assert(json.find("0.94999998807907104") == string::npos);
+
+  // Verify round-trip: parse back and check values
+  auto doc = json::parse(json);
+  assert(doc.is_valid());
+  auto root = doc.get_root();
+  auto model = root.get_child("model");
+  float temp = 0;
+  assert(model.get_float("temperature", temp));
+  assert(temp == 0.2f);
+  float top_p = 0;
+  assert(model.get_float("top_p", top_p));
+  assert(top_p == 0.95f);
+  float min_p = 1.0f;
+  assert(model.get_float("min_p", min_p));
+  assert(min_p == 0.0f);
+
+  cout << "test_introspect_float_precision passed" << endl;
+}
+
+static void test_system_prompt_extra_dirs() {
+  HaliConfig cfg;
+  cfg.sandbox_ = "/tmp/sandbox";
+
+  // Without extra dirs - should not mention them
+  string prompt = cfg.build_system_prompt();
+  assert(prompt.find("extra directories") == string::npos);
+
+  // With extra dirs - should list them
+  cfg.extra_dirs_.push_back("/opt/shared");
+  cfg.extra_dirs_.push_back("/usr/include");
+
+  prompt = cfg.build_system_prompt();
+  assert(prompt.find("extra directories") != string::npos);
+  assert(prompt.find("/opt/shared") != string::npos);
+  assert(prompt.find("/usr/include") != string::npos);
+
+  cout << "test_system_prompt_extra_dirs passed" << endl;
+}
+
 void config_test() {
   cout << "=== Config Tests (plan 12) ===\n\n";
   test_set_value_float();
@@ -243,5 +294,7 @@ void config_test() {
   test_set_value_gpu_layers();
   test_introspect_nested();
   test_load_settings_nested();
+  test_introspect_float_precision();
+  test_system_prompt_extra_dirs();
   cout << "\nAll config tests passed!\n" << endl;
 }

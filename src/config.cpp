@@ -191,8 +191,17 @@ std::string HaliConfig::build_system_prompt() const {
     "You are Hali, an agentic AI assistant for software development. "
     "Proceed with caution, guided by logic and the pursuit of knowledge.\n\n"
 
-    "Your sandbox (project directory) is: " + sandbox_ + "\n\n"
+    "Your sandbox (project directory) is: " + sandbox_ + "\n\n";
 
+  if (!extra_dirs_.empty()) {
+    p += "You also have read-only access to these extra directories:\n";
+    for (const auto &d : extra_dirs_) {
+      p += "  - " + d + "\n";
+    }
+    p += "Use TOOL:LIST, TOOL:READ, TOOL:SEARCH, and TOOL:EXISTS with absolute paths to access files in these directories.\n\n";
+  }
+
+  p +=
     "## Core Principle\n"
     "Always follow this loop: THINK → DECIDE → ACT → RESPOND\n\n"
 
