@@ -82,6 +82,18 @@ struct ScriptResult {
  */
 ScriptResult play_script(const std::string &notes_str);
 
+/**
+ * @brief Play a short polyphonic test sequence (C-F-G-C chord progression).
+ * Used by the /audio test slash command.
+ */
+void play_test();
+
+/** @brief Play a short bright ascending "tick" (tool completion). */
+void play_tool_tick();
+
+/** @brief Play a short warm "ding" (user prompt / your turn). */
+void play_user_prompt();
+
 } // namespace audio
 
 #endif

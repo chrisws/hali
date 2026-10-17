@@ -125,13 +125,15 @@ static void data_callback(ma_device *device, void *output,
     }
   }
 
-  // Mix all active sounds together
+  // Mix all active sounds together with soft-clip compression.
+  // tanh() is a smooth soft-clipper: linear below ~0.5, gently
+  // compresses above 1.0, avoids harsh clipping artifacts on chords.
   for (ma_uint32 i = 0; i < frame_count; i++) {
     float sum = 0.0f;
     for (auto *s : active) {
       sum += s->sample();
     }
-    out[i] = std::max(-1.0f, std::min(1.0f, sum));
+    out[i] = tanhf(sum);
   }
 }
 
@@ -402,6 +404,35 @@ ScriptResult play_script(const std::string &notes_str) {
             result.events.size(), total_notes, tempo, volume, default_len);
 
   return result;
+}
+
+void play_test() {
+  // C-F-G-C progression with register shift and 4-note variation on the final chord
+  static const NoteEvent events[] = {
+    { {261.63, 0.4}, {329.63, 0.4}, {392.00, 0.4} },              // C major
+    { {349.23, 0.4}, {440.00, 0.4}, {523.25, 0.4} },              // F major
+    { {392.00, 0.4}, {493.88, 0.4}, {587.33, 0.4} },              // G major
+    { {523.25, 0.6}, {659.25, 0.6}, {783.99, 0.6}, {1046.50, 0.6} }, // C major (high, 4-note)
+  };
+  play_events(std::vector<NoteEvent>(std::begin(events), std::end(events)));
+}
+
+void play_tool_tick() {
+  // E6 → G6: quick bright ascending blip (Mario coin-pickup style)
+  static const NoteEvent events[] = {
+    { {1318.51, 0.04} },
+    { {1568.00, 0.04} },
+  };
+  play_events(std::vector<NoteEvent>(std::begin(events), std::end(events)));
+}
+
+void play_user_prompt() {
+  // C6 → E6: warm inviting "ding" (Monkey Island new-quest style)
+  static const NoteEvent events[] = {
+    { {1046.50, 0.10} },
+    { {1318.51, 0.15} },
+  };
+  play_events(std::vector<NoteEvent>(std::begin(events), std::end(events)));
 }
 
 } // namespace audio

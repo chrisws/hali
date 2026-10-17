@@ -469,6 +469,9 @@ std::string Agent::process_tool(const std::string &cmd) {
   if (op == "TOOL:ASK") {
     tui_.set_thinking(false);
     tui_.show_tool("asking: " + arg1 + " " + arg2);
+    if (cfg_.audio_user_prompt_) {
+      audio::play_user_prompt();
+    }
     return tui_.readline();
   }
   if (op == "TOOL:RESTART") {
@@ -478,6 +481,9 @@ std::string Agent::process_tool(const std::string &cmd) {
   if (op == "TOOL:PERMISSION") {
     tui_.set_thinking(false);
     tui_.show_tool("asking permission: " + arg1 + " " + arg2);
+    if (cfg_.audio_user_prompt_) {
+      audio::play_user_prompt();
+    }
     return tui_.confirm_dialog(arg1 + " " + arg2) ? "YES" : "NO";
   }
   if (op == "TOOL:RUN") {
@@ -600,6 +606,9 @@ void Agent::invoke_tool(const std::string &buffer, const std::string_view templa
     tui_.append_line(ICON_SYS + "Auto-continuing after memory flush...");
   }
   tui_.redraw_all();
+  if (cfg_.audio_tool_tick_) {
+    audio::play_tool_tick();
+  }
 };
 
 //
