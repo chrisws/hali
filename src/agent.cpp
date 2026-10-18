@@ -190,6 +190,16 @@ void Agent::reset_conversation(const std::string &sysprompt) {
   }
 }
 
+void Agent::notify(const std::string &msg) {
+  if (!model_loaded_ || !iter_) {
+    return;
+  }
+  if (!llama_->add_message(*iter_, "user", msg)) {
+    tui_.append_line(ICON_ERR + "notify: " + llama_->last_error());
+    tui_.redraw_all();
+  }
+}
+
 double Agent::elapsed_seconds() const {
   if (!iter_) return 0.0;
   auto now = std::chrono::high_resolution_clock::now();

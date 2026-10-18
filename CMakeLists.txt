@@ -203,6 +203,7 @@ add_executable(hali
   src/file.cpp
   src/agent.cpp
   src/agent_utils.cpp
+  src/audit.cpp
   src/usage_log.cpp
   src/build.cpp
   src/audio.cpp

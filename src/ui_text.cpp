@@ -28,6 +28,7 @@ void help(Tui &tui) {
   tui.append_line(ICON_SYS + "  /allow  list             list allowed directories");
   tui.append_line(ICON_SYS + "  /allow  remove [path]    remove an allowed directory");
   tui.append_line(ICON_SYS + "  /revoke <name>           remove an approved RUN command");
+  tui.append_line(ICON_SYS + "  /audit  [path]           scan codebase for model-hostility issues");
   tui.append_line(ICON_SYS + "  /help                    this message");
   tui.append_line(ICON_SYS + "  exit / quit              exit Hali");
   tui.append_line(ICON_SYS + "Settable keys (via /set):");
@@ -105,6 +106,7 @@ void usage() {
             "  /allow  [path]           allow read access to a directory\n"
             "  /allow  list             list allowed directories\n"
             "  /allow  remove [path]    remove an allowed directory\n"
+            "  /audit  [path]           scan codebase for model-hostility issues\n"
             "  /help                    list commands\n"
             );
 }

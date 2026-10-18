@@ -22,6 +22,7 @@
 #include "string_utils.h"
 #include "run_allowed.h"
 #include "ui_text.h"
+#include "audit.h"
 #include "webview.h"
 #include "icon.h"
 #include "audio.h"
@@ -187,7 +188,7 @@ static void slash_revoke(const std::string &rest, HaliConfig &cfg, Tui &tui) {
 //
 // /allow [remove] <path> – manage extra allowed directories
 //
-static void slash_allow(const std::string &rest, HaliConfig &cfg, Tui &tui) {
+static void slash_allow(const std::string &rest, HaliConfig &cfg, Tui &tui, Agent &agent) {
   std::string path = rest;
   if (path.empty()) {
     tui.append_line(ICON_SYS + "Opening directory picker…");
@@ -234,6 +235,7 @@ static void slash_allow(const std::string &rest, HaliConfig &cfg, Tui &tui) {
       cfg.extra_dirs_.erase(it);
       cfg.save_settings();
       tui.append_line(ICON_SYS + "Removed: " + target);
+      agent.notify("You are no longer permitted to access " + target);
     } else {
       tui.append_line(ICON_ERR + "Not found: " + target);
     }
@@ -251,6 +253,7 @@ static void slash_allow(const std::string &rest, HaliConfig &cfg, Tui &tui) {
     cfg.extra_dirs_.emplace_back(path);
     cfg.save_settings();
     tui.append_line(ICON_SYS + "Allowed: " + path);
+    agent.notify("You are now permitted to access " + path);
   } else {
     tui.append_line(ICON_SYS + "Already allowed: " + path);
   }
@@ -272,6 +275,42 @@ static void slash_session(const std::string &rest, HaliConfig &cfg, Tui &tui) {
   }
   tui.append_line(ICON_TOOL + tui.save_session(path));
   tui.redraw_all();
+}
+
+//
+// /audit – scan the codebase for model-hostility issues
+//
+static void slash_audit(const std::string &rest, HaliConfig &cfg, Tui &tui, Agent &agent) {
+  std::string root = rest.empty() ? cfg.sandbox_ : rest;
+  tui.append_line(ICON_SYS + "Scanning " + root + " …");
+  tui.redraw_all();
+
+  AuditResult r = audit_cpp(root);
+
+  tui.append_line(ICON_SYS + std::to_string(r.total_files) + " files, " +
+                   std::to_string(r.total_lines) + " lines");
+  tui.append_line(ICON_SYS + "Difficulty score: " + std::to_string(r.score) + "/100");
+
+  if (r.issues.empty()) {
+    tui.append_line(ICON_SYS + "No issues found.");
+    tui.redraw_all();
+    return;
+  }
+
+  tui.append_line(ICON_SYS + std::to_string(r.issues.size()) + " issue(s) found:");
+  auto table = audit_format_table(r);
+  for (const auto &line : table) {
+    tui.append_line(line);
+  }
+  tui.redraw_all();
+
+  // Offer to let the model resolve the issues
+  if (tui.confirm_dialog("Allow Hali to resolve these issues?")) {
+    std::string prompt = audit_format_prompt(r);
+    tui.append_line(ICON_SYS + "Handing audit report to model…");
+    tui.redraw_all();
+    agent.run_turn(prompt);
+  }
 }
 
 //
@@ -348,7 +387,11 @@ static void handle_slash(const std::string &input, HaliConfig &cfg, Agent &agent
     return;
   }
   if (verb == "/allow") {
-    slash_allow(rest, cfg, tui);
+    slash_allow(rest, cfg, tui, agent);
+    return;
+  }
+  if (verb == "/audit") {
+    slash_audit(rest, cfg, tui, agent);
     return;
   }
 

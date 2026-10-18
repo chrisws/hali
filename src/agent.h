@@ -33,6 +33,7 @@ struct Agent {
   bool setup_embed(const std::string &path);
   bool setup_model();
   void reset_conversation(const std::string &sysprompt);
+  void notify(const std::string &msg);
   bool rag_index(const std::string &path) const;
   bool rag_load_index(const std::string &path) const;
   std::string memory_info_text() const;
