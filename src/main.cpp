@@ -188,51 +188,71 @@ static void slash_revoke(const std::string &rest, HaliConfig &cfg, Tui &tui) {
 // /allow [remove] <path> – manage extra allowed directories
 //
 static void slash_allow(const std::string &rest, HaliConfig &cfg, Tui &tui) {
-  if (rest.empty()) {
+  std::string path = rest;
+  if (path.empty()) {
+    tui.append_line(ICON_SYS + "Opening directory picker…");
+    tui.redraw_all();
+    path = tui.file_picker(cfg.sandbox_, "Allow Directory");
+    if (path.empty()) {
+      tui.append_line(ICON_SYS + "/allow cancelled.");
+      tui.redraw_all();
+      return;
+    }
+  }
+  if (path == "list") {
     if (cfg.extra_dirs_.empty()) {
       tui.append_line(ICON_SYS + "No extra directories allowed.");
     } else {
-      tui.append_line(ICON_SYS + "Extra directories:");
+      tui.append_line(ICON_SYS + "Allowed directories:");
       for (const auto &d : cfg.extra_dirs_) {
-        tui.append_line(ICON_SYS + "  " + d);
+        tui.append_line(ICON_SYS + "  - " + d);
       }
     }
     tui.redraw_all();
     return;
   }
-  if (rest == "remove") {
-    auto sp = rest.find(' ', 7);
-    std::string path = (sp == std::string::npos) ? "" : rest.substr(sp + 1);
-    path.erase(0, path.find_first_not_of(" \t"));
-    if (path.empty()) {
-      tui.append_line(ICON_ERR + "Usage: /allow remove <path>");
-      tui.redraw_all();
-      return;
+  if (path == "remove") {
+    auto sp = path.find(' ', 7);
+    std::string target = (sp == std::string::npos) ? "" : path.substr(sp + 1);
+    target.erase(0, target.find_first_not_of(" \t"));
+    if (target.empty()) {
+      if (cfg.extra_dirs_.empty()) {
+        tui.append_line(ICON_SYS + "Nothing is allowed.");
+        tui.redraw_all();
+        return;
+      }
+      int idx = tui.list_picker(cfg.extra_dirs_, "Remove Allowed Directory");
+      if (idx < 0) {
+        tui.append_line(ICON_SYS + "/allow remove cancelled.");
+        tui.redraw_all();
+        return;
+      }
+      target = cfg.extra_dirs_[idx];
     }
-    auto it = std::find(cfg.extra_dirs_.begin(), cfg.extra_dirs_.end(), path);
+    auto it = std::find(cfg.extra_dirs_.begin(), cfg.extra_dirs_.end(), target);
     if (it != cfg.extra_dirs_.end()) {
       cfg.extra_dirs_.erase(it);
       cfg.save_settings();
-      tui.append_line(ICON_SYS + "Removed: " + path);
+      tui.append_line(ICON_SYS + "Removed: " + target);
     } else {
-      tui.append_line(ICON_ERR + "Not found: " + path);
+      tui.append_line(ICON_ERR + "Not found: " + target);
     }
     tui.redraw_all();
     return;
   }
   // /allow <path> – add a directory
   std::error_code ec;
-  if (!fs::is_directory(rest, ec) || ec) {
-    tui.append_line(ICON_ERR + "Not a directory: " + rest);
+  if (!fs::is_directory(path, ec) || ec) {
+    tui.append_line(ICON_ERR + "Not a directory: " + path);
     tui.redraw_all();
     return;
   }
-  if (std::find(cfg.extra_dirs_.begin(), cfg.extra_dirs_.end(), rest) == cfg.extra_dirs_.end()) {
-    cfg.extra_dirs_.emplace_back(rest);
+  if (std::find(cfg.extra_dirs_.begin(), cfg.extra_dirs_.end(), path) == cfg.extra_dirs_.end()) {
+    cfg.extra_dirs_.emplace_back(path);
     cfg.save_settings();
-    tui.append_line(ICON_SYS + "Allowed: " + rest);
+    tui.append_line(ICON_SYS + "Allowed: " + path);
   } else {
-    tui.append_line(ICON_SYS + "Already allowed: " + rest);
+    tui.append_line(ICON_SYS + "Already allowed: " + path);
   }
   tui.redraw_all();
 }

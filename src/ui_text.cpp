@@ -25,6 +25,8 @@ void help(Tui &tui) {
   tui.append_line(ICON_SYS + "  /save   [file]           save chat transcript (plain text)");
   tui.append_line(ICON_SYS + "  /session [file]          save structured session snapshot");
   tui.append_line(ICON_SYS + "  /allow  [path]           allow read access to a directory");
+  tui.append_line(ICON_SYS + "  /allow  list             list allowed directories");
+  tui.append_line(ICON_SYS + "  /allow  remove [path]    remove an allowed directory");
   tui.append_line(ICON_SYS + "  /revoke <name>           remove an approved RUN command");
   tui.append_line(ICON_SYS + "  /help                    this message");
   tui.append_line(ICON_SYS + "  exit / quit              exit Hali");
@@ -52,6 +54,12 @@ void settings(Tui &tui, HaliConfig &cfg) {
   tui.append_line(ICON_SYS + "  offload_kqv     : " + std::format("{}", cfg.offload_kqv_));
   tui.append_line(ICON_SYS + "  kv_cache_preset : " + cfg.kv_preset_to_string());
   tui.append_line(ICON_SYS + "  rag_top_k       : " + std::to_string(cfg.rag_top_k_));
+  if (!cfg.extra_dirs_.empty()) {
+    tui.append_line(ICON_SYS + "  extra_dirs      :");
+    for (const auto &d : cfg.extra_dirs_) {
+      tui.append_line(ICON_SYS + "    - " + d);
+    }
+  }
   tui.append_line(ICON_SYS + "  saved to        : " + cfg.settings_path());
   tui.redraw_all();
 }
@@ -95,6 +103,8 @@ void usage() {
             "  /settings                show current settings\n"
             "  /clear                   reset conversation\n"
             "  /allow  [path]           allow read access to a directory\n"
+            "  /allow  list             list allowed directories\n"
+            "  /allow  remove [path]    remove an allowed directory\n"
             "  /help                    list commands\n"
             );
 }

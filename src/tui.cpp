@@ -498,8 +498,8 @@ void Tui::dismiss_modal_popup() {
 // Keyboard:
 //   ↑/↓        navigate list
 //   Enter      descend into directory, or select a file
+//   a          accept (select) the current directory
 //   Backspace  go up one directory
-//   s          select the current directory itself (useful for /rag)
 //   Esc        cancel → returns ""
 //
 // Returns the chosen path, or "" on cancel.
@@ -550,13 +550,9 @@ std::string Tui::file_picker(const std::string &start_dir,
   struct ncplane *picker = ncplane_create(stdpl_, &opts);
   if (!picker) return "";
 
-  // Build a compact hint line appropriate to the operation.
-  // /rag adds 's=select dir'; /model and /embed only need file selection.
-  std::string hint_line = "↑↓ navigate  Enter open/select  Esc cancel";
-  if (title_hint.find("RAG") != std::string::npos ||
-      title_hint.find("Folder") != std::string::npos) {
-    hint_line = "↑↓ navigate  Enter open  s=select dir  Esc cancel";
-  }
+  // Hint line — always shows 'a=select dir' so the user knows how to
+  // accept the current directory at any point.
+  std::string hint_line = "↑↓ nav  Enter open  a=select dir  Esc cancel";
 
   // Pre-compute theme colors for the picker.
   auto tc  = theme_->get_popup_color();
@@ -648,10 +644,16 @@ std::string Tui::file_picker(const std::string &start_dir,
       draw_picker();
       continue;
     }
-    // 's' — select the current directory (useful for /rag, ignored for file pickers).
-    if (ev.is(Key::S)) {
-      result = current_dir;
-      break;
+    // 'a'/'A' — accept (select) the highlighted folder.
+    // Only works when the selection is over a folder, not ".." or a file.
+    if (ev.val() == 'a' || ev.val() == 'A') {
+      if (selected < static_cast<int>(entries.size())) {
+        const std::string &entry = entries[selected];
+        if (!entry.empty() && entry.back() == '/' && entry != "..") {
+          result = current_dir + "/" + entry.substr(0, entry.size() - 1);
+          break;
+        }
+      }
     }
     if (ev.is(Key::BACKSPACE) || ev.is(Key::ESCAPE)) {
       // Go up one level.
@@ -692,6 +694,110 @@ std::string Tui::file_picker(const std::string &start_dir,
         break;
       }
       continue;
+    }
+  }
+
+  ncplane_destroy(picker);
+  redraw_all();
+  return result;
+}
+
+//
+// ─── Tui::list_picker ───────────────────────────────────────────────
+// Centered popup showing a selectable list of items.
+//   ↑/↓    navigate
+//   Enter  select
+//   Esc    cancel → returns -1
+//
+int Tui::list_picker(const std::vector<std::string> &items,
+                     const std::string &title_hint) {
+  if (items.empty()) return -1;
+
+  static constexpr int PW = 60;
+  static constexpr int PH = 20;
+  int py = std::max(0, (term_rows_ - PH) / 2);
+  int px = std::max(0, (term_cols_ - PW) / 2);
+
+  ncplane_options opts{};
+  opts.y = py; opts.x = px;
+  opts.rows = static_cast<unsigned>(PH); opts.cols = static_cast<unsigned>(PW);
+  ncplane *picker = ncplane_create(stdpl_, &opts);
+  if (!picker) return -1;
+
+  auto tc  = theme_->get_popup_color();
+  auto bg  = theme_->get_popup_background();
+  auto brd = theme_->get_popup_border();
+
+  auto ch = [&](uint32_t r, uint32_t g, uint32_t b) -> uint64_t {
+    return NCCHANNELS_INITIALIZER(r, g, b, bg.r, bg.g, bg.b);
+  };
+
+  int selected = 0;
+  int scroll   = 0;
+
+  auto draw_picker = [&]() {
+    ncplane_erase(picker);
+    draw_popup_box(picker, PH, PW);
+
+    // Title
+    ncplane_set_channels(picker, ch(tc.r, tc.g, tc.b));
+    std::string title_str = " 📋 " + title_hint + " ";
+    if (static_cast<int>(title_str.size()) > PW - 4) title_str = title_str.substr(0, PW - 4);
+    ncplane_putstr_yx(picker, 0, 2, title_str.c_str());
+
+    // Hint line (bottom interior row) — dimmed.
+    uint32_t dim_r = tc.r * 70 / 100;
+    uint32_t dim_g = tc.g * 70 / 100;
+    uint32_t dim_b = tc.b * 70 / 100;
+    ncplane_set_channels(picker, ch(dim_r, dim_g, dim_b));
+    std::string hint = "↑↓ nav  Enter select  Esc cancel";
+    if (static_cast<int>(hint.size()) > PW - 4) hint = hint.substr(0, PW - 4);
+    ncplane_putstr_yx(picker, PH - 2, 2, hint.c_str());
+
+    // Entry list.
+    int list_rows = PH - 4;
+    if (selected < scroll) scroll = selected;
+    if (selected >= scroll + list_rows) scroll = selected - list_rows + 1;
+    for (int i = 0; i < list_rows; ++i) {
+      int idx = scroll + i;
+      if (idx >= static_cast<int>(items.size())) break;
+      bool is_selected = (idx == selected);
+      uint64_t entry_ch;
+      if (is_selected) {
+        entry_ch = NCCHANNELS_INITIALIZER(bg.r, bg.g, bg.b, brd.r, brd.g, brd.b);
+      } else {
+        entry_ch = ch(tc.r, tc.g, tc.b);
+      }
+      ncplane_set_channels(picker, entry_ch);
+      std::string label = (is_selected ? " ▶ " : "   ") + items[idx];
+      if (static_cast<int>(label.size()) > PW - 2) label = label.substr(0, PW - 2);
+      while (static_cast<int>(label.size()) < PW - 2) label += ' ';
+      ncplane_putstr_yx(picker, 1 + i, 1, label.c_str());
+    }
+    notcurses_render(nc_);
+  };
+
+  draw_picker();
+
+  int result = -1;
+  for (;;) {
+    InputEvent ev = get_event();
+    if (ev.is(Key::ESCAPE)) {
+      break;
+    }
+    if (ev.is(Key::UP)) {
+      if (selected > 0) --selected;
+      draw_picker();
+      continue;
+    }
+    if (ev.is(Key::DOWN)) {
+      if (selected + 1 < static_cast<int>(items.size())) ++selected;
+      draw_picker();
+      continue;
+    }
+    if (ev.is(Key::ENTER) || ev.is(Key::NL) || ev.is(Key::CR)) {
+      result = selected;
+      break;
     }
   }
 

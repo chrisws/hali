@@ -417,6 +417,12 @@ class Tui final: TuiContext {
     return file_picker(start_dir, "RAG Folder");
   }
 
+  // ── list picker popup ───────────────────────────────────────────
+  // Shows a selectable list of items. Returns the selected index,
+  // or -1 if the user cancelled (Esc).
+  int list_picker(const std::vector<std::string> &items,
+                  const std::string &title_hint = "Select");
+
   double get_tokens_per_sec() const { return tokens_per_sec_; }
   double get_kv_percent() const { return kv_percent_; }
 
