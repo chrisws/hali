@@ -39,29 +39,123 @@ void help(Tui &tui) {
 }
 
 void settings(Tui &tui, HaliConfig &cfg) {
-  tui.append_line(ICON_SYS + "Current settings:");
+  auto bool_str = [](bool v) -> std::string { return v ? "true" : "false"; };
+
+  // Helper to format rope scaling type
+  auto rope_str = [](int t) -> std::string {
+    switch (t) {
+      case 0: return "none";
+      case 1: return "linear";
+      case 2: return "yarn";
+      case 3: return "longrope";
+      default: return "unspecified";
+    }
+  };
+
+  tui.append_line(ICON_SYS + "── Model ──────────────────────────────────────");
   tui.append_line(ICON_SYS + "  model_path      : " + cfg.model_path_);
   tui.append_line(ICON_SYS + "  embed_path      : " + cfg.embed_path_);
-  tui.append_line(ICON_SYS + "  sandbox         : " + cfg.sandbox_);
+  tui.append_line(ICON_SYS + "  kv_cache_preset : " + cfg.kv_preset_to_string());
   tui.append_line(ICON_SYS + "  n_ctx           : " + std::to_string(cfg.n_ctx_));
+  tui.append_line(ICON_SYS + "  n_batch         : " + std::to_string(cfg.n_batch_));
   tui.append_line(ICON_SYS + "  n_gpu_layers    : " + std::to_string(cfg.n_gpu_layers_));
+  tui.append_line(ICON_SYS + "  n_threads       : " + std::to_string(cfg.n_threads_));
+  tui.append_line(ICON_SYS + "  n_threads_batch : " + std::to_string(cfg.n_threads_batch_));
+  tui.append_line(ICON_SYS + "  rope_scaling    : " + rope_str(static_cast<int>(cfg.rope_scaling_type_)));
+  tui.append_line(ICON_SYS + "  rope_freq_scale : " + std::to_string(cfg.rope_freq_scale_));
+
+  tui.append_line(ICON_SYS + "── Generation ─────────────────────────────────");
   tui.append_line(ICON_SYS + "  temperature     : " + std::to_string(cfg.temperature_));
   tui.append_line(ICON_SYS + "  top_p           : " + std::to_string(cfg.top_p_));
   tui.append_line(ICON_SYS + "  top_k           : " + std::to_string(cfg.top_k_));
+  tui.append_line(ICON_SYS + "  min_p           : " + std::to_string(cfg.min_p_));
   tui.append_line(ICON_SYS + "  penalty_repeat  : " + std::to_string(cfg.penalty_repeat_));
   tui.append_line(ICON_SYS + "  penalty_freq    : " + std::to_string(cfg.penalty_freq_));
   tui.append_line(ICON_SYS + "  penalty_present : " + std::to_string(cfg.penalty_present_));
   tui.append_line(ICON_SYS + "  penalty_last_n  : " + std::to_string(cfg.penalty_last_n_));
-  tui.append_line(ICON_SYS + "  offload_kqv     : " + std::format("{}", cfg.offload_kqv_));
-  tui.append_line(ICON_SYS + "  kv_cache_preset : " + cfg.kv_preset_to_string());
+  tui.append_line(ICON_SYS + "  offload_kqv     : " + bool_str(cfg.offload_kqv_));
+
+  tui.append_line(ICON_SYS + "── MTP (speculative) ──────────────────────────");
+  tui.append_line(ICON_SYS + "  mtp_enabled     : " + bool_str(cfg.mtp_enabled_));
+  tui.append_line(ICON_SYS + "  mtp_adaptive    : " + bool_str(cfg.mtp_adaptive_));
+  tui.append_line(ICON_SYS + "  mtp_n_max       : " + std::to_string(cfg.mtp_n_max_));
+  tui.append_line(ICON_SYS + "  mtp_n_min       : " + std::to_string(cfg.mtp_n_min_));
+  tui.append_line(ICON_SYS + "  mtp_p_min       : " + std::to_string(cfg.mtp_p_min_));
+  tui.append_line(ICON_SYS + "  mtp_pos_thresh  : " + std::to_string(cfg.mtp_pos_threshold_));
+
+  tui.append_line(ICON_SYS + "── Suffix (n-gram drafting) ───────────────────");
+  tui.append_line(ICON_SYS + "  suffix_enabled  : " + bool_str(cfg.suffix_enabled_));
+  tui.append_line(ICON_SYS + "  suffix_ngram    : " + std::to_string(cfg.suffix_ngram_));
+  tui.append_line(ICON_SYS + "  suffix_max_draft: " + std::to_string(cfg.suffix_max_draft_));
+
+  tui.append_line(ICON_SYS + "── RAG ────────────────────────────────────────");
   tui.append_line(ICON_SYS + "  rag_top_k       : " + std::to_string(cfg.rag_top_k_));
+
+  tui.append_line(ICON_SYS + "── Audio ──────────────────────────────────────");
+  tui.append_line(ICON_SYS + "  audio_enabled   : " + bool_str(cfg.audio_enabled_));
+  tui.append_line(ICON_SYS + "  audio_volume    : " + std::to_string(cfg.audio_volume_));
+  tui.append_line(ICON_SYS + "  audio_tool_tick : " + bool_str(cfg.audio_tool_tick_));
+  tui.append_line(ICON_SYS + "  audio_user_prompt: " + bool_str(cfg.audio_user_prompt_));
+
+  tui.append_line(ICON_SYS + "── Logging ────────────────────────────────────");
+  tui.append_line(ICON_SYS + "  log_level       : " + cfg.log_level_str_);
+  tui.append_line(ICON_SYS + "  log_file        : " + (cfg.log_file_.empty() ? "(none)" : cfg.log_file_));
+  tui.append_line(ICON_SYS + "  log_filter      : " + (cfg.log_filter_.empty() ? "(none)" : cfg.log_filter_));
+
+  tui.append_line(ICON_SYS + "── MCP ────────────────────────────────────────");
+  tui.append_line(ICON_SYS + "  mcp_host        : " + (cfg.mcp_host_.empty() ? "(none)" : cfg.mcp_host_));
+  tui.append_line(ICON_SYS + "  mcp_port        : " + std::to_string(cfg.mcp_port_));
+  if (!cfg.mcp_filter_.empty()) {
+    tui.append_line(ICON_SYS + "  mcp_filter      :");
+    for (const auto &f : cfg.mcp_filter_) {
+      tui.append_line(ICON_SYS + "    - " + f);
+    }
+  }
+
+  tui.append_line(ICON_SYS + "── Paths ──────────────────────────────────────");
+  tui.append_line(ICON_SYS + "  sandbox         : " + cfg.sandbox_);
+  tui.append_line(ICON_SYS + "  backup_path     : " + (cfg.backup_path_.empty() ? "(none)" : cfg.backup_path_));
+  tui.append_line(ICON_SYS + "  config          : " + cfg.config_);
+  tui.append_line(ICON_SYS + "  saved to        : " + cfg.settings_path());
+
+  tui.append_line(ICON_SYS + "── Access ─────────────────────────────────────");
   if (!cfg.extra_dirs_.empty()) {
     tui.append_line(ICON_SYS + "  extra_dirs      :");
     for (const auto &d : cfg.extra_dirs_) {
       tui.append_line(ICON_SYS + "    - " + d);
     }
+  } else {
+    tui.append_line(ICON_SYS + "  extra_dirs      : (none)");
   }
-  tui.append_line(ICON_SYS + "  saved to        : " + cfg.settings_path());
+  if (!cfg.run_allowed_.empty()) {
+    tui.append_line(ICON_SYS + "  run_allowed     :");
+    for (const auto &r : cfg.run_allowed_) {
+      tui.append_line(ICON_SYS + "    - " + r);
+    }
+  } else {
+    tui.append_line(ICON_SYS + "  run_allowed     : (none)");
+  }
+  if (!cfg.knowledge_files_.empty()) {
+    tui.append_line(ICON_SYS + "  knowledge_files :");
+    for (const auto &k : cfg.knowledge_files_) {
+      tui.append_line(ICON_SYS + "    - " + k);
+    }
+  } else {
+    tui.append_line(ICON_SYS + "  knowledge_files : (none)");
+  }
+  if (!cfg.user_run_allowed_.empty()) {
+    tui.append_line(ICON_SYS + "  user_approved   :");
+    for (const auto &u : cfg.run_allowed_) {
+      if (cfg.user_run_allowed_.contains(u)) {
+        tui.append_line(ICON_SYS + "    - " + u);
+      }
+    }
+  }
+
+  tui.append_line(ICON_SYS + "── Behavior ───────────────────────────────────");
+  tui.append_line(ICON_SYS + "  thinking        : " + bool_str(cfg.thinking_));
+  tui.append_line(ICON_SYS + "  permission_prompt: " + bool_str(cfg.permission_prompt_));
+  tui.append_line(ICON_SYS + "  web_port        : " + std::to_string(cfg.web_port_));
   tui.redraw_all();
 }
 
