@@ -153,46 +153,12 @@ void Llama::mtp_rollback_unemitted(int n_unemitted) {
 }
 
 // ---------------------------------------------------------------------------
-// One speculative round: draft + verify + accept
+// Suffix drafter fallback with hysteresis band.
+// Enter suffix mode: no drafts (immediate) or sustained very low acceptance.
+// Exit suffix mode: acceptance has clearly recovered.
+// The band (0.10 in / 0.25 out) prevents flapping at the boundary.
 // ---------------------------------------------------------------------------
-bool Llama::mtp_round(llama_token anchor, vector<llama_token> &accepted, llama_token &next) {
-  accepted.clear();
-  const llama_pos P = (llama_pos)_tokens_physically_used;
-  const int room = _mtp.n_ctx - (int)P - 1;
-  int limit = _mtp.adapt.eff_n_max;
-  limit = std::min({limit, _mtp.n_batch - 1, room});
-  if (limit != _mtp.last_limit && log_is_enabled(LEVEL_DEBUG)) {
-    log_write(LEVEL_DEBUG, "mtp", "HALI: MTP: adaptive limit %d -> %d (eff_n_max=%d)",
-                  _mtp.last_limit, limit, _mtp.adapt.eff_n_max);
-  }
-  _mtp.last_limit = limit;
-  if (limit <= 0) {
-    return false;
-  }
-
-  // ---- 1. generate draft tokens -------------------------------------------
-  auto t0 = std::chrono::high_resolution_clock::now();
-  _mtp.draft_toks.clear();
-  {
-    auto &dp = common_speculative_get_draft_params(_mtp.spec.get(), 0);
-    dp.drafting = true;
-    dp.n_max = limit;
-    // NOTE: p_min is baked into the speculative object at init time.
-    // _mtp.adapt.p_min tracks the ideal value; wiring it to the API
-    // requires per-round p_min support in common_speculative_draft_params.
-    dp.pos0 = P;
-    dp.id_last = anchor;
-    dp.result = &_mtp.draft_toks;
-    common_speculative_draft(_mtp.spec.get());
-  }
-
-  int k = (int)_mtp.draft_toks.size();
-  bool from_suffix = false;
-
-  // ---- 1b. suffix fallback with hysteresis band ---------------------------
-  // Enter suffix mode: no drafts (immediate) or sustained very low acceptance.
-  // Exit suffix mode: acceptance has clearly recovered.
-  // The band (0.10 in / 0.25 out) prevents flapping at the boundary.
+void Llama::mtp_suffix_fallback(int &k, bool &from_suffix) {
   if (_suffix_enabled) {
     double win_frac = (_mtp.win_drafted > 0)
       ? (double)_mtp.win_accepted / (double)_mtp.win_drafted : 1.0;
@@ -230,6 +196,110 @@ bool Llama::mtp_round(llama_token anchor, vector<llama_token> &accepted, llama_t
       }
     }
   }
+}
+
+// ---------------------------------------------------------------------------
+// Update timing, sliding-window stats, and logging after a speculative round.
+// ---------------------------------------------------------------------------
+void Llama::mtp_update_stats(int k, int n_acc, bool from_suffix, int limit,
+                             std::chrono::high_resolution_clock::time_point t0,
+                             std::chrono::high_resolution_clock::time_point t1,
+                             std::chrono::high_resolution_clock::time_point t_end) {
+  _mtp.time_gpu += std::chrono::duration_cast<std::chrono::microseconds>(t1 - t0).count();
+  _mtp.time_cpu += std::chrono::duration_cast<std::chrono::microseconds>(t_end - t1).count();
+
+  ++_mtp.rounds;
+  _mtp.drafted += k;
+  _mtp.accepted += n_acc;
+  if (from_suffix) {
+    _mtp.suffix_rounds++;
+    _mtp.suffix_drafted += k;
+    _mtp.suffix_accepted += n_acc;
+  }
+  // update sliding window
+  if (_mtp.win_filled == MtpState::WIN) {
+    _mtp.win_drafted  -= _mtp.win[_mtp.win_idx].drafted;
+    _mtp.win_accepted -= _mtp.win[_mtp.win_idx].accepted;
+  }
+  {
+    auto &w = _mtp.win[_mtp.win_idx];
+    w.drafted  = k;
+    w.accepted = n_acc;
+    w.source   = from_suffix ? 1 : 0;
+    for (int i = 0; i < 4; ++i) {
+      w.pos_acc[i] = (i < n_acc) ? 1 : 0;
+    }
+  }
+  _mtp.win_drafted  += k;
+  _mtp.win_accepted += n_acc;
+  _mtp.win_idx = (_mtp.win_idx + 1) % MtpState::WIN;
+  if (_mtp.win_filled < MtpState::WIN) { _mtp.win_filled++; }
+  if (log_is_enabled(LEVEL_DEBUG)) {
+    const long gpu_us = std::chrono::duration_cast<std::chrono::microseconds>(t1 - t0).count();
+    const long cpu_us = std::chrono::duration_cast<std::chrono::microseconds>(t_end - t1).count();
+    log_write(LEVEL_DEBUG, "mtp", "HALI: MTP: %d/%d accepted (limit=%d) gpu=%ld cpu=%ld",
+                  n_acc, k, limit, gpu_us, cpu_us);
+  }
+  if (_mtp.rounds % 128 == 0) {
+    if (log_is_enabled(LEVEL_DEBUG)) {
+      const double r = (double)_mtp.rounds;
+      log_write(LEVEL_DEBUG, "mtp",
+                    "HALI: MTP: %llu rounds, %.2f tok/rnd, accept %.0f%% | "
+                    "gpu %.1f cpu %.1f (us) | n_max=%d p_min=%.2f n_min=%d",
+                    (unsigned long long)_mtp.rounds,
+                    1.0 + (double)_mtp.accepted / r,
+                    _mtp.drafted ? 100.0 * (double)_mtp.accepted / (double)_mtp.drafted : 0.0,
+                    (double)_mtp.time_gpu / r,
+                    (double)_mtp.time_cpu / r,
+                    _mtp.adapt.eff_n_max,
+                    (double)_mtp.adapt.p_min,
+                    _mtp.adapt.n_min);
+    }
+  }
+  if (++_mtp.adapt.eval_counter >= 32) {
+    mtp_adapt_eval();
+  }
+}
+
+// ---------------------------------------------------------------------------
+// One speculative round: draft + verify + accept
+// ---------------------------------------------------------------------------
+bool Llama::mtp_round(llama_token anchor, vector<llama_token> &accepted, llama_token &next) {
+  accepted.clear();
+  const llama_pos P = (llama_pos)_tokens_physically_used;
+  const int room = _mtp.n_ctx - (int)P - 1;
+  int limit = _mtp.adapt.eff_n_max;
+  limit = std::min({limit, _mtp.n_batch - 1, room});
+  if (limit != _mtp.last_limit && log_is_enabled(LEVEL_DEBUG)) {
+    log_write(LEVEL_DEBUG, "mtp", "HALI: MTP: adaptive limit %d -> %d (eff_n_max=%d)",
+                  _mtp.last_limit, limit, _mtp.adapt.eff_n_max);
+  }
+  _mtp.last_limit = limit;
+  if (limit <= 0) {
+    return false;
+  }
+
+  // ---- 1. generate draft tokens -------------------------------------------
+  auto t0 = std::chrono::high_resolution_clock::now();
+  _mtp.draft_toks.clear();
+  {
+    auto &dp = common_speculative_get_draft_params(_mtp.spec.get(), 0);
+    dp.drafting = true;
+    dp.n_max = limit;
+    // NOTE: p_min is baked into the speculative object at init time.
+    // _mtp.adapt.p_min tracks the ideal value; wiring it to the API
+    // requires per-round p_min support in common_speculative_draft_params.
+    dp.pos0 = P;
+    dp.id_last = anchor;
+    dp.result = &_mtp.draft_toks;
+    common_speculative_draft(_mtp.spec.get());
+  }
+
+  int k = (int)_mtp.draft_toks.size();
+  bool from_suffix = false;
+
+  // ---- 1b. suffix fallback with hysteresis band ---------------------------
+  mtp_suffix_fallback(k, from_suffix);
 
   if (k == 0) {
     // no drafts generated: just decode the anchor normally
@@ -333,60 +403,7 @@ bool Llama::mtp_round(llama_token anchor, vector<llama_token> &accepted, llama_t
 
   // ---- timing: gpu = draft+verify, cpu = process+sample+rollback -----------
   auto t_end = std::chrono::high_resolution_clock::now();
-  _mtp.time_gpu += std::chrono::duration_cast<std::chrono::microseconds>(t1 - t0).count();
-  _mtp.time_cpu += std::chrono::duration_cast<std::chrono::microseconds>(t_end - t1).count();
-
-  ++_mtp.rounds;
-  _mtp.drafted += k;
-  _mtp.accepted += n_acc;
-  if (from_suffix) {
-    _mtp.suffix_rounds++;
-    _mtp.suffix_drafted += k;
-    _mtp.suffix_accepted += n_acc;
-  }
-  // update sliding window
-  if (_mtp.win_filled == MtpState::WIN) {
-    _mtp.win_drafted  -= _mtp.win[_mtp.win_idx].drafted;
-    _mtp.win_accepted -= _mtp.win[_mtp.win_idx].accepted;
-  }
-  {
-    auto &w = _mtp.win[_mtp.win_idx];
-    w.drafted  = k;
-    w.accepted = n_acc;
-    w.source   = from_suffix ? 1 : 0;
-    for (int i = 0; i < 4; ++i) {
-      w.pos_acc[i] = (i < n_acc) ? 1 : 0;
-    }
-  }
-  _mtp.win_drafted  += k;
-  _mtp.win_accepted += n_acc;
-  _mtp.win_idx = (_mtp.win_idx + 1) % MtpState::WIN;
-  if (_mtp.win_filled < MtpState::WIN) { _mtp.win_filled++; }
-  if (log_is_enabled(LEVEL_DEBUG)) {
-    const long gpu_us = std::chrono::duration_cast<std::chrono::microseconds>(t1 - t0).count();
-    const long cpu_us = std::chrono::duration_cast<std::chrono::microseconds>(t_end - t1).count();
-    log_write(LEVEL_DEBUG, "mtp", "HALI: MTP: %d/%d accepted (limit=%d) gpu=%ld cpu=%ld",
-                  n_acc, k, limit, gpu_us, cpu_us);
-  }
-  if (_mtp.rounds % 128 == 0) {
-    if (log_is_enabled(LEVEL_DEBUG)) {
-      const double r = (double)_mtp.rounds;
-      log_write(LEVEL_DEBUG, "mtp",
-                    "HALI: MTP: %llu rounds, %.2f tok/rnd, accept %.0f%% | "
-                    "gpu %.1f cpu %.1f (us) | n_max=%d p_min=%.2f n_min=%d",
-                    (unsigned long long)_mtp.rounds,
-                    1.0 + (double)_mtp.accepted / r,
-                    _mtp.drafted ? 100.0 * (double)_mtp.accepted / (double)_mtp.drafted : 0.0,
-                    (double)_mtp.time_gpu / r,
-                    (double)_mtp.time_cpu / r,
-                    _mtp.adapt.eff_n_max,
-                    (double)_mtp.adapt.p_min,
-                    _mtp.adapt.n_min);
-    }
-  }
-  if (++_mtp.adapt.eval_counter >= 32) {
-    mtp_adapt_eval();
-  }
+  mtp_update_stats(k, n_acc, from_suffix, limit, t0, t1, t_end);
   return true;
 }
 

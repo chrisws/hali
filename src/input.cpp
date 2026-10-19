@@ -10,12 +10,259 @@
 #include "logging.h"
 #include "string_utils.h"
 
+#include <functional>
+#include <unordered_map>
+
 Input::Input()
   : mouse_mode_(false)
   , insert_mode_(false)
   , ctrl_x_mode_(false)
   , cursor_pos_(0)
   , scroll_offset_(0) {
+  build_dispatch();
+}
+
+void Input::build_dispatch() {
+  dispatch_["F2"] = [this](const InputEvent &, TuiContext &tui, std::string &) -> bool {
+    log_write(LEVEL_DEBUG, "input", "F2 key pressed (toggle mouse mode)");
+    mouse_mode_ = !mouse_mode_;
+    tui.enable_mouse(mouse_mode_);
+    return true;
+  };
+
+  dispatch_["F12"] = [this](const InputEvent &, TuiContext &tui, std::string &) -> bool {
+    log_write(LEVEL_DEBUG, "input", "F12 key pressed (toggle theme)");
+    tui.toggle_theme();
+    return true;
+  };
+
+  dispatch_["PGUP"] = [this](const InputEvent &, TuiContext &tui, std::string &) -> bool {
+    log_write(LEVEL_DEBUG, "input", "Page Up key pressed");
+    const int term_rows = tui.get_term_rows();
+    scroll_offset_ += std::max(1, term_rows - 4);
+    tui.redraw_chat();
+    tui.render();
+    return true;
+  };
+
+  dispatch_["PGDN"] = [this](const InputEvent &, TuiContext &tui, std::string &) -> bool {
+    log_write(LEVEL_DEBUG, "input", "Page Down key pressed");
+    const int term_rows = tui.get_term_rows();
+    scroll_offset_ = std::max(0, scroll_offset_ - std::max(1, term_rows - 4));
+    tui.redraw_chat();
+    tui.render();
+    return true;
+  };
+
+  dispatch_["SCROLL_UP"] = [this](const InputEvent &, TuiContext &tui, std::string &) -> bool {
+    log_write(LEVEL_DEBUG, "input", "Mouse wheel up");
+    scroll_offset_ += 3;
+    tui.redraw_chat();
+    tui.render();
+    return true;
+  };
+
+  dispatch_["SCROLL_DOWN"] = [this](const InputEvent &, TuiContext &tui, std::string &) -> bool {
+    log_write(LEVEL_DEBUG, "input", "Mouse wheel down");
+    scroll_offset_ = std::max(0, scroll_offset_ - 3);
+    tui.redraw_chat();
+    tui.render();
+    return true;
+  };
+
+  dispatch_["UP"] = [this](const InputEvent &, TuiContext &tui, std::string &draft) -> bool {
+    log_write(LEVEL_DEBUG, "input", "Up arrow key pressed");
+    std::string hist_entry;
+    if (history_.up(hist_entry)) {
+      if (!input_buf_.empty() && hist_entry != input_buf_) {
+        draft = input_buf_;
+      }
+      input_buf_  = hist_entry;
+      cursor_pos_ = input_buf_.size();
+    }
+    tui.redraw_input();
+    tui.render();
+    return true;
+  };
+
+  dispatch_["DOWN"] = [this](const InputEvent &, TuiContext &tui, std::string &draft) -> bool {
+    log_write(LEVEL_DEBUG, "input", "Down arrow key pressed");
+    std::string hist_entry;
+    if (history_.down(hist_entry)) {
+      input_buf_  = hist_entry;
+      cursor_pos_ = input_buf_.size();
+    } else {
+      input_buf_  = draft;
+      cursor_pos_ = input_buf_.size();
+      draft.clear();
+    }
+    tui.redraw_input();
+    tui.render();
+    return true;
+  };
+
+  dispatch_["C-L"] = [this](const InputEvent &, TuiContext &tui, std::string &) -> bool {
+    log_write(LEVEL_DEBUG, "input", "Ctrl+L key pressed (clear screen)");
+    cursor_pos_ = 0;
+    scroll_offset_ = 0;
+    input_buf_.clear();
+    tui.redraw_input();
+    tui.render();
+    return true;
+  };
+
+  dispatch_["C-LEFT"] = [this](const InputEvent &, TuiContext &tui, std::string &) -> bool {
+    log_write(LEVEL_DEBUG, "input", "Ctrl+left pressed [%d]", cursor_pos_);
+    cursor_pos_ = move_to_prev_word(cursor_pos_);
+    tui.redraw_input();
+    tui.render();
+    return true;
+  };
+
+  dispatch_["C-RIGHT"] = [this](const InputEvent &, TuiContext &tui, std::string &) -> bool {
+    log_write(LEVEL_DEBUG, "input", "Ctrl+right pressed [%d]", cursor_pos_);
+    cursor_pos_ = move_to_next_word(cursor_pos_);
+    tui.redraw_input();
+    tui.render();
+    return true;
+  };
+
+  dispatch_["C-HOME"] = [this](const InputEvent &, TuiContext &tui, std::string &) -> bool {
+    cursor_pos_ = 0;
+    tui.redraw_input();
+    tui.render();
+    return true;
+  };
+
+  dispatch_["C-END"] = [this](const InputEvent &, TuiContext &tui, std::string &) -> bool {
+    cursor_pos_ = input_buf_.size();
+    tui.redraw_input();
+    tui.render();
+    return true;
+  };
+
+  dispatch_["C-A"] = [this](const InputEvent &, TuiContext &tui, std::string &) -> bool {
+    cursor_pos_ = 0;
+    tui.redraw_input();
+    tui.render();
+    return true;
+  };
+
+  dispatch_["C-E"] = [this](const InputEvent &, TuiContext &tui, std::string &) -> bool {
+    cursor_pos_ = input_buf_.size();
+    tui.redraw_input();
+    tui.render();
+    return true;
+  };
+
+  dispatch_["C-SPACE"] = [this](const InputEvent &, TuiContext &tui, std::string &) -> bool {
+    log_write(LEVEL_DEBUG, "input", "Ctrl+space key pressed");
+    input_buf_.insert(cursor_pos_, 1, ' ');
+    ++cursor_pos_;
+    tui.redraw_input();
+    tui.render();
+    return true;
+  };
+
+  dispatch_["C-BS"] = [this](const InputEvent &, TuiContext &tui, std::string &) -> bool {
+    log_write(LEVEL_DEBUG, "input", "Ctrl+backspace key pressed");
+    cursor_pos_ = delete_word_before(cursor_pos_);
+    tui.redraw_input();
+    tui.render();
+    return true;
+  };
+
+  dispatch_["C-W"] = [this](const InputEvent &, TuiContext &tui, std::string &) -> bool {
+    log_write(LEVEL_DEBUG, "input", "Ctrl+W key pressed");
+    cursor_pos_ = kill_word_backward(cursor_pos_);
+    tui.redraw_input();
+    tui.render();
+    return true;
+  };
+
+  dispatch_["C-U"] = [this](const InputEvent &, TuiContext &tui, std::string &) -> bool {
+    log_write(LEVEL_DEBUG, "input", "Ctrl+U key pressed");
+    input_buf_.erase(0, cursor_pos_);
+    cursor_pos_ = 0;
+    tui.redraw_input();
+    tui.render();
+    return true;
+  };
+
+  dispatch_["C-K"] = [this](const InputEvent &, TuiContext &tui, std::string &) -> bool {
+    log_write(LEVEL_DEBUG, "input", "Ctrl+K key pressed");
+    input_buf_.erase(cursor_pos_);
+    tui.redraw_input();
+    tui.render();
+    return true;
+  };
+
+  dispatch_["C-D"] = [this](const InputEvent &, TuiContext &tui, std::string &) -> bool {
+    log_write(LEVEL_DEBUG, "input", "Ctrl+D key pressed");
+    if (cursor_pos_ < input_buf_.size()) {
+      input_buf_.erase(cursor_pos_, 1);
+    } else {
+      cursor_pos_ = delete_word_at_cursor();
+    }
+    tui.redraw_input();
+    tui.render();
+    return true;
+  };
+
+  dispatch_["C-V"] = [this](const InputEvent &, TuiContext &tui, std::string &) -> bool {
+    log_write(LEVEL_DEBUG, "input", "Ctrl+V key pressed (enter insert mode)");
+    insert_mode_ = true;
+    tui.redraw_input();
+    tui.render();
+    return true;
+  };
+
+  dispatch_["C-H"] = [this](const InputEvent &, TuiContext &tui, std::string &) -> bool {
+    log_write(LEVEL_DEBUG, "input", "Ctrl+H key pressed (backspace)");
+    if (cursor_pos_ > 0) {
+      input_buf_.erase(cursor_pos_ - 1, 1);
+      --cursor_pos_;
+      tui.redraw_input();
+      tui.render();
+      return true;
+    }
+    return false;
+  };
+
+  dispatch_["M-L"] = [this](const InputEvent &, TuiContext &tui, std::string &) -> bool {
+    cursor_pos_ = uppercase_word(cursor_pos_);
+    tui.redraw_input();
+    tui.render();
+    return true;
+  };
+
+  dispatch_["M-D"] = [this](const InputEvent &, TuiContext &tui, std::string &) -> bool {
+    cursor_pos_ = lowercase_word(cursor_pos_);
+    tui.redraw_input();
+    tui.render();
+    return true;
+  };
+
+  dispatch_["C-G"] = [this](const InputEvent &, TuiContext &tui, std::string &) -> bool {
+    input_buf_.clear();
+    cursor_pos_ = 0;
+    scroll_offset_ = 0;
+    tui.redraw_input();
+    tui.render();
+    return true;
+  };
+
+  dispatch_["C-S"] = [this](const InputEvent &, TuiContext &tui, std::string &) -> bool {
+    if (!input_buf_.empty()) {
+      history_.push("[saved] " + input_buf_);
+    }
+    input_buf_.clear();
+    cursor_pos_ = 0;
+    scroll_offset_ = 0;
+    tui.redraw_input();
+    tui.render();
+    return true;
+  };
 }
 
 //
@@ -166,6 +413,44 @@ int Input::lowercase_word(const int pos) {
   return start;
 }
 
+static std::string make_key_name(const InputEvent &ev) {
+  std::string s;
+  if (ev.is_ctrl()) s += "C-";
+  if (ev.is_alt()) s += "M-";
+  if (ev.is_shift()) s += "S-";
+  Key k = ev.key();
+  if (k >= Key::A && k <= Key::Z) {
+    s += static_cast<char>('A' + (static_cast<int>(k) - static_cast<int>(Key::A)));
+  } else {
+    switch (k) {
+      case Key::ESCAPE:      s += "ESC"; break;
+      case Key::TAB:         s += "TAB"; break;
+      case Key::HOME:        s += "HOME"; break;
+      case Key::END:         s += "END"; break;
+      case Key::PAGE_UP:     s += "PGUP"; break;
+      case Key::PAGE_DOWN:   s += "PGDN"; break;
+      case Key::UP:          s += "UP"; break;
+      case Key::DOWN:        s += "DOWN"; break;
+      case Key::LEFT:        s += "LEFT"; break;
+      case Key::RIGHT:       s += "RIGHT"; break;
+      case Key::ENTER:       s += "ENTER"; break;
+      case Key::SPACE:       s += "SPACE"; break;
+      case Key::BACKSPACE:   s += "BS"; break;
+      case Key::DEL:         s += "DEL"; break;
+      case Key::F1:          s += "F1"; break;
+      case Key::F2:          s += "F2"; break;
+      case Key::F3:          s += "F3"; break;
+      case Key::F4:          s += "F4"; break;
+      case Key::F5:          s += "F5"; break;
+      case Key::F12:         s += "F12"; break;
+      case Key::SCROLL_UP:   s += "SCROLL_UP"; break;
+      case Key::SCROLL_DOWN: s += "SCROLL_DOWN"; break;
+      default:               s += std::to_string(static_cast<uint32_t>(k)); break;
+    }
+  }
+  return s;
+}
+
 // ─── Input::readline_blocking (bash-like editing) ─────────────────────────────────
 //
 // Integrates InputHistory_:  Up/Down arrows navigate the history_ stack.
@@ -201,23 +486,13 @@ int Input::lowercase_word(const int pos) {
 //   Ctrl-x Ctrl+z    : suspend (cancel and return to prompt)
 //
 std::string Input::readline(TuiContext &tui) {
-  auto redraw_input = [&]() -> void {
-    tui.redraw_input();
-    tui.render();
-  };
-
-  auto redraw_chat = [&]() -> void {
-    tui.redraw_chat();
-    tui.render();
-  };
-
   input_buf_.clear();
   cursor_pos_ = 0;
   history_.reset_nav();
-  redraw_input();
+  tui.redraw_input();
+  tui.render();
 
   std::string draft;
-
   for (;;) {
     auto ev = tui.get_event();
     if (ev.is(Key::ENTER) || ev.is(Key::NL) || ev.is(Key::CR)) {
@@ -229,7 +504,8 @@ std::string Input::readline(TuiContext &tui) {
       input_buf_.clear();
       cursor_pos_ = 0;
       scroll_offset_ = 0;
-      redraw_input();
+      tui.redraw_input();
+      tui.render();
       return result;
     }
 
@@ -241,88 +517,6 @@ std::string Input::readline(TuiContext &tui) {
     } else if (ctrl_x_mode_ && ev.is_ctrl()) {
       // exit control-x mode
       ctrl_x_mode_ = false;
-    }
-
-    if (ev.is(Key::F2)) {
-      log_write(LEVEL_DEBUG, "input", "F2 key pressed (toggle mouse mode)");
-      mouse_mode_ = !mouse_mode_;
-      tui.enable_mouse(mouse_mode_);
-      continue;
-    }
-
-    if (ev.is(Key::F12)) {
-      log_write(LEVEL_DEBUG, "input", "F12 key pressed (toggle theme)");
-      tui.toggle_theme();
-      continue;
-    }
-
-    if (ev.is(Key::PAGE_UP)) {
-      log_write(LEVEL_DEBUG, "input", "Page Up key pressed");
-      const int term_rows = tui.get_term_rows();
-      scroll_offset_ += std::max(1, term_rows - 4);
-      redraw_chat();
-      continue;
-    }
-
-    if (ev.is(Key::PAGE_DOWN)) {
-      log_write(LEVEL_DEBUG, "input", "Page Down key pressed");
-      const int term_rows = tui.get_term_rows();
-      scroll_offset_ = std::max(0, scroll_offset_ - std::max(1, term_rows - 4));
-      redraw_chat();
-      continue;
-    }
-
-    // Mouse wheel scroll
-    if (ev.is(Key::SCROLL_UP)) {
-      log_write(LEVEL_DEBUG, "input", "Mouse wheel up");
-      scroll_offset_ += 3;
-      redraw_chat();
-      continue;
-    }
-    if (ev.is(Key::SCROLL_DOWN)) {
-      log_write(LEVEL_DEBUG, "input", "Mouse wheel down");
-      scroll_offset_ = std::max(0, scroll_offset_ - 3);
-      redraw_chat();
-      continue;
-    }
-
-    if (ev.is(Key::UP)) {
-      log_write(LEVEL_DEBUG, "input", "Up arrow key pressed");
-      std::string hist_entry;
-      if (history_.up(hist_entry)) {
-        if (!input_buf_.empty() && hist_entry != input_buf_) {
-          draft = input_buf_;
-        }
-        input_buf_  = hist_entry;
-        cursor_pos_ = input_buf_.size();
-      }
-      redraw_input();
-      continue;
-    }
-
-    if (ev.is(Key::DOWN)) {
-      log_write(LEVEL_DEBUG, "input", "Down arrow key pressed");
-      std::string hist_entry;
-      if (history_.down(hist_entry)) {
-        input_buf_  = hist_entry;
-        cursor_pos_ = input_buf_.size();
-      } else {
-        input_buf_  = draft;
-        cursor_pos_ = input_buf_.size();
-        draft.clear();
-      }
-      redraw_input();
-      continue;
-    }
-
-    // Ctrl-L: clear screen and redraw
-    if (ev.is_ctrl() && ev.is(Key::L)) {
-      log_write(LEVEL_DEBUG, "input", "Ctrl+L key pressed (clear screen)");
-      cursor_pos_ = 0;
-      scroll_offset_ = 0;
-      input_buf_.clear();
-      redraw_input();
-      continue;
     }
 
     // Insert mode handling
@@ -344,155 +538,8 @@ std::string Input::readline(TuiContext &tui) {
         input_buf_.insert(cursor_pos_, 1, ev.val());
         ++cursor_pos_;
       }
-      redraw_input();
-      continue;
-    }
-
-    // Ctrl-Left / Ctrl-Right: word-wise navigation
-    if (ev.is_ctrl() && ev.is(Key::LEFT)) {
-      log_write(LEVEL_DEBUG, "input", "Ctrl+left pressed [%d]", cursor_pos_);
-      cursor_pos_ = move_to_prev_word(cursor_pos_);
-      redraw_input();
-      continue;
-    } else if (ev.is_ctrl() && ev.is(Key::RIGHT)) {
-      log_write(LEVEL_DEBUG, "input", "Ctrl+right pressed [%d]", cursor_pos_);
-      cursor_pos_ = move_to_next_word(cursor_pos_);
-      redraw_input();
-      continue;
-    }
-
-    // Ctrl-Home / Ctrl-End: jump to start/end
-    if (ev.is_ctrl() && ev.is(Key::HOME)) {
-      cursor_pos_ = 0;
-      redraw_input();
-      continue;
-    } else if (ev.is_ctrl() && ev.is(Key::END)) {
-      cursor_pos_ = input_buf_.size();
-      redraw_input();
-      continue;
-    }
-
-    // Ctrl-A / Ctrl-E: move to start/end (muscle memory)
-    if (ev.is_ctrl() && ev.is(Key::A)) {
-      cursor_pos_ = 0;
-      redraw_input();
-      continue;
-    } else if (ev.is_ctrl() && ev.is(Key::E)) {
-      cursor_pos_ = input_buf_.size();
-      redraw_input();
-      continue;
-    }
-
-    // Ctrl-I (Tab): insert space
-    if (ev.is_ctrl() && ev.is(Key::SPACE)) {
-      log_write(LEVEL_DEBUG, "input", "Ctrl+space key pressed");
-      input_buf_.insert(cursor_pos_, 1, ' ');
-      ++cursor_pos_;
-      redraw_input();
-      continue;
-    }
-
-    // Ctrl-Backspace: delete word before cursor
-    if (ev.is_ctrl() && ev.is(Key::BACKSPACE)) {
-      log_write(LEVEL_DEBUG, "input", "Ctrl+backspace key pressed");
-      cursor_pos_ = delete_word_before(cursor_pos_);
-      redraw_input();
-      continue;
-    }
-
-    // Ctrl-W: kill word backward
-    if (ev.is_ctrl() && ev.is(Key::W)) {
-      log_write(LEVEL_DEBUG, "input", "Ctrl+W key pressed");
-      cursor_pos_ = kill_word_backward(cursor_pos_);
-      redraw_input();
-      continue;
-    }
-
-    // Ctrl-U: clear from cursor to beginning
-    if (ev.is_ctrl() && ev.is(Key::U)) {
-      log_write(LEVEL_DEBUG, "input", "Ctrl+U key pressed");
-      input_buf_.erase(0, cursor_pos_);
-      cursor_pos_ = 0;
-      redraw_input();
-      continue;
-    }
-
-    // Ctrl-K: clear from cursor to end
-    if (ev.is_ctrl() && ev.is(Key::K)) {
-      log_write(LEVEL_DEBUG, "input", "Ctrl+K key pressed");
-      input_buf_.erase(cursor_pos_);
-      redraw_input();
-      continue;
-    }
-
-    // Ctrl-D: delete-char (kill next char)
-    if (ev.is_ctrl() && ev.is(Key::D)) {
-      log_write(LEVEL_DEBUG, "input", "Ctrl+D key pressed (delete char)");
-      if (cursor_pos_ < input_buf_.size()) {
-        input_buf_.erase(cursor_pos_, 1);
-        redraw_input();
-        continue;
-      }
-    }
-
-    if (ev.is_ctrl() && ev.is(Key::V)) {
-      log_write(LEVEL_DEBUG, "input", "Ctrl+V key pressed (enter insert mode)");
-      // Ctrl-V: enter insert mode for the next character
-      insert_mode_ = true;
-      redraw_input();
-      continue;
-    }
-
-    // Ctrl-H: kill-backward-char (backspace char)
-    if (ev.is_ctrl() && ev.is(Key::H)) {
-      log_write(LEVEL_DEBUG, "input", "Ctrl+H key pressed (backspace)");
-      if (cursor_pos_ > 0) {
-        input_buf_.erase(cursor_pos_ - 1, 1);
-        --cursor_pos_;
-        redraw_input();
-        continue;
-      }
-    }
-
-    // crtl-D: delete word at cursor (Emacs-style)
-    if (ev.is_ctrl() && ev.is(Key::D)) {
-      cursor_pos_ = delete_word_at_cursor();
-      redraw_input();
-      continue;
-    }
-
-    // Alt-L: uppercase word under cursor
-    if (ev.is_alt() && ev.is(Key::L)) {
-      cursor_pos_ = uppercase_word(cursor_pos_);
-      redraw_input();
-      continue;
-    }
-
-    // Alt-d: lowercase word under cursor
-    if (ev.is_alt() && ev.is(Key::D)) {
-      cursor_pos_ = lowercase_word(cursor_pos_);
-      redraw_input();
-      continue;
-    }
-
-    // Ctrl-G: quit (cancel input)
-    if (ev.is_ctrl() && ev.is(Key::G)) {
-      input_buf_.clear();
-      cursor_pos_ = 0;
-      scroll_offset_ = 0;
-      redraw_input();
-      continue;
-    }
-
-    // Ctrl-x Ctrl-S: save (push to history_ as "saved")
-    if (ev.is_ctrl() && ev.is(Key::S)) {
-      if (!input_buf_.empty()) {
-        history_.push("[saved] " + input_buf_);
-      }
-      input_buf_.clear();
-      cursor_pos_ = 0;
-      scroll_offset_ = 0;
-      redraw_input();
+      tui.redraw_input();
+      tui.render();
       continue;
     }
 
@@ -545,7 +592,15 @@ std::string Input::readline(TuiContext &tui) {
       } else {
         ctrl_x_mode_ = false;
       }
-      redraw_input();
+      tui.redraw_input();
+      tui.render();
+      continue;
+    }
+
+    // Dispatch table lookup
+    const std::string key = make_key_name(ev);
+    auto it = dispatch_.find(key);
+    if (it != dispatch_.end() && it->second(ev, tui, draft)) {
       continue;
     }
 
@@ -578,6 +633,7 @@ std::string Input::readline(TuiContext &tui) {
                 ev.val(), ev.is_shift(), ev.is_ctrl(), ev.is_edit(), ev.is_ascii(), ev.is_resize());
       continue;
     }
-    redraw_input();
+    tui.redraw_input();
+    tui.render();
   }
 }

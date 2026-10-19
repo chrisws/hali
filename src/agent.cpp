@@ -10,10 +10,12 @@
 #include <cmath>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <mutex>
 #include <sstream>
 #include <string>
 #include <thread>
+#include <unordered_map>
 #include <vector>
 
 #include "llama.h"
@@ -315,70 +317,56 @@ std::string Agent::restart() {
 //
 // Tool dispatch
 //
-std::string Agent::process_tool(const std::string &cmd) {
-  std::string op, arg1, arg2;
-  auto WS = cmd.find_first_of(" \n");
-  if (WS == std::string::npos) {
-    op = utils::trim(cmd);
-  } else {
-    op = utils::trim(cmd.substr(0, WS));
-    std::string rest = cmd.substr(WS + 1);
-    // clear leading WS from rest
-    rest.erase(0, rest.find_first_not_of(" \t"));
+ToolMap Agent::build_tool_dispatch() {
+  ToolMap tools;
 
-    // Quote-aware arg splitting (handles "multi word" patterns)
-    ToolArgs ta = split_tool_args(rest);
-    arg1 = ta.arg1;
-    arg2 = ta.arg2;
-  }
-
-  if (op == "TOOL:DATE") {
-    tui_.show_tool(op);
+  tools["TOOL:DATE"] = [this](const std::string &a1, const std::string &a2) -> std::string {
+    tui_.show_tool("TOOL:DATE");
     char buf[32]; time_t t = time(nullptr);
     strftime(buf, sizeof(buf), "%Y-%m-%d", localtime(&t));
     return buf;
-  }
-  if (op == "TOOL:TIME") {
-    tui_.show_tool(op);
+  };
+  tools["TOOL:TIME"] = [this](const std::string &a1, const std::string &a2) -> std::string {
+    tui_.show_tool("TOOL:TIME");
     char buf[32]; time_t t = time(nullptr);
     strftime(buf, sizeof(buf), "%H:%M:%S", localtime(&t));
     return buf;
-  }
-  if (op == "TOOL:RND") {
-    tui_.show_tool(op);
+  };
+  tools["TOOL:RND"] = [this](const std::string &a1, const std::string &a2) -> std::string {
+    tui_.show_tool("TOOL:RND");
     return std::to_string(static_cast<double>(rand()) / RAND_MAX);
-  }
-  if (op == "TOOL:RAG") {
-    tui_.show_tool(op);
-    return rag_tool(arg1);
-  }
-  if (op == "TOOL:LIST") {
-    std::string dir = resolve_path(cfg_.sandbox_, arg1);
+  };
+  tools["TOOL:RAG"] = [this](const std::string &a1, const std::string &a2) -> std::string {
+    tui_.show_tool("TOOL:RAG");
+    return rag_tool(a1);
+  };
+  tools["TOOL:LIST"] = [this](const std::string &a1, const std::string &a2) -> std::string {
+    std::string dir = resolve_path(cfg_.sandbox_, a1);
     if (!path_allowed(cfg_.sandbox_, cfg_.extra_dirs_, dir)) {
       return "ERROR: path outside sandbox";
     }
     tui_.show_tool("listing: " + dir);
     return list_dir(dir);
-  }
-  if (op == "TOOL:EXISTS") {
-    std::string p = resolve_path(cfg_.sandbox_, arg1);
+  };
+  tools["TOOL:EXISTS"] = [this](const std::string &a1, const std::string &a2) -> std::string {
+    std::string p = resolve_path(cfg_.sandbox_, a1);
     if (!path_allowed(cfg_.sandbox_, cfg_.extra_dirs_, p)) {
       return "ERROR: path outside sandbox";
     }
     tui_.show_tool("checking: " + p);
     return fs::exists(p) ? "YES" : "NO";
-  }
-  if (op == "TOOL:READ") {
-    tui_.show_tool("reading: " + arg1);
+  };
+  tools["TOOL:READ"] = [this](const std::string &a1, const std::string &a2) -> std::string {
+    tui_.show_tool("reading: " + a1);
     turn_files_read_++;
-    std::string p = resolve_path(cfg_.sandbox_, arg1);
+    std::string p = resolve_path(cfg_.sandbox_, a1);
     if (!path_allowed(cfg_.sandbox_, cfg_.extra_dirs_, p)) {
       return "ERROR: path outside sandbox";
     }
     return read_file(p);
-  }
-  if (op == "TOOL:SEARCH") {
-    SearchArgs sa = parse_search_args(arg1, arg2);
+  };
+  tools["TOOL:SEARCH"] = [this](const std::string &a1, const std::string &a2) -> std::string {
+    SearchArgs sa = parse_search_args(a1, a2);
     tui_.show_tool("search: " + sa.pattern + " " + sa.path_and_flags);
     turn_files_read_++;
     std::string path_part, flags_part;
@@ -390,17 +378,16 @@ std::string Agent::process_tool(const std::string &cmd) {
       path_part = sa.path_and_flags;
     }
     return tool_search(cfg_.sandbox_, sa.pattern, path_part, flags_part, cfg_.extra_dirs_);
-  }
-  if (op == "TOOL:WRITE") {
-    tui_.show_tool("writing: " + arg1);
+  };
+  tools["TOOL:WRITE"] = [this](const std::string &a1, const std::string &a2) -> std::string {
+    tui_.show_tool("writing: " + a1);
     turn_files_written_++;
-    const auto path = resolve_path(cfg_.sandbox_, arg1);
+    const auto path = resolve_path(cfg_.sandbox_, a1);
     if (!path_in_sandbox(cfg_.sandbox_, path)) {
       return "ERROR: path outside sandbox";
     }
-    const auto data = strip_code_fences(arg1, arg2);
+    const auto data = strip_code_fences(a1, a2);
     if (!utils::ends_with(path, SESSION_MD)) {
-      // always allow overwriting SESSION.md
       if (cfg_.permission_prompt_ && !tui_.confirm_dialog(std::format("Allow model to write {}?", path))) {
         return "ERROR: action prevented by user";
       } else {
@@ -419,143 +406,159 @@ std::string Agent::process_tool(const std::string &cmd) {
       broadcast_reload(cfg_, tui_);
     }
     return result;
-  }
-  if (op == "TOOL:PATCH") {
-    tui_.show_tool("patch: " + arg1);
+  };
+  tools["TOOL:PATCH"] = [this](const std::string &a1, const std::string &a2) -> std::string {
+    tui_.show_tool("patch: " + a1);
     turn_files_written_++;
-    const auto path = resolve_path(cfg_.sandbox_, arg1);
+    const auto path = resolve_path(cfg_.sandbox_, a1);
     if (!path_in_sandbox(cfg_.sandbox_, path)) {
       return "ERROR: path outside sandbox";
     }
-    const auto validate = tool_patch_validate(path, arg2);
+    const auto validate = tool_patch_validate(path, a2);
     if (!validate.empty()) {
-      tui_.append_token(ICON_ERR + arg2);
+      tui_.append_token(ICON_ERR + a2);
       if (!tui_.confirm_dialog(std::format("[{}] - Allow model to patch {}?", validate, path))) {
         return "ERROR: action prevented by user - " + validate;
       }
     }
     backup_file(cfg_, tui_, path);
-    const auto result = tool_patch(path, arg2);
+    const auto result = tool_patch(path, a2);
     if (!utils::starts_with(result, "OK")) {
-      tui_.append_token(ICON_ERR + arg2);
+      tui_.append_token(ICON_ERR + a2);
       tui_.append_token(ICON_ERR + result);
     } else {
       broadcast_reload(cfg_, tui_);
     }
     return result;
-  }
-  if (op == "TOOL:APPEND") {
-    tui_.show_tool("append: " + arg1);
+  };
+  tools["TOOL:APPEND"] = [this](const std::string &a1, const std::string &a2) -> std::string {
+    tui_.show_tool("append: " + a1);
     turn_files_written_++;
-    const auto path = resolve_path(cfg_.sandbox_, arg1);
+    const auto path = resolve_path(cfg_.sandbox_, a1);
     if (!path_in_sandbox(cfg_.sandbox_, path)) {
       return "ERROR: path outside sandbox";
     }
     backup_file(cfg_, tui_, path);
-    const auto result = tool_append(path, arg2);
+    const auto result = tool_append(path, a2);
     if (!utils::starts_with(result, "OK")) {
       tui_.append_token(ICON_ERR + result);
     } else {
       broadcast_reload(cfg_, tui_);
     }
     return result;
-  }
-  if (op == "TOOL:MKDIR") {
-    std::string p = resolve_path(cfg_.sandbox_, arg1);
-    tui_.show_tool("mkdir: " + arg1);
+  };
+  tools["TOOL:MKDIR"] = [this](const std::string &a1, const std::string &a2) -> std::string {
+    std::string p = resolve_path(cfg_.sandbox_, a1);
+    tui_.show_tool("mkdir: " + a1);
     if (!path_in_sandbox(cfg_.sandbox_, p)) {
       return "ERROR: path outside sandbox";
     }
-    return make_dir(p) ? "OK: created " + arg1 : "ERROR: mkdir failed for " + arg1;
-  }
-  if (op == "TOOL:CURL") {
-    tui_.show_tool("curl: " + arg1);
-    return tool_curl(arg1);
-  }
-  if (op == "TOOL:INTROSPECT") {
-    tui_.show_tool("introspecting: " + arg1);
+    return make_dir(p) ? "OK: created " + a1 : "ERROR: mkdir failed for " + a1;
+  };
+  tools["TOOL:CURL"] = [this](const std::string &a1, const std::string &a2) -> std::string {
+    tui_.show_tool("curl: " + a1);
+    return tool_curl(a1);
+  };
+  tools["TOOL:INTROSPECT"] = [this](const std::string &a1, const std::string &a2) -> std::string {
+    tui_.show_tool("introspecting: " + a1);
     return cfg_.introspect();
-  }
-  if (op == "TOOL:ASK") {
+  };
+  tools["TOOL:ASK"] = [this](const std::string &a1, const std::string &a2) -> std::string {
     tui_.set_thinking(false);
-    tui_.show_tool("asking: " + arg1 + " " + arg2);
-    if (cfg_.audio_user_prompt_) {
-      audio::play_user_prompt();
-    }
+    tui_.show_tool("asking: " + a1 + " " + a2);
+    if (cfg_.audio_user_prompt_) { audio::play_user_prompt(); }
     return tui_.readline();
-  }
-  if (op == "TOOL:RESTART") {
+  };
+  tools["TOOL:RESTART"] = [this](const std::string &a1, const std::string &a2) -> std::string {
     tui_.show_tool("restart ...");
     return restart();
-  }
-  if (op == "TOOL:PERMISSION") {
+  };
+  tools["TOOL:PERMISSION"] = [this](const std::string &a1, const std::string &a2) -> std::string {
     tui_.set_thinking(false);
-    tui_.show_tool("asking permission: " + arg1 + " " + arg2);
-    if (cfg_.audio_user_prompt_) {
-      audio::play_user_prompt();
-    }
-    return tui_.confirm_dialog(arg1 + " " + arg2) ? "YES" : "NO";
-  }
-  if (op == "TOOL:RUN") {
-    return tool_run(cfg_, tui_, arg1, arg2);
-  }
-  if (op == "TOOL:BUILD") {
-    auto result = build_run(cfg_.sandbox_, arg1, [&](const std::string &msg) {
+    tui_.show_tool("asking permission: " + a1 + " " + a2);
+    if (cfg_.audio_user_prompt_) { audio::play_user_prompt(); }
+    return tui_.confirm_dialog(a1 + " " + a2) ? "YES" : "NO";
+  };
+  tools["TOOL:RUN"] = [this](const std::string &a1, const std::string &a2) -> std::string {
+    return tool_run(cfg_, tui_, a1, a2);
+  };
+  tools["TOOL:BUILD"] = [this](const std::string &a1, const std::string &a2) -> std::string {
+    auto result = build_run(cfg_.sandbox_, a1, [&](const std::string &msg) {
       tui_.show_tool(msg);
-    }, arg2);
-    return result.success_ ? result.output_ : result.output_;
-  }
-  if (op == "TOOL:REPLACE") {
-    tui_.show_tool("replace: " + arg1);
-    const auto path = resolve_path(cfg_.sandbox_, arg1);
+    }, a2);
+    return result.output_;
+  };
+  tools["TOOL:REPLACE"] = [this](const std::string &a1, const std::string &a2) -> std::string {
+    tui_.show_tool("replace: " + a1);
+    const auto path = resolve_path(cfg_.sandbox_, a1);
     if (cfg_.permission_prompt_ && !tui_.confirm_dialog(std::format("Allow model to replace in {}?", path))) {
       return "ERROR: action prevented by user";
     }
     backup_file(cfg_, tui_, path);
-    auto result = tool_replace(cfg_.sandbox_, arg1, arg2);
+    auto result = tool_replace(cfg_.sandbox_, a1, a2);
     if (!utils::starts_with(result, "OK")) {
       tui_.append_token(ICON_ERR + result);
     } else {
       broadcast_reload(cfg_, tui_);
     }
     return result;
-  }
-  if (op == "TOOL:MCP") {
-    tui_.show_tool("mcp: " + arg1);
-    return mcp_client_.call_tool(arg1, arg2, cfg_.sandbox_);
-  }
-  if (op == "TOOL:GRAPH") {
+  };
+  tools["TOOL:MCP"] = [this](const std::string &a1, const std::string &a2) -> std::string {
+    tui_.show_tool("mcp: " + a1);
+    return mcp_client_.call_tool(a1, a2, cfg_.sandbox_);
+  };
+  tools["TOOL:GRAPH"] = [this](const std::string &a1, const std::string &a2) -> std::string {
     const int cols = tui_.get_term_cols() * 0.75;
-    auto graphResult = tool_graph(cols, arg1 + arg2);
-    if (graphResult.success_) {
-      tui_.append_lines(graphResult.data_);
-    }
+    auto graphResult = tool_graph(cols, a1 + a2);
+    if (graphResult.success_) { tui_.append_lines(graphResult.data_); }
     return graphResult.success_ ? "OK" : graphResult.message_;
-  }
-  if (op == "TOOL:TABLE") {
-    const auto result = tool_table(arg1, arg2);
+  };
+  tools["TOOL:TABLE"] = [this](const std::string &a1, const std::string &a2) -> std::string {
+    const auto result = tool_table(a1, a2);
     if (!result.error.empty()) {
       tui_.show_tool("table error: " + result.error);
-      tui_.append_line(arg2);
+      tui_.append_line(a2);
       return result.error;
     }
     tui_.append_lines(result.rows);
     return "OK";
-  }
-  if (op == "TOOL:PLAY") {
-    const std::string notes = arg1 + " " + arg2;
+  };
+  tools["TOOL:PLAY"] = [this](const std::string &a1, const std::string &a2) -> std::string {
+    const std::string notes = a1 + " " + a2;
     tui_.show_tool("play: " + notes);
     auto result = audio::play_script(notes);
-    if (!result.error.empty()) {
-      return result.error;
-    }
+    if (!result.error.empty()) { return result.error; }
     audio::play_events(result.events);
     size_t total = 0;
-    for (const auto &ev : result.events) total += ev.size();
+    for (const auto &ev : result.events) { total += ev.size(); }
     return "OK: played " + std::to_string(total) + " notes in "
            + std::to_string(result.events.size()) + " events";
+  };
+  return tools;
+}
+
+std::string Agent::process_tool(const std::string &cmd) {
+  std::string op, arg1, arg2;
+  auto WS = cmd.find_first_of(" \n");
+  if (WS == std::string::npos) {
+    op = utils::trim(cmd);
+  } else {
+    op = utils::trim(cmd.substr(0, WS));
+    std::string rest = cmd.substr(WS + 1);
+    // clear leading WS from rest
+    rest.erase(0, rest.find_first_not_of(" \t"));
+
+    // Quote-aware arg splitting (handles "multi word" patterns)
+    ToolArgs ta = split_tool_args(rest);
+    arg1 = ta.arg1;
+    arg2 = ta.arg2;
   }
-  return "ERROR: unknown tool: [" + op + "]";
+
+  auto it = tools_.find(op);
+  if (it == tools_.end()) {
+    return "ERROR: unknown tool: [" + op + "]";
+  }
+  return it->second(arg1, arg2);
 }
 
 void Agent::invoke_tool(const std::string &buffer, const std::string_view template_str) {

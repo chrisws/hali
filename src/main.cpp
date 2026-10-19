@@ -474,12 +474,11 @@ static void handle_slash(const std::string &input, HaliConfig &cfg, Agent &agent
 }
 
 //
-// main()
+// Parse command-line arguments into config and local state.
 //
-int main(int argc, char **argv) {
-  HaliConfig cfg;
-
-  // ── Parse arguments (command-line overrides saved settings) ──────
+static void parse_args(int argc, char **argv, HaliConfig &cfg,
+                       mcp::Client &mcp_client, bool &do_mcp_test,
+                       std::string &cli_log_level) {
   auto resolve_path = [](const std::string &arg) -> std::string {
     if (arg.substr(0, 2) == "~/") {
       const char *home = getenv("HOME");
@@ -492,9 +491,8 @@ int main(int argc, char **argv) {
     return arg;
   };
 
-  bool do_mcp_test = false;
-  std::string cli_log_level;
-  mcp::Client mcp_client;
+  do_mcp_test = false;
+  cli_log_level.clear();
 
   for (int i = 1; i < argc; ++i) {
     auto take_next = [&](const char *flag) -> std::string {
@@ -533,12 +531,25 @@ int main(int argc, char **argv) {
       cfg.backup_path_ = take_next(a.c_str());
     } else if (a == "-h" || a == "--help") {
       ui::usage();
-      return 0;
+      std::exit(0);
     } else if (!a.empty() && a[0] == '-') {
       std::fprintf(stderr, "hali: unknown option '%s'  (try --help)\n", a.c_str());
       std::exit(1);
     }
   }
+}
+
+//
+// main()
+//
+int main(int argc, char **argv) {
+  HaliConfig cfg;
+
+  // ── Parse arguments (command-line overrides saved settings) ──────
+  bool do_mcp_test = false;
+  std::string cli_log_level;
+  mcp::Client mcp_client;
+  parse_args(argc, argv, cfg, mcp_client, do_mcp_test, cli_log_level);
 
   // ── Load persisted settings first (provides defaults) ─────────────
   cfg.load_settings();

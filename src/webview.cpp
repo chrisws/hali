@@ -460,6 +460,89 @@ struct WebServer {
     send_http_response(fd, 200, "OK", mime_type(rel_path), content);
   }
 
+  // Handle a WebSocket upgrade request and pump the bidirectional channel.
+  void handle_ws_upgrade(int fd, const Request &req) {
+    std::string key = req.header("sec-websocket-key");
+    if (key.empty()) {
+      log_write(LEVEL_INFO, "webview", "ws-upgrade bad request");
+      send_http_response(fd, 400, "Bad Request", "text/plain", "Expected WebSocket upgrade request");
+      ::close(fd);
+      return;
+    }
+
+    std::string accept = ws_accept_key(key);
+    std::ostringstream resp;
+    log_write(LEVEL_INFO, "webview", "ws-upgrade [%s] key[%s] accept[%s]", req.path.c_str(), key.c_str(), accept.c_str());
+    resp << "HTTP/1.1 101 Switching Protocols\r\n";
+    resp << "Upgrade: websocket\r\n";
+    resp << "Connection: Upgrade\r\n";
+    resp << "Sec-WebSocket-Accept: " << accept << "\r\n";
+    resp << "\r\n";
+    std::string out = resp.str();
+    size_t sent = 0;
+    while (sent < out.size()) {
+      ssize_t n = ::send(fd, out.data() + sent, out.size() - sent, MSG_WAITALL);
+      if (n <= 0) break;
+      sent += static_cast<size_t>(n);
+    }
+
+    log_write(LEVEL_INFO, "webview", "sent [%d] of [%d] bytes", sent, out.length());
+    {
+      std::lock_guard<std::mutex> lock(ws_mutex_);
+      ws_clients_.push_back(fd);
+    }
+
+    // Pump the client → server channel until the browser disconnects.
+    // Each text frame is pushed onto the message queue for the agent to consume.
+    std::string rx;  // leftover bytes that do not yet form a complete frame
+    char chunk[4096];
+    while (true) {
+      ssize_t n = ::recv(fd, chunk, sizeof(chunk), 0);
+      if (n <= 0) {
+        log_write(LEVEL_INFO, "webview", "ws recv [%d]", n);
+        break;
+      }
+      rx.append(chunk, static_cast<size_t>(n));
+      // Decode every complete frame in rx.
+      size_t pos = 0;
+      while (true) {
+        std::string text;
+        size_t consumed = ws_decode_frame(
+          rx.data() + pos, rx.size() - pos, text);
+        if (consumed == 0) break;  // incomplete — wait for more.
+        {
+          std::lock_guard<std::mutex> lock(msg_mutex_);
+          msg_queue_.push_back(std::move(text));
+        }
+        pos += consumed;
+      }
+      rx.erase(0, pos);
+    }
+    log_write(LEVEL_INFO, "webview", "ws connection released");
+    {
+      std::lock_guard<std::mutex> lock(ws_mutex_);
+      auto it = std::ranges::find(ws_clients_, fd);
+      if (it != ws_clients_.end()) {
+        ws_clients_.erase(it);
+      }
+    }
+    ::close(fd);
+  }
+
+  // Serve a static file request, normalising the path first.
+  void handle_static_file(int fd, const Request &req) {
+    std::string rel_path = req.path;
+    if (rel_path == "/" || rel_path.empty()) {
+      rel_path = "index.html";
+    } else if (!rel_path.empty() && rel_path[0] == '/') {
+      rel_path = rel_path.substr(1);
+    }
+
+    log_write(LEVEL_INFO, "webview", "serve %s", rel_path.c_str());
+    serve_file(fd, rel_path);
+    ::close(fd);
+  }
+
   // Per-connection handler: WebSocket upgrade or static file.
   void handle_client(int fd) {
     log_write(LEVEL_INFO, "webview", "handle request entered");
@@ -472,87 +555,12 @@ struct WebServer {
 
     Request req = parse_request(head);
 
-    // ── WebSocket upgrade ───────────────────────────────────────────
+    // ── Dispatch ────────────────────────────────────────────────────
     if (req.path == std::string(WS_PATH)) {
-      std::string key = req.header("sec-websocket-key");
-      if (key.empty()) {
-        log_write(LEVEL_INFO, "webview", "ws-upgrade bad request");
-        send_http_response(fd, 400, "Bad Request", "text/plain", "Expected WebSocket upgrade request");
-        ::close(fd);
-        return;
-      }
-
-      std::string accept = ws_accept_key(key);
-      std::ostringstream resp;
-      log_write(LEVEL_INFO, "webview", "ws-upgrade [%s] key[%s] accept[%s]", req.path.c_str(), key.c_str(), accept.c_str());
-      resp << "HTTP/1.1 101 Switching Protocols\r\n";
-      resp << "Upgrade: websocket\r\n";
-      resp << "Connection: Upgrade\r\n";
-      resp << "Sec-WebSocket-Accept: " << accept << "\r\n";
-      resp << "\r\n";
-      std::string out = resp.str();
-      size_t sent = 0;
-      while (sent < out.size()) {
-        ssize_t n = ::send(fd, out.data() + sent, out.size() - sent, MSG_WAITALL);
-        if (n <= 0) break;
-        sent += static_cast<size_t>(n);
-      }
-
-      log_write(LEVEL_INFO, "webview", "sent [%d] of [%d] bytes", sent, out.length());
-      {
-        std::lock_guard<std::mutex> lock(ws_mutex_);
-        ws_clients_.push_back(fd);
-      }
-
-      // Pump the client → server channel until the browser disconnects.
-      // Each text frame is pushed onto the message queue for the agent to consume.
-      std::string rx;  // leftover bytes that do not yet form a complete frame
-      char chunk[4096];
-      while (true) {
-        ssize_t n = ::recv(fd, chunk, sizeof(chunk), 0);
-        if (n <= 0) {
-          log_write(LEVEL_INFO, "webview", "ws recv [%d]", n);
-          break;
-        }
-        rx.append(chunk, static_cast<size_t>(n));
-        // Decode every complete frame in rx.
-        size_t pos = 0;
-        while (true) {
-          std::string text;
-          size_t consumed = ws_decode_frame(
-            rx.data() + pos, rx.size() - pos, text);
-          if (consumed == 0) break;  // incomplete — wait for more.
-          {
-            std::lock_guard<std::mutex> lock(msg_mutex_);
-            msg_queue_.push_back(std::move(text));
-          }
-          pos += consumed;
-        }
-        rx.erase(0, pos);
-      }
-      log_write(LEVEL_INFO, "webview", "ws connection released");
-      {
-        std::lock_guard<std::mutex> lock(ws_mutex_);
-        auto it = std::ranges::find(ws_clients_, fd);
-        if (it != ws_clients_.end()) {
-          ws_clients_.erase(it);
-        }
-      }
-      ::close(fd);
-      return;
+      handle_ws_upgrade(fd, req);
+    } else {
+      handle_static_file(fd, req);
     }
-
-    // ── Static file ─────────────────────────────────────────────────
-    std::string rel_path = req.path;
-    if (rel_path == "/" || rel_path.empty()) {
-      rel_path = "index.html";
-    } else if (!rel_path.empty() && rel_path[0] == '/') {
-      rel_path = rel_path.substr(1);
-    }
-
-    log_write(LEVEL_INFO, "webview", "serve %s", rel_path.c_str());
-    serve_file(fd, rel_path);
-    ::close(fd);
   }
 }; // struct WebServer
 

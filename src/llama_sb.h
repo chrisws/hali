@@ -346,6 +346,11 @@ private:
   void sync_and_capture_mtp(const llama_token *tokens, int n_tokens, llama_pos pos_start);
   void mtp_init(const LlamaLoad &load);
   bool mtp_round(llama_token anchor, vector<llama_token> &accepted, llama_token &next);
+  void mtp_suffix_fallback(int &k, bool &from_suffix);
+  void mtp_update_stats(int k, int n_acc, bool from_suffix, int limit,
+                        std::chrono::high_resolution_clock::time_point t0,
+                        std::chrono::high_resolution_clock::time_point t1,
+                        std::chrono::high_resolution_clock::time_point t_end);
   void mtp_reset_state();
   void mtp_trim_draft(llama_pos from);
   bool decode_anchor(llama_token tok);

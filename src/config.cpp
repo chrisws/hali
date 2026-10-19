@@ -187,18 +187,12 @@ bool HaliConfig::save_settings() const {
   return f.good();
 }
 
-//
-// System prompt
-//
-std::string HaliConfig::build_system_prompt() const {
+std::string HaliConfig::prompt_identity() const {
   std::string p;
-  int kv_threshold = gpu_info::kv_restart_threshold();
   p +=
     "You are Hali, an agentic AI assistant for software development. "
     "Proceed with caution, guided by logic and the pursuit of knowledge.\n\n"
-
     "Your sandbox (project directory) is: " + sandbox_ + "\n\n";
-
   if (!extra_dirs_.empty()) {
     p += "You also have read-only access to these extra directories:\n";
     for (const auto &d : extra_dirs_) {
@@ -206,7 +200,48 @@ std::string HaliConfig::build_system_prompt() const {
     }
     p += "Use TOOL:LIST, TOOL:READ, TOOL:SEARCH, and TOOL:EXISTS with absolute paths to access files in these directories.\n\n";
   }
+  return p;
+}
 
+std::string HaliConfig::prompt_audio() const {
+  if (!audio_enabled_) {
+    return "";
+  }
+  return
+    "## Additional Tools\n"
+    "  TOOL:PLAY   <notes>         play a melody (space-separated note tokens)\n\n"
+    "## TOOL:PLAY Rules\n"
+    "- Play melodies using space-separated note tokens.\n"
+    "- Notes: letter (A-G) + optional accidental (# or -) + octave digit (0-6) + optional :duration\n"
+    "  - C4 = middle C, D#5 = D sharp octave 5, E-3 = E flat octave 3\n"
+    "  - C4:0.5 = C4 with explicit 0.5s duration\n"
+    "- Chords: wrap simultaneous notes in [brackets], e.g. [C4 E4 G4]\n"
+    "- Control tokens: T<BPM> (tempo, default 120), V<0-100> (volume, default 50), L<1-64> (note length, default 4), P<beats> (pause)\n"
+    "- Example: TOOL:PLAY C4 E4 G4 C5 plays a C major arpeggio\n"
+    "- Example: TOOL:PLAY T120 V70 C4:0.3 D4:0.3 E4:0.3 P1 C5:0.5\n"
+    "- Example: TOOL:PLAY [C4 E4 G4]:1.0 [F4 A4 C5]:1.0 plays two chords\n"
+    "- When the user asks you to play a tune, try your best interpretation, then ask for feedback.\n\n";
+}
+
+std::string HaliConfig::prompt_knowledge() const {
+  std::string p = mcp_context_;
+  for (const auto &kf : knowledge_files_) {
+    std::ifstream f(kf);
+    if (f) {
+      std::ostringstream oss; oss << f.rdbuf();
+      p += "## Knowledge: " + kf + "\n" + oss.str() + "\n\n";
+    }
+  }
+  return p;
+}
+
+//
+// System prompt
+//
+std::string HaliConfig::build_system_prompt() const {
+  std::string p;
+  int kv_threshold = gpu_info::kv_restart_threshold();
+  p += prompt_identity();
   p +=
     "## Core Principle\n"
     "Always follow this loop: THINK → DECIDE → ACT → RESPOND\n\n"
@@ -384,32 +419,9 @@ std::string HaliConfig::build_system_prompt() const {
     "<last few lines of conversation>\n"
     "```\n\n";
 
-  if (audio_enabled_) {
-    p +=
-      "## Additional Tools\n"
-      "  TOOL:PLAY   <notes>         play a melody (space-separated note tokens)\n\n"
-      "## TOOL:PLAY Rules\n"
-      "- Play melodies using space-separated note tokens.\n"
-      "- Notes: letter (A-G) + optional accidental (# or -) + octave digit (0-6) + optional :duration\n"
-      "  - C4 = middle C, D#5 = D sharp octave 5, E-3 = E flat octave 3\n"
-      "  - C4:0.5 = C4 with explicit 0.5s duration\n"
-      "- Chords: wrap simultaneous notes in [brackets], e.g. [C4 E4 G4]\n"
-      "- Control tokens: T<BPM> (tempo, default 120), V<0-100> (volume, default 50), L<1-64> (note length, default 4), P<beats> (pause)\n"
-      "- Example: TOOL:PLAY C4 E4 G4 C5 plays a C major arpeggio\n"
-      "- Example: TOOL:PLAY T120 V70 C4:0.3 D4:0.3 E4:0.3 P1 C5:0.5\n"
-      "- Example: TOOL:PLAY [C4 E4 G4]:1.0 [F4 A4 C5]:1.0 plays two chords\n"
-      "- When the user asks you to play a tune, try your best interpretation, then ask for feedback.\n\n";
-  }
+  p += prompt_audio();
 
-  p += mcp_context_;
-
-  for (const auto &kf : knowledge_files_) {
-    std::ifstream f(kf);
-    if (f) {
-      std::ostringstream oss; oss << f.rdbuf();
-      p += "## Knowledge: " + kf + "\n" + oss.str() + "\n\n";
-    }
-  }
+  p += prompt_knowledge();
   return p;
 }
 

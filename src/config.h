@@ -113,6 +113,11 @@ struct HaliConfig {
   // MCP support
   std::string mcp_context_;
   std::vector<std::string> mcp_filter_;
+
+private:
+  std::string prompt_identity() const;
+  std::string prompt_audio() const;
+  std::string prompt_knowledge() const;
 };
 
 

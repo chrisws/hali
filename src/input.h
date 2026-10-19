@@ -9,7 +9,9 @@
 #ifndef INPUT_H
 #define INPUT_H
 
+#include <functional>
 #include <string>
+#include <unordered_map>
 
 #include "input_history.h"
 #include "tui_context.h"
@@ -29,7 +31,10 @@ class Input {
   void load(const std::string &path) { history_.load(path); }
   void save(const std::string &path) const { history_.save(path); }
 
+  using Handler = std::function<bool(const InputEvent &, TuiContext &, std::string &)>;
+
   private:
+  void build_dispatch();
   int pos_of_word_start(int pos) const;
   int pos_of_word_end(int pos) const;
   int move_to_prev_word(int pos) const;
@@ -47,7 +52,7 @@ class Input {
   int cursor_pos_;
   int scroll_offset_;
   InputHistory history_;
+  std::unordered_map<std::string, Handler> dispatch_;
 };
-
 
 #endif
