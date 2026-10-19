@@ -278,14 +278,60 @@ static void slash_session(const std::string &rest, HaliConfig &cfg, Tui &tui) {
 }
 
 //
+// Parse "FP <file> <line> <severity> <message>" lines from model output.
+//
+static std::vector<FalsePositive> parse_false_positives(const std::string &text) {
+  std::vector<FalsePositive> fps;
+  std::istringstream iss(text);
+  std::string line;
+  while (std::getline(iss, line)) {
+    // Trim leading whitespace
+    auto pos = line.find_first_not_of(" \t");
+    if (pos == std::string::npos) continue;
+    line = line.substr(pos);
+    if (line.rfind("FP ", 0) != 0) continue;
+
+    // FP <file> <line> <severity> <message>
+    std::istringstream ls(line.substr(3));
+    FalsePositive fp;
+    if (!(ls >> fp.file)) continue;
+    int ln = 0;
+    if (!(ls >> ln)) continue;
+    fp.line = ln;
+    if (!(ls >> fp.severity)) continue;
+    // Rest of the line is the message
+    std::string msg;
+    std::getline(ls, msg);
+    msg.erase(0, msg.find_first_not_of(" \t"));
+    if (msg.empty()) continue;
+    fp.message = msg;
+    fps.push_back(std::move(fp));
+  }
+  return fps;
+}
+
+//
 // /audit – scan the codebase for model-hostility issues
 //
 static void slash_audit(const std::string &rest, HaliConfig &cfg, Tui &tui, Agent &agent) {
   std::string root = rest.empty() ? cfg.sandbox_ : rest;
+  std::string fp_path = cfg.sandbox_ + "/audit_feedback.json";
+
+  // Load previously confirmed false positives
+  auto fps = load_false_positives(fp_path);
+
   tui.append_line(ICON_SYS + "Scanning " + root + " …");
   tui.redraw_all();
 
   AuditResult r = audit_cpp(root);
+
+  // Filter out known false positives
+  int before = static_cast<int>(r.issues.size());
+  filter_false_positives(r, fps);
+  int filtered = before - static_cast<int>(r.issues.size());
+  if (filtered > 0) {
+    tui.append_line(ICON_SYS + std::to_string(filtered) + " known false positive(s) skipped");
+  }
 
   tui.append_line(ICON_SYS + std::to_string(r.total_files) + " files, " +
                    std::to_string(r.total_lines) + " lines");
@@ -306,10 +352,38 @@ static void slash_audit(const std::string &rest, HaliConfig &cfg, Tui &tui, Agen
 
   // Offer to let the model resolve the issues
   if (tui.confirm_dialog("Allow Hali to resolve these issues?")) {
-    std::string prompt = audit_format_prompt(r);
+    // Write the report as a plan file so it survives KV flushes
+    std::string plan_path = cfg.sandbox_ + "/plans/audit_report.md";
+    audit_write_report(r, plan_path);
+    tui.append_line(ICON_SYS + "Report saved to " + plan_path);
+
+    std::string prompt = audit_format_prompt(r, plan_path);
     tui.append_line(ICON_SYS + "Handing audit report to model…");
     tui.redraw_all();
     agent.run_turn(prompt);
+
+    // Parse the model's response for confirmed false positives
+    auto new_fps = parse_false_positives(agent.last_response());
+    if (!new_fps.empty()) {
+      // Avoid duplicates
+      for (const auto &nf : new_fps) {
+        bool dup = false;
+        for (const auto &existing : fps) {
+          if (existing.file == nf.file && existing.line == nf.line &&
+              existing.severity == nf.severity && existing.message == nf.message) {
+            dup = true;
+            break;
+          }
+        }
+        if (!dup) {
+          fps.push_back(nf);
+        }
+      }
+      save_false_positives(fp_path, fps);
+      tui.append_line(ICON_SYS + std::to_string(new_fps.size()) +
+                       " false positive(s) recorded to " + fp_path);
+      tui.redraw_all();
+    }
   }
 }
 

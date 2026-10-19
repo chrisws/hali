@@ -652,6 +652,7 @@ bool Agent::run_turn(const std::string &user_message) {
   turn_tool_errors_ = 0;
   turn_files_read_ = 0;
   turn_files_written_ = 0;
+  last_response_.clear();
   bool flushed = false;
   if (!llama_->add_message(*iter_, "user", effective_message)) {
     if (llama_->is_memory_flush()) {
@@ -785,6 +786,7 @@ bool Agent::run_turn(const std::string &user_message) {
         auto token = buffer.substr(0, pos + 1);
         tui_.append_token(token);
         broadcast_message(cfg_, tui_, token);
+        last_response_ += token;
       }
       buffer = buffer.substr(pos + 1);
     }
@@ -793,6 +795,7 @@ bool Agent::run_turn(const std::string &user_message) {
   if (!buffer.empty()) {
     tui_.append_token(buffer);
     broadcast_message(cfg_, tui_, buffer);
+    last_response_ += buffer;
   }
 
   tui_.set_thinking(false);

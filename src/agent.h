@@ -30,6 +30,7 @@ struct Agent {
   ~Agent() = default;
 
   bool run_turn(const std::string &user_message);
+  std::string last_response() const { return last_response_; }
   bool setup_embed(const std::string &path);
   bool setup_model();
   void reset_conversation(const std::string &sysprompt);
@@ -66,6 +67,7 @@ struct Agent {
   void invoke_tool(const std::string &buffer, std::string_view template_str);
 
   UsageLog usage_log_;
+  std::string last_response_;
   int turn_number_ = 0;
   int turn_tool_calls_ = 0;
   int turn_tool_errors_ = 0;

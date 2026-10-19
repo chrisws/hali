@@ -17,6 +17,7 @@ void usage_log_test();
 void suffix_drafter_test();
 void audio_test();
 void config_test();
+void audit_test();
 
 #include "logging.h"
 
@@ -36,6 +37,7 @@ int main() {
   logging_filter_test();
   replace_test();
   config_test();
+  audit_test();
   build_test();
   table_test();
   usage_log_test();

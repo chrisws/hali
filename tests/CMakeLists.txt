@@ -28,6 +28,7 @@ add_executable(hali_tests
   ../src/audio.cpp
   ../src/audio_impl.cpp
   ../src/config.cpp
+  ../src/audit.cpp
   src/gpu_info_stub.cpp
   src/utf8_test.cpp
   src/file_test.cpp
@@ -48,6 +49,7 @@ add_executable(hali_tests
   src/suffix_drafter_test.cpp
   src/audio_test.cpp
   src/config_test.cpp
+  src/audit_test.cpp
   src/main.cpp
 )
 
