@@ -24,6 +24,7 @@ class Input {
   std::string readline(TuiContext &tui);
   std::string get_input_buf() const { return input_buf_; }
   int get_scroll_offset() const { return scroll_offset_; }
+  void set_scroll_offset(int offset) { scroll_offset_ = offset; }
   int get_cursor_pos() const { return cursor_pos_; }
   void load(const std::string &path) { history_.load(path); }
   void save(const std::string &path) const { history_.save(path); }

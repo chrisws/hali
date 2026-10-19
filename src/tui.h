@@ -376,6 +376,7 @@ class Tui final: TuiContext {
   void resize();
   bool is_escape();
   bool has_input() const;
+  void poll_mouse_wheel();
   void setup_model(const std::string &model_name, const LlamaMemoryInfo &mem, bool thinking);
   void tick_spinner();
   void set_thinking(bool on);

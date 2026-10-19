@@ -882,6 +882,23 @@ bool Tui::has_input() const {
   return poll(&pfd, 1, 10) > 0 && (pfd.revents & POLLIN);
 }
 
+void Tui::poll_mouse_wheel() {
+  ncinput ni{};
+  if (notcurses_get_nblock(nc_, &ni) != 0) {
+    return; // no pending input
+  }
+  if (ni.id == static_cast<uint32_t>(Key::SCROLL_UP)) {
+    input_.set_scroll_offset(input_.get_scroll_offset() + 3);
+    redraw_chat();
+    notcurses_render(nc_);
+  } else if (ni.id == static_cast<uint32_t>(Key::SCROLL_DOWN)) {
+    input_.set_scroll_offset(std::max(0, input_.get_scroll_offset() - 3));
+    redraw_chat();
+    notcurses_render(nc_);
+  }
+  // Other events are consumed and discarded
+}
+
 bool Tui::is_escape() {
   ncinput ni{};
   notcurses_get_nblock(nc_, &ni);
@@ -893,6 +910,14 @@ bool Tui::is_escape() {
   }
   if (ni.id == NCKEY_RESIZE) {
     resize();
+    redraw_all();
+  }
+  if (ni.id == static_cast<uint32_t>(Key::SCROLL_UP)) {
+    input_.set_scroll_offset(input_.get_scroll_offset() + 3);
+    redraw_all();
+  }
+  if (ni.id == static_cast<uint32_t>(Key::SCROLL_DOWN)) {
+    input_.set_scroll_offset(std::max(0, input_.get_scroll_offset() - 3));
     redraw_all();
   }
   return false;

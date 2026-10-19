@@ -272,6 +272,20 @@ std::string Input::readline(TuiContext &tui) {
       continue;
     }
 
+    // Mouse wheel scroll
+    if (ev.is(Key::SCROLL_UP)) {
+      log_write(LEVEL_DEBUG, "input", "Mouse wheel up");
+      scroll_offset_ += 3;
+      redraw_chat();
+      continue;
+    }
+    if (ev.is(Key::SCROLL_DOWN)) {
+      log_write(LEVEL_DEBUG, "input", "Mouse wheel down");
+      scroll_offset_ = std::max(0, scroll_offset_ - 3);
+      redraw_chat();
+      continue;
+    }
+
     if (ev.is(Key::UP)) {
       log_write(LEVEL_DEBUG, "input", "Up arrow key pressed");
       std::string hist_entry;
