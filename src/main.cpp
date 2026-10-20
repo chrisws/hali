@@ -558,7 +558,7 @@ int main(int argc, char **argv) {
   if (!cli_log_level.empty()) {
     log_open(cli_log_level);
   } else {
-    log_open(cfg.log_level_str_, cfg.log_file_, cfg.log_filter_);
+    log_open(cfg.log_level_str_, cfg.log_file_, cfg.log_filter_, cfg.log_erase_);
   }
 
   // ── Init curl globally ────────────────────────────────────────────
@@ -684,6 +684,9 @@ int main(int argc, char **argv) {
     webview::stop();
   }
 
+  // Show a "shutting down" popup while cleanup runs.
+  tui.show_modal_popup("⏳ Shutting down…", "Saving state and cleaning up");
+
   log_write(LEVEL_INFO, "main", "hali exiting");
 
   // Dump usage log for post-hoc analysis.
@@ -699,5 +702,6 @@ int main(int argc, char **argv) {
   tui.history_save(history_path());
   audio::shutdown();
   curl_close();
+
   return 0;
 }

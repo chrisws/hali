@@ -397,7 +397,7 @@ ToolMap Agent::build_tool_dispatch() {
     if (!utils::ends_with(path, SESSION_MD)) {
       if (cfg_.permission_prompt_ && !tui_.confirm_dialog(std::format("Allow model to write {}?", path))) {
         return "ERROR: action prevented by user";
-      } else {
+      } else if (!cfg_.val_write_validate_) {
         const auto validate = tool_write_validate(path, data);
         if (!validate.empty() && !tui_.confirm_dialog(std::format("[{}] - Allow model to write {}?", validate, path))) {
           return "ERROR: action prevented by user - " + validate;
@@ -421,11 +421,13 @@ ToolMap Agent::build_tool_dispatch() {
     if (!path_in_sandbox(cfg_.sandbox_, path)) {
       return "ERROR: path outside sandbox";
     }
-    const auto validate = tool_patch_validate(path, a2);
-    if (!validate.empty()) {
-      tui_.append_token(ICON_ERR + a2);
-      if (!tui_.confirm_dialog(std::format("[{}] - Allow model to patch {}?", validate, path))) {
-        return "ERROR: action prevented by user - " + validate;
+    if (!cfg_.val_patch_validate_) {
+      const auto validate = tool_patch_validate(path, a2);
+      if (!validate.empty()) {
+        tui_.append_token(ICON_ERR + a2);
+        if (!tui_.confirm_dialog(std::format("[{}] - Allow model to patch {}?", validate, path))) {
+          return "ERROR: action prevented by user - " + validate;
+        }
       }
     }
     backup_file(cfg_, tui_, path);

@@ -96,6 +96,10 @@ struct HaliConfig {
   bool  audio_tool_tick_  = false;
   bool  audio_user_prompt_ = false;
 
+  // Validation gates (skip validate calls for capable models)
+  bool  val_write_validate_ = false;
+  bool  val_patch_validate_ = false;
+
   KVCachePreset kv_preset_ = KVCachePreset::Compact;
 
   // Context extension (relevant when VRAM caps n_ctx)

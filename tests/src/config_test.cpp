@@ -304,6 +304,51 @@ static void test_log_erase_load() {
   cout << "test_log_erase_load passed" << endl;
 }
 
+static void test_validation_defaults() {
+  HaliConfig cfg;
+  assert(cfg.val_write_validate_ == false);
+  assert(cfg.val_patch_validate_ == false);
+  cout << "test_validation_defaults passed" << endl;
+}
+
+static void test_validation_load() {
+  const string path = "/tmp/hali_test_validation.json";
+  const string content =
+    "{\n"
+    "  \"validation\": {\n"
+    "    \"write_validate\": true,\n"
+    "    \"patch_validate\": false\n"
+    "  }\n"
+    "}\n";
+  {
+    ofstream f(path);
+    f << content;
+  }
+
+  HaliConfig cfg;
+  cfg.set_config(path);
+  cfg.load_settings();
+
+  assert(cfg.val_write_validate_ == true);
+  assert(cfg.val_patch_validate_ == false);
+
+  string json = cfg.introspect();
+  auto doc = json::parse(json);
+  assert(doc.is_valid());
+  auto root = doc.get_root();
+  auto validation = root.get_child("validation");
+  bool v1 = false, v2 = false;
+  assert(validation.get_bool("write_validate", v1));
+  assert(validation.get_bool("patch_validate", v2));
+  assert(v1 == true);
+  assert(v2 == false);
+
+  std::error_code ec;
+  std::filesystem::remove(path, ec);
+
+  cout << "test_validation_load passed" << endl;
+}
+
 static void test_system_prompt_extra_dirs() {
   HaliConfig cfg;
   cfg.sandbox_ = "/tmp/sandbox";
@@ -338,6 +383,8 @@ void config_test() {
   test_introspect_float_precision();
   test_log_erase_default();
   test_log_erase_load();
+  test_validation_defaults();
+  test_validation_load();
   test_system_prompt_extra_dirs();
   cout << "\nAll config tests passed!\n" << endl;
 }

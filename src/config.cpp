@@ -161,6 +161,16 @@ void HaliConfig::load_settings() {
     logging.get_bool("erase", log_erase_);
   }
 
+  // ── permission_prompt ──────────────────────────────────────────
+  root.get_bool("permission_prompt", permission_prompt_);
+
+  // ── validation section ─────────────────────────────────────────
+  auto validation = root.get_child("validation");
+  if (validation.is_object()) {
+    validation.get_bool("write_validate", val_write_validate_);
+    validation.get_bool("patch_validate", val_patch_validate_);
+  }
+
   // ── extra_dirs section ─────────────────────────────────────────
   std::vector<json::JsonValue> dirs;
   if (root.get_array("extra_dirs", dirs)) {
@@ -501,6 +511,13 @@ std::string HaliConfig::introspect() const {
   logging.set_str("file", log_file_);
   logging.set_str("filter", log_filter_);
   logging.set_bool("erase", log_erase_);
+
+  root.set_bool("permission_prompt", permission_prompt_);
+
+  // validation
+  auto validation = root.get_child("validation");
+  validation.set_bool("write_validate", val_write_validate_);
+  validation.set_bool("patch_validate", val_patch_validate_);
 
   // extra_dirs
   root.set_arr("extra_dirs", extra_dirs_);
