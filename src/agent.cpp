@@ -32,6 +32,7 @@
 #include "icon.h"
 #include "agent_utils.h"
 #include "build.h"
+#include "planner.h"
 
 //
 // SESSION.md - see config.cpp
@@ -305,7 +306,14 @@ bool Agent::rag_index(const std::string &path) const {
 
 std::string Agent::restart() {
   if (fs::exists(SESSION_MD)) {
-    std::vector<std::string> knowledge_files;
+    // Append active plan state to SESSION.md before reset
+    if (!planner_.steps().empty()) {
+      const std::string plan_md = "\n## Active Plan\n" + planner_.to_markdown() + "\n";
+      std::ofstream ofs(SESSION_MD, std::ios::app);
+      if (ofs) {
+        ofs << plan_md;
+      }
+    }
     reset_conversation(cfg_.build_system_prompt());
     tui_.append_line(ICON_ERR + "Session restarted");
     tui_.redraw_all();
@@ -534,6 +542,45 @@ ToolMap Agent::build_tool_dispatch() {
     return "OK: played " + std::to_string(total) + " notes in "
            + std::to_string(result.events.size()) + " events";
   };
+  tools["TOOL:PLAN"] = [this](const std::string &a1, const std::string &a2) -> std::string {
+    const std::string cmd = utils::trim(a1 + " " + a2);
+    if (cmd.empty()) {
+      tui_.show_tool("plan: display");
+      if (planner_.steps().empty()) {
+        return "No active plan. Use TOOL:PLAN set <goal> to create one.";
+      }
+      return planner_.to_markdown();
+    }
+    auto space = cmd.find(' ');
+    const std::string verb = (space == std::string::npos) ? cmd : cmd.substr(0, space);
+    const std::string arg  = (space == std::string::npos) ? "" : utils::trim(cmd.substr(space + 1));
+    if (verb == "set") {
+      tui_.show_tool("plan: set goal");
+      planner_.set_goal(arg);
+      return "OK: goal set to \"" + arg + "\"";
+    }
+    if (verb == "add") {
+      tui_.show_tool("plan: add step");
+      planner_.add_step(arg);
+      return "OK: added step \"" + arg + "\" (" + std::to_string(planner_.steps().size()) + " total)";
+    }
+    if (verb == "advance") {
+      tui_.show_tool("plan: advance");
+      planner_.advance();
+      if (planner_.complete()) {
+        return "OK: plan complete.";
+      }
+      return "OK: advanced. " + planner_.to_markdown();
+    }
+    if (verb == "skip") {
+      tui_.show_tool("plan: skip");
+      size_t idx = 0;
+      try { idx = std::stoul(arg); } catch (...) { return "ERROR: invalid index: " + arg; }
+      planner_.skip(idx);
+      return "OK: skipped step " + arg + ". " + planner_.to_markdown();
+    }
+    return "ERROR: unknown plan command: " + verb + " (use: set, add, advance, skip)";
+  };
   return tools;
 }
 
@@ -596,7 +643,6 @@ void Agent::invoke_tool(const std::string &buffer, const std::string_view templa
     turn_tool_errors_++;
   }
   const std::string content = TOOL_RESULT + std::vformat(template_str, std::make_format_args(result)) + memory_info_status();
-  // log_write(LEVEL_DEBUG, "tool: [%s] result: [%s]", tool.c_str(), result.c_str());
   tui_.update_usage(tokens_per_sec(), llama_->memory_info());
   if (!llama_->add_message(*iter_, "tool_result", content)) {
     tui_.append_line(ICON_ERR + "tool result inject: " + llama_->last_error());
@@ -695,7 +741,6 @@ bool Agent::run_turn(const std::string &user_message) {
         break;
       }
     }
-    // log_write(DEBUG_LEVEL, "fetch_tool: \n%s\n\n", buffer.c_str());
   };
 
   while (iter_->_has_next && !tui_.is_escape()) {
@@ -708,20 +753,22 @@ bool Agent::run_turn(const std::string &user_message) {
         std::string next = llama_->next(*iter_);
         tokens.push_back(next);
         total_len += next.size();
-        if (next == ">") { break; }
+        if (next == ">") {
+          break;
+        }
       }
       std::string tag = ThinkParser::assemble_tag(tokens);
       if (tag.empty() || tag.size() >= 32) {
         // not a real tag — treat as plain text
-        for (const auto &t : tokens) { buffer += t; }
+        for (const auto &t : tokens) {
+          buffer += t;
+        }
       } else {
         buffer += tag;
       }
     } else {
       buffer += tok;
     }
-
-    // log_write(DEBUG_LEVEL, "%s", buffer.c_str());
 
     if (auto skip = thinker.check_start(buffer); skip > 0) {
       buffer = buffer.substr(skip);

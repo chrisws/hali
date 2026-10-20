@@ -19,6 +19,7 @@ void audio_test();
 void config_test();
 void audit_test();
 void think_parser_test();
+void planner_test();
 
 #include "logging.h"
 
@@ -45,5 +46,6 @@ int main() {
   suffix_drafter_test();
   audio_test();
   think_parser_test();
+  planner_test();
   return 0;
 }

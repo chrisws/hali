@@ -190,6 +190,7 @@ add_executable(hali
   src/string_utils.cpp
   yyjson/src/yyjson.c
   src/config.cpp
+  src/planner.cpp
   src/gpu_info.cpp
   src/sha1.cpp
   src/mcp_format.cpp

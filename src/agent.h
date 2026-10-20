@@ -19,6 +19,7 @@
 #include "tui.h"
 #include "mcp_client.h"
 #include "usage_log.h"
+#include "planner.h"
 
 using ToolFn  = std::function<std::string(const std::string &, const std::string &)>;
 using ToolMap = std::unordered_map<std::string, ToolFn>;
@@ -77,6 +78,7 @@ struct Agent {
   int flush_count_ = 0;
 
   UsageLog usage_log_;
+  Planner planner_;
   std::string last_response_;
   int turn_number_ = 0;
   int turn_tool_calls_ = 0;
