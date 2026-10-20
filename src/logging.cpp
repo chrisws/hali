@@ -49,7 +49,7 @@ static LogLevel get_level(const std::string& level) {
   return result;
 }
 
-void log_open(const std::string& level, const std::string& file, const std::string& filter) {
+void log_open(const std::string& level, const std::string& file, const std::string& filter, bool erase) {
   std::lock_guard<std::mutex> lock(g_log_mutex);
   g_log_console = false;
 
@@ -58,6 +58,12 @@ void log_open(const std::string& level, const std::string& file, const std::stri
   std::string filter_str = filter;
   bool has_file = !file_path.empty();
   bool has_filter = !filter_str.empty();
+
+  // Erase the log file before opening if requested
+  if (erase && has_file) {
+    std::error_code ec_erase;
+    fs::remove(file_path, ec_erase);
+  }
 
   // Check if the level argument is actually a path to an existing JSON config file
   std::error_code ec;

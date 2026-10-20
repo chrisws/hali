@@ -263,6 +263,47 @@ static void test_introspect_float_precision() {
   cout << "test_introspect_float_precision passed" << endl;
 }
 
+static void test_log_erase_default() {
+  HaliConfig cfg;
+  assert(cfg.log_erase_ == false);
+  cout << "test_log_erase_default passed" << endl;
+}
+
+static void test_log_erase_load() {
+  const string path = "/tmp/hali_test_erase.json";
+  const string content =
+    "{\n"
+    "  \"logging\": { \"level\": \"1\", \"file\": \"/tmp/erase_test.log\", \"erase\": true }\n"
+    "}\n";
+  {
+    ofstream f(path);
+    f << content;
+  }
+
+  HaliConfig cfg;
+  cfg.set_config(path);
+  cfg.load_settings();
+
+  assert(cfg.log_erase_ == true);
+  assert(cfg.log_file_ == "/tmp/erase_test.log");
+
+  // Verify introspect round-trips the value
+  string json = cfg.introspect();
+  auto doc = json::parse(json);
+  assert(doc.is_valid());
+  auto root = doc.get_root();
+  auto logging = root.get_child("logging");
+  bool erase = false;
+  assert(logging.get_bool("erase", erase));
+  assert(erase == true);
+
+  // Cleanup
+  std::error_code ec;
+  std::filesystem::remove(path, ec);
+
+  cout << "test_log_erase_load passed" << endl;
+}
+
 static void test_system_prompt_extra_dirs() {
   HaliConfig cfg;
   cfg.sandbox_ = "/tmp/sandbox";
@@ -295,6 +336,8 @@ void config_test() {
   test_introspect_nested();
   test_load_settings_nested();
   test_introspect_float_precision();
+  test_log_erase_default();
+  test_log_erase_load();
   test_system_prompt_extra_dirs();
   cout << "\nAll config tests passed!\n" << endl;
 }

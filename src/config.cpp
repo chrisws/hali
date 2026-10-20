@@ -158,6 +158,7 @@ void HaliConfig::load_settings() {
     logging.get_str("level", log_level_str_);
     logging.get_str("file", log_file_);
     logging.get_str("filter", log_filter_);
+    logging.get_bool("erase", log_erase_);
   }
 
   // ── extra_dirs section ─────────────────────────────────────────
@@ -499,6 +500,7 @@ std::string HaliConfig::introspect() const {
   logging.set_str("level", log_level_str_);
   logging.set_str("file", log_file_);
   logging.set_str("filter", log_filter_);
+  logging.set_bool("erase", log_erase_);
 
   // extra_dirs
   root.set_arr("extra_dirs", extra_dirs_);

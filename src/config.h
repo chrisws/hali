@@ -83,6 +83,7 @@ struct HaliConfig {
   std::string log_level_str_ = "1";
   std::string log_file_;
   std::string log_filter_;
+  bool  log_erase_ = false;
 
   // Suffix (n-gram) drafting (plan 08)
   bool  suffix_enabled_ = true;
