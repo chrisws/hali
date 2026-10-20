@@ -15,6 +15,7 @@
 #include <filesystem>
 #include <fstream>
 #include <memory>
+#include <poll.h>
 #include <random>
 
 #include "tui.h"

@@ -798,6 +798,7 @@ TableResult tool_table(const std::string &dims, const std::string &data) {
   result.rows.push_back(border("\u2514", "\u2534", "\u2518"));
   return result;
 }
+
 //
 // ThinkParser — think-tag state machine
 //
@@ -844,10 +845,10 @@ ThinkParser::EndResult ThinkParser::check_end(const std::string &buffer) {
   }
 
   static const std::vector<std::string> tags = {
-    "</" "think" ">",
-    "</|" "think" "|>",
-    "</" "think" "|>",
-    "</" "thought" ">"
+    "</think>",
+    "</|think|>",
+    "</think|>",
+    "</thought>"
   };
 
   for (const auto &tag : tags) {

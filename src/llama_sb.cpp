@@ -9,7 +9,6 @@
 #include <format>
 #include <span>
 #include <cmath>
-#include <cstring>
 #include <utility>
 
 #include "ggml-cuda.h"
@@ -17,7 +16,6 @@
 #include "log.h"
 
 #include "llama_sb.h"
-#include "llama-ext.h"
 #include "logging.h"
 #include "string_utils.h"
 

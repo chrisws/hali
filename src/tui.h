@@ -13,7 +13,6 @@
 #include <string>
 #include <vector>
 #include <memory>
-#include <poll.h>
 
 #include <notcurses/notcurses.h>
 #include "llama_sb.h"

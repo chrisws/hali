@@ -45,6 +45,8 @@ enum class Key : uint32_t {
   SCROLL_LOCK = NCKEY_SCROLL_LOCK,
   SCROLL_UP = NCKEY_SCROLL_UP,
   SCROLL_DOWN = NCKEY_SCROLL_DOWN,
+  BUTTON1 = NCKEY_BUTTON1,
+  MOTION = NCKEY_MOTION,
   NUM_LOCK = NCKEY_NUM_LOCK,
   PRINT_SCREEN = NCKEY_PRINT_SCREEN,
   PAUSE = NCKEY_PAUSE,
@@ -87,6 +89,9 @@ struct InputEvent {
   Key key() const { return static_cast<Key>(in_.id); }
   bool is(Key k) const { return k == key(); }
   uint32_t val() const { return in_.id; }
+  int y() const { return in_.y; }
+  int x() const { return in_.x; }
+  ncintype_e evtype() const { return in_.evtype; }
 
   // Modifier state checks using notcurses functions
   bool is_shift() const { return ncinput_shift_p(&in_); }

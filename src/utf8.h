@@ -9,8 +9,6 @@
 #ifndef UTF8_H
 #define UTF8_H
 
-#include <cstdint>
-#include <iterator>
 #include <string>
 
 namespace utf8 {

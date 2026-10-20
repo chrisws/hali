@@ -10,7 +10,6 @@
 #define SHA1_H
 
 #include <cstdint>
-#include <cstddef>
 #include <string>
 #include <array>
 

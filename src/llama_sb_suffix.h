@@ -9,7 +9,6 @@
 #ifndef LLAMA_SB_SUFFIX_H
 #define LLAMA_SB_SUFFIX_H
 
-#include <cstdint>
 #include <unordered_map>
 #include <vector>
 #include "llama.h"
