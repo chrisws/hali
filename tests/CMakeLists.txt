@@ -45,6 +45,7 @@ add_executable(hali_tests
   src/replace_test.cpp
   src/build_test.cpp
   src/table_test.cpp
+  src/test_think_parser.cpp
   src/usage_log_test.cpp
   src/suffix_drafter_test.cpp
   src/audio_test.cpp

@@ -188,6 +188,90 @@ static void test_replace_empty_replace_str() {
   teardown_sandbox();
 }
 
+//
+// Quoted find string tests (| inside quotes is literal)
+//
+
+static void test_parse_replace_args_quoted_double() {
+  auto r = parse_replace_args("\"<|think|>\"|<new_tag>");
+  assert(r.find_str == "<|think|>");
+  assert(r.replace_str == "<new_tag>");
+  assert(r.all == false);
+  assert(r.count == false);
+}
+
+static void test_parse_replace_args_quoted_single() {
+  auto r = parse_replace_args("'<|think|>'|<new_tag>");
+  assert(r.find_str == "<|think|>");
+  assert(r.replace_str == "<new_tag>");
+}
+
+static void test_parse_replace_args_quoted_with_flags() {
+  auto r = parse_replace_args("\"a|b|c\"|x --all");
+  assert(r.find_str == "a|b|c");
+  assert(r.replace_str == "x");
+  assert(r.all == true);
+  assert(r.count == false);
+}
+
+static void test_parse_replace_args_quoted_pipe_in_replace() {
+  auto r = parse_replace_args("\"old\"|new|more");
+  assert(r.find_str == "old");
+  assert(r.replace_str == "new|more");
+}
+
+static void test_parse_replace_args_quoted_empty_find() {
+  auto r = parse_replace_args("\"\"|new");
+  assert(r.find_str.empty());
+  assert(r.replace_str == "new");
+}
+
+static void test_parse_replace_args_quoted_no_pipe_after() {
+  // Quoted string with no | after closing quote — fall back to first |
+  auto r = parse_replace_args("\"hello world\"");
+  assert(r.find_str.empty());
+  assert(r.replace_str.empty());
+}
+
+static void test_replace_quoted_pipe_in_find() {
+  setup_sandbox();
+  write_test_file(SANDBOX + "/test.txt", "start <|think|> end\n");
+
+  string result = tool_replace(SANDBOX, "test.txt", "\"<|think|>\"|<|channel>thought|>");
+  assert(result.find("OK") == 0);
+  assert(result.find("1 occurrence") != string::npos);
+
+  string content = read_test_file(SANDBOX + "/test.txt");
+  assert(content == "start <|channel>thought|> end\n");
+  teardown_sandbox();
+}
+
+static void test_replace_quoted_pipe_all() {
+  setup_sandbox();
+  write_test_file(SANDBOX + "/test.txt", "a|b and a|b and a|b\n");
+
+  string result = tool_replace(SANDBOX, "test.txt", "\"a|b\"|x --all");
+  assert(result.find("OK") == 0);
+  assert(result.find("3 occurrence") != string::npos);
+
+  string content = read_test_file(SANDBOX + "/test.txt");
+  assert(content == "x and x and x\n");
+  teardown_sandbox();
+}
+
+static void test_replace_quoted_pipe_count() {
+  setup_sandbox();
+  write_test_file(SANDBOX + "/test.txt", "foo|bar foo|bar baz\n");
+
+  string result = tool_replace(SANDBOX, "test.txt", "\"foo|bar\"|x --count");
+  assert(result == "2 occurrence(s) found");
+
+  // File unmodified
+  string content = read_test_file(SANDBOX + "/test.txt");
+  assert(content == "foo|bar foo|bar baz\n");
+  teardown_sandbox();
+}
+
 void replace_test() {
   cout << "=== Running TOOL:REPLACE Unit Tests ===\n\n";
 
@@ -196,6 +280,12 @@ void replace_test() {
   RUN_TEST(test_parse_replace_args_no_pipe);
   RUN_TEST(test_parse_replace_args_empty_find);
   RUN_TEST(test_parse_replace_args_spaces_in_replace);
+  RUN_TEST(test_parse_replace_args_quoted_double);
+  RUN_TEST(test_parse_replace_args_quoted_single);
+  RUN_TEST(test_parse_replace_args_quoted_with_flags);
+  RUN_TEST(test_parse_replace_args_quoted_pipe_in_replace);
+  RUN_TEST(test_parse_replace_args_quoted_empty_find);
+  RUN_TEST(test_parse_replace_args_quoted_no_pipe_after);
   RUN_TEST(test_replace_single_occurrence);
   RUN_TEST(test_replace_all_occurrences);
   RUN_TEST(test_replace_count_only);
@@ -205,6 +295,9 @@ void replace_test() {
   RUN_TEST(test_replace_missing_file);
   RUN_TEST(test_replace_multiline_find);
   RUN_TEST(test_replace_empty_replace_str);
+  RUN_TEST(test_replace_quoted_pipe_in_find);
+  RUN_TEST(test_replace_quoted_pipe_all);
+  RUN_TEST(test_replace_quoted_pipe_count);
 
   cout << "\n=== All TOOL:REPLACE tests completed ===\n";
 }

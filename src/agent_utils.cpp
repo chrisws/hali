@@ -604,11 +604,31 @@ std::string tool_search(const std::string &sandbox, const std::string &pattern, 
 //
 ReplaceArgs parse_replace_args(const std::string &arg2) {
   ReplaceArgs r;
-  auto pipe_pos = arg2.find('|');
-  if (pipe_pos == std::string::npos) {
-    return r;
+  size_t pipe_pos;
+
+  if (!arg2.empty() && (arg2[0] == '"' || arg2[0] == '\'')) {
+    // Quoted find string: | inside quotes is literal
+    char quote = arg2[0];
+    auto close = arg2.find(quote, 1);
+    if (close != std::string::npos && close + 1 < arg2.size() && arg2[close + 1] == '|') {
+      r.find_str = arg2.substr(1, close - 1);
+      pipe_pos = close + 1;
+    } else {
+      // No valid | after closing quote — fall back to first |
+      pipe_pos = arg2.find('|');
+      if (pipe_pos == std::string::npos) {
+        return r;
+      }
+      r.find_str = arg2.substr(0, pipe_pos);
+    }
+  } else {
+    pipe_pos = arg2.find('|');
+    if (pipe_pos == std::string::npos) {
+      return r;
+    }
+    r.find_str = arg2.substr(0, pipe_pos);
   }
-  r.find_str = arg2.substr(0, pipe_pos);
+
   std::string rest = arg2.substr(pipe_pos + 1);
   auto flag_pos = rest.find(" --");
   if (flag_pos != std::string::npos) {
@@ -777,4 +797,84 @@ TableResult tool_table(const std::string &dims, const std::string &data) {
   // Bottom border
   result.rows.push_back(border("\u2514", "\u2534", "\u2518"));
   return result;
+}
+//
+// ThinkParser — think-tag state machine
+//
+ThinkParser::ThinkParser(bool thinking_enabled, bool is_gemma_4)
+  : mode_(thinking_enabled ? Init : Thunk), is_gemma_4_(is_gemma_4) {}
+
+std::string ThinkParser::assemble_tag(const std::vector<std::string> &tokens, size_t max_len) {
+  if (tokens.empty() || tokens[0] != "<") {
+    return "";
+  }
+  std::string tag = tokens[0];
+  for (size_t i = 1; i < tokens.size(); i++) {
+    if (tag.find('>') != std::string::npos) {
+      break;
+    }
+    if (tag.size() >= max_len) {
+      break;
+    }
+    tag += tokens[i];
+  }
+  return tag;
+}
+
+size_t ThinkParser::check_start(const std::string &buffer) {
+  if (mode_ == Think) {
+    return 0;
+  }
+  static const std::vector<std::string> tags = {
+    "<think>", "<|think|>", "<think|>", "<|channel>thought"
+  };
+  for (const auto &tag : tags) {
+    if (buffer.rfind(tag, 0) == 0) {
+      mode_ = Think;
+      return tag.size();
+    }
+  }
+  return 0;
+}
+
+ThinkParser::EndResult ThinkParser::check_end(const std::string &buffer) {
+  EndResult r;
+  if (mode_ != Think) {
+    return r;
+  }
+
+  static const std::vector<std::string> tags = {
+    "</" "think" ">",
+    "</|" "think" "|>",
+    "</" "think" "|>",
+    "</" "thought" ">"
+  };
+
+  for (const auto &tag : tags) {
+    auto pos = buffer.find(tag);
+    if (pos != std::string::npos) {
+      r.found = true;
+      r.pos = pos;
+      r.tag_len = tag.size();
+      r.thought = buffer.substr(0, pos);
+      if (is_gemma_4_) {
+        r.clear_buffer = true;
+      }
+      mode_ = Thunk;
+      return r;
+    }
+  }
+  return r;
+}
+
+ThinkParser::Mode ThinkParser::mode() const {
+  return mode_;
+}
+
+void ThinkParser::set_mode(Mode m) {
+  mode_ = m;
+}
+
+void ThinkParser::reset() {
+  mode_ = is_gemma_4_ ? Thunk : Init;
 }

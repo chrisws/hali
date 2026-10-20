@@ -681,49 +681,10 @@ bool Agent::run_turn(const std::string &user_message) {
   }
   tui_.append_line("Hali: ");
 
-  // in_think starts false — models that don't use <think> blocks emit
-  // visible text immediately.  The spinner activates only while thinking.
-  enum {t_init, t_think, t_thunk} think_mode = (cfg_.thinking_ ? t_init : t_thunk);
+  ThinkParser thinker(cfg_.thinking_, llama_->is_gemma_4());
 
   tui_.set_thinking(true);
   std::string buffer;
-
-  auto start_think = [&](const std::string &tag) -> void {
-    if (think_mode != t_think) {
-      if (const auto pos = buffer.find(tag); pos == 0) {
-        think_mode = t_think;
-        // display preceding text
-        buffer = buffer.substr(0, pos);
-      }
-    }
-  };
-
-  auto end_think = [&](const std::string &tag) -> void {
-    if (think_mode == t_thunk && llama_->is_gemma_4()) {
-      if (const auto pos = buffer.find(tag); pos == 0) {
-        // don't print end-think tags when not in think mode
-        buffer = "";
-      }
-    }
-    if (think_mode == t_think) {
-      if (const auto pos = buffer.find(tag); pos != std::string::npos) {
-        if (pos == 0 && llama_->is_gemma_4() && (tag == "<|channel>thought")) {
-          //  dont print repeated start-think tag
-          buffer = "";
-        } else {
-          think_mode = t_thunk;
-          // tag is either at the start or end of the line
-          if (pos > 0) {
-            if (auto thought = buffer.substr(0, pos); !utils::is_blank(thought)) {
-              tui_.append_token(ICON_THINK + thought);
-            }
-          }
-          // add a new line here to handle: <channel|>TOOL:LIST
-          buffer = '\n' + buffer.substr(pos + tag.length());
-        }
-      }
-    }
-  };
 
   auto fetch_tool = [&]() -> void {
     while (iter_->_has_next && !tui_.is_escape()) {
@@ -739,14 +700,20 @@ bool Agent::run_turn(const std::string &user_message) {
 
   while (iter_->_has_next && !tui_.is_escape()) {
     if (std::string tok = llama_->next(*iter_); tok == "<") {
-      // fetch the complete tag
-      std::string tag = tok;
-      while (iter_->_has_next && tag.find('>') == std::string::npos) {
-        tag += llama_->next(*iter_);
+      // fetch the complete tag (capped to avoid runaway if '>' is missing)
+      std::vector<std::string> tokens;
+      tokens.push_back(tok);
+      size_t total_len = 1;
+      while (iter_->_has_next && total_len < 32) {
+        std::string next = llama_->next(*iter_);
+        tokens.push_back(next);
+        total_len += next.size();
+        if (next == ">") { break; }
       }
-      if (tag == "<|think|>") {
-        think_mode = t_think;
-        continue;
+      std::string tag = ThinkParser::assemble_tag(tokens);
+      if (tag.empty() || tag.size() >= 32) {
+        // not a real tag — treat as plain text
+        for (const auto &t : tokens) { buffer += t; }
       } else {
         buffer += tag;
       }
@@ -756,18 +723,23 @@ bool Agent::run_turn(const std::string &user_message) {
 
     // log_write(DEBUG_LEVEL, "%s", buffer.c_str());
 
-    start_think("<think>");
-    start_think("<|think|>");
-    start_think("<think|>");
-    start_think("<|channel>thought");
+    if (auto skip = thinker.check_start(buffer); skip > 0) {
+      buffer = buffer.substr(skip);
+    }
 
-    end_think("</think>");
-    end_think("</|think|>");
-    end_think("</|think>");
-    end_think("<think|>");
-    end_think("<channel|>");
+    auto er = thinker.check_end(buffer);
+    if (er.found) {
+      if (er.clear_buffer) {
+        buffer = "";
+      } else {
+        if (!er.thought.empty()) {
+          tui_.append_token(ICON_THINK + er.thought);
+        }
+        buffer = '\n' + buffer.substr(er.pos + er.tag_len);
+      }
+    }
 
-    if (think_mode == t_think) {
+    if (thinker.mode() == ThinkParser::Think) {
       tui_.set_tokens_per_sec(tokens_per_sec());
       tui_.tick_spinner();
     }
@@ -776,12 +748,12 @@ bool Agent::run_turn(const std::string &user_message) {
       fetch_tool();
       invoke_tool(utils::trim(buffer), "TOOL_RESULT: {}");
       buffer.clear();
-      think_mode = t_init;
+      thinker.set_mode(ThinkParser::Init);
       continue;
     }
     auto pos = buffer.find('\n');
     if (pos != std::string::npos) {
-      if (think_mode == t_think) {
+      if (thinker.mode() == ThinkParser::Think) {
         if (auto thought = buffer.substr(0, pos + 1); !utils::is_blank(thought)) {
           tui_.append_token(ICON_THINK + thought);
         }

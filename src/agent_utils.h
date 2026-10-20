@@ -85,4 +85,40 @@ struct TableResult {
 
 TableResult tool_table(const std::string &dims, const std::string &data);
 
+//
+// Think-tag state machine for parsing model output
+//
+class ThinkParser {
+public:
+  enum Mode { Init, Think, Thunk };
+
+  struct EndResult {
+    bool found = false;
+    size_t pos = 0;
+    size_t tag_len = 0;
+    std::string thought;
+    bool clear_buffer = false;
+  };
+
+  ThinkParser(bool thinking_enabled, bool is_gemma_4 = false);
+
+  // Returns tag length if buffer starts with a think-open tag (transitions Init→Think), else 0.
+  size_t check_start(const std::string &buffer);
+
+  // Returns EndResult if buffer contains a think-close tag (transitions Think→Thunk).
+  EndResult check_end(const std::string &buffer);
+
+  Mode mode() const;
+  void set_mode(Mode m);
+  void reset();
+
+  // Assemble a tag from single-char tokens starting with '<'.
+  // Stops at first '>' or when max_len is reached.
+  static std::string assemble_tag(const std::vector<std::string> &tokens, size_t max_len = 32);
+
+private:
+  Mode mode_;
+  bool is_gemma_4_;
+};
+
 #endif
