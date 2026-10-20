@@ -116,6 +116,9 @@ struct HaliConfig {
 
 private:
   std::string prompt_identity() const;
+  std::string prompt_core() const;
+  std::string prompt_file_ops() const;
+  std::string prompt_interaction() const;
   std::string prompt_audio() const;
   std::string prompt_knowledge() const;
 };

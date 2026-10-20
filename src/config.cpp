@@ -235,14 +235,8 @@ std::string HaliConfig::prompt_knowledge() const {
   return p;
 }
 
-//
-// System prompt
-//
-std::string HaliConfig::build_system_prompt() const {
-  std::string p;
-  int kv_threshold = gpu_info::kv_restart_threshold();
-  p += prompt_identity();
-  p +=
+std::string HaliConfig::prompt_core() const {
+  return
     "## Core Principle\n"
     "Always follow this loop: THINK → DECIDE → ACT → RESPOND\n\n"
 
@@ -344,8 +338,11 @@ std::string HaliConfig::build_system_prompt() const {
     "- ALWAYS use TOOL:TABLE when presenting tabular data (comparisons, columnar lists, summaries with 2+ columns)\n"
     "- Do NOT write markdown tables (| col | col |) in your response text\n"
     "- Format: first line is <R>x<C>, then one pipe-delimited row per line\n"
-    "- Example: TOOL:TABLE 3x2 Name|Value\\nfoo|1\\nbar|2\n\n"
+    "- Example: TOOL:TABLE 3x2 Name|Value\\nfoo|1\\nbar|2\n\n";
+}
 
+std::string HaliConfig::prompt_file_ops() const {
+  return
     "## File Writing Rules\n"
     "Use TOOL:WRITE only if explicitly requested. Prefer TOOL:APPEND or TOOL:PATCH\n"
     "- Write complete and valid content\n"
@@ -384,8 +381,12 @@ std::string HaliConfig::build_system_prompt() const {
     "=======\n"
     " [complete new function]\n"
     ">>>>>>> NEW\n"
-    "HALI_END_TOOL\n\n"
+    "HALI_END_TOOL\n\n";
+}
 
+std::string HaliConfig::prompt_interaction() const {
+  int kv_threshold = gpu_info::kv_restart_threshold();
+  return
     "## Interaction Guidelines\n"
     "- Be precise and efficient\n"
     "- Ask clarifying questions if the request is ambiguous or missing parameters\n"
@@ -418,9 +419,18 @@ std::string HaliConfig::build_system_prompt() const {
     "**Last Output:**\n"
     "<last few lines of conversation>\n"
     "```\n\n";
+}
 
+//
+// System prompt
+//
+std::string HaliConfig::build_system_prompt() const {
+  std::string p;
+  p += prompt_identity();
+  p += prompt_core();
+  p += prompt_file_ops();
+  p += prompt_interaction();
   p += prompt_audio();
-
   p += prompt_knowledge();
   return p;
 }
@@ -495,7 +505,6 @@ std::string HaliConfig::introspect() const {
 
   return doc.to_string(json::WriteFlag::Pretty);
 }
-
 
 //
 // /set command handler (plan 12)
