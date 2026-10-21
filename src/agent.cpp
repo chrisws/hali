@@ -398,7 +398,7 @@ ToolMap Agent::build_tool_dispatch() {
       if (cfg_.permission_prompt_ && !tui_.confirm_dialog(std::format("Allow model to write {}?", path))) {
         return "ERROR: action prevented by user";
       } else if (!cfg_.val_write_validate_) {
-        const auto validate = tool_write_validate(path, data);
+        const auto validate = tool_write_validate(path, data, cfg_.val_write_size_warn_);
         if (!validate.empty() && !tui_.confirm_dialog(std::format("[{}] - Allow model to write {}?", validate, path))) {
           return "ERROR: action prevented by user - " + validate;
         }

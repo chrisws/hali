@@ -302,7 +302,8 @@ std::string tool_patch(const std::string& filename, const std::string& patch_str
 //
 // tool_write_validate
 //
-std::string tool_write_validate(const std::string &path, const std::string &data) {
+std::string tool_write_validate(const std::string &path, const std::string &data,
+                                int size_warn) {
   std::string result;
   fs::path p(path);
 
@@ -310,8 +311,8 @@ std::string tool_write_validate(const std::string &path, const std::string &data
     auto old_size = fs::file_size(p);
     if (old_size > 0 && data.size() < old_size * 0.5) {
       result = "Warning: content shrinks by more than 50%";
-    } else if (old_size > 1000) {
-      result = "Warning: old content is > 1000 bytes";
+    } else if (old_size > static_cast<uintmax_t>(size_warn)) {
+      result = "Warning: old content is > " + std::to_string(size_warn) + " bytes";
     }
   }
 

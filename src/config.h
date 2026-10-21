@@ -99,6 +99,7 @@ struct HaliConfig {
   // Validation gates (skip validate calls for capable models)
   bool  val_write_validate_ = false;
   bool  val_patch_validate_ = false;
+  int   val_write_size_warn_ = 1000;
 
   KVCachePreset kv_preset_ = KVCachePreset::Compact;
 
