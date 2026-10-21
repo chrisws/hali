@@ -329,6 +329,377 @@ static void test_multiple_spaces() {
   cout << "test_multiple_spaces passed" << endl;
 }
 
+//
+// Test: update_completion with no slash prefix → no completion
+//
+static void test_completion_no_slash() {
+  Input in;
+
+  in.input_buf_ = "hello";
+  in.update_completion();
+  assert(!in.completion_active_);
+  assert(in.completion_suffix_.empty());
+
+  in.input_buf_ = "";
+  in.update_completion();
+  assert(!in.completion_active_);
+
+  in.input_buf_ = "  /not at start";
+  in.update_completion();
+  assert(!in.completion_active_);
+
+  cout << "test_completion_no_slash passed" << endl;
+}
+
+//
+// Test: update_completion with "/" alone → multiple matches → no completion
+//
+static void test_completion_slash_only() {
+  Input in;
+
+  in.input_buf_ = "/";
+  in.update_completion();
+  assert(!in.completion_active_);
+  assert(in.completion_suffix_.empty());
+
+  cout << "test_completion_slash_only passed" << endl;
+}
+
+//
+// Test: update_completion single match shows suffix
+//
+static void test_completion_single_match() {
+  Input in;
+
+  // /mo → /model → suffix "del"
+  in.input_buf_ = "/mo";
+  in.update_completion();
+  assert(in.completion_active_);
+  assert(in.completion_suffix_ == "del");
+
+  // /mod → /model → suffix "el"
+  in.input_buf_ = "/mod";
+  in.update_completion();
+  assert(in.completion_active_);
+  assert(in.completion_suffix_ == "el");
+
+  // /h → /help → suffix "elp"
+  in.input_buf_ = "/h";
+  in.update_completion();
+  assert(in.completion_active_);
+  assert(in.completion_suffix_ == "elp");
+
+  // /c → /clear → suffix "lear"
+  in.input_buf_ = "/c";
+  in.update_completion();
+  assert(in.completion_active_);
+  assert(in.completion_suffix_ == "lear");
+
+  // /t → /theme → suffix "heme"
+  in.input_buf_ = "/t";
+  in.update_completion();
+  assert(in.completion_active_);
+  assert(in.completion_suffix_ == "heme");
+
+  // /e → /embed → suffix "mbed"
+  in.input_buf_ = "/e";
+  in.update_completion();
+  assert(in.completion_active_);
+  assert(in.completion_suffix_ == "mbed");
+
+  // /ra → /rag → suffix "g"
+  in.input_buf_ = "/ra";
+  in.update_completion();
+  assert(in.completion_active_);
+  assert(in.completion_suffix_ == "g");
+
+  // /re → /revoke → suffix "voke"
+  in.input_buf_ = "/re";
+  in.update_completion();
+  assert(in.completion_active_);
+  assert(in.completion_suffix_ == "voke");
+
+  // /mem → /memory → suffix "ory"
+  in.input_buf_ = "/mem";
+  in.update_completion();
+  assert(in.completion_active_);
+  assert(in.completion_suffix_ == "ory");
+
+  cout << "test_completion_single_match passed" << endl;
+}
+
+//
+// Test: update_completion exact match → no suffix (nothing left to suggest)
+//
+static void test_completion_exact_match() {
+  Input in;
+
+  in.input_buf_ = "/model";
+  in.update_completion();
+  assert(!in.completion_active_);
+  assert(in.completion_suffix_.empty());
+
+  in.input_buf_ = "/help";
+  in.update_completion();
+  assert(!in.completion_active_);
+
+  in.input_buf_ = "/clear";
+  in.update_completion();
+  assert(!in.completion_active_);
+
+  cout << "test_completion_exact_match passed" << endl;
+}
+
+//
+// Test: update_completion multiple matches → no completion
+//
+static void test_completion_multiple_matches() {
+  Input in;
+
+  // /m → /model, /memory → no completion
+  in.input_buf_ = "/m";
+  in.update_completion();
+  assert(!in.completion_active_);
+
+  // /s → /session, /set, /settings, /save → no completion
+  in.input_buf_ = "/s";
+  in.update_completion();
+  assert(!in.completion_active_);
+
+  // /se → /session, /set, /settings → no completion
+  in.input_buf_ = "/se";
+  in.update_completion();
+  assert(!in.completion_active_);
+
+  // /a → /audio, /allow, /audit → no completion
+  in.input_buf_ = "/a";
+  in.update_completion();
+  assert(!in.completion_active_);
+
+  // /au → /audio, /audit → common prefix "/audi" → suffix "di"
+  in.input_buf_ = "/au";
+  in.update_completion();
+  assert(in.completion_active_);
+  assert(in.completion_suffix_ == "di");
+
+  // /r → /rag, /revoke → no completion
+  in.input_buf_ = "/r";
+  in.update_completion();
+  assert(!in.completion_active_);
+
+  cout << "test_completion_multiple_matches passed" << endl;
+}
+
+//
+// Test: update_completion shows common prefix when multiple matches share it
+//
+static void test_completion_common_prefix() {
+  Input in;
+
+  // /al → matches /allow, /allow-list, /allow-remove
+  // common prefix is "/allow" → suffix "low"
+  in.input_buf_ = "/al";
+  in.update_completion();
+  assert(in.completion_active_);
+  assert(in.completion_suffix_ == "low");
+
+  // /all → same matches → common prefix "/allow" → suffix "ow"
+  in.input_buf_ = "/all";
+  in.update_completion();
+  assert(in.completion_active_);
+  assert(in.completion_suffix_ == "ow");
+
+  // /allo → same matches → common prefix "/allow" → suffix "w"
+  in.input_buf_ = "/allo";
+  in.update_completion();
+  assert(in.completion_active_);
+  assert(in.completion_suffix_ == "w");
+
+  // /allow → same matches → common prefix "/allow" → equals buffer → no completion
+  in.input_buf_ = "/allow";
+  in.update_completion();
+  assert(!in.completion_active_);
+  assert(in.completion_suffix_.empty());
+
+  // /allow- → matches /allow-list, /allow-remove
+  // common prefix is "/allow-" → equals buffer → no completion
+  in.input_buf_ = "/allow-";
+  in.update_completion();
+  assert(!in.completion_active_);
+  assert(in.completion_suffix_.empty());
+
+  // /allow-l → single match /allow-list → suffix "ist"
+  in.input_buf_ = "/allow-l";
+  in.update_completion();
+  assert(in.completion_active_);
+  assert(in.completion_suffix_ == "ist");
+
+  // /allow-r → single match /allow-remove → suffix "emove"
+  in.input_buf_ = "/allow-r";
+  in.update_completion();
+  assert(in.completion_active_);
+  assert(in.completion_suffix_ == "emove");
+
+  // /allow-li → single match /allow-list → suffix "st"
+  in.input_buf_ = "/allow-li";
+  in.update_completion();
+  assert(in.completion_active_);
+  assert(in.completion_suffix_ == "st");
+
+  // /allow-re → single match /allow-remove → suffix "move"
+  in.input_buf_ = "/allow-re";
+  in.update_completion();
+  assert(in.completion_active_);
+  assert(in.completion_suffix_ == "move");
+
+  // /a → matches /audio, /allow, /allow-list, /allow-remove, /audit
+  // common prefix is "/a" → equals buffer → no completion
+  in.input_buf_ = "/a";
+  in.update_completion();
+  assert(!in.completion_active_);
+  assert(in.completion_suffix_.empty());
+
+  // /au → matches /audio, /audit
+  // common prefix is "/audi" → suffix "di"
+  in.input_buf_ = "/au";
+  in.update_completion();
+  assert(in.completion_active_);
+  assert(in.completion_suffix_ == "di");
+
+  // /aud → matches /audio, /audit
+  // common prefix is "/audi" → suffix "i"
+  in.input_buf_ = "/aud";
+  in.update_completion();
+  assert(in.completion_active_);
+  assert(in.completion_suffix_ == "i");
+
+  // /audi → matches /audio, /audit
+  // common prefix is "/audi" → equals buffer → no completion
+  in.input_buf_ = "/audi";
+  in.update_completion();
+  assert(!in.completion_active_);
+  assert(in.completion_suffix_.empty());
+
+  // /audio → exact match → no suffix
+  in.input_buf_ = "/audio";
+  in.update_completion();
+  assert(!in.completion_active_);
+  assert(in.completion_suffix_.empty());
+
+  // /audit → exact match → no suffix
+  in.input_buf_ = "/audit";
+  in.update_completion();
+  assert(!in.completion_active_);
+  assert(in.completion_suffix_.empty());
+
+  cout << "test_completion_common_prefix passed" << endl;
+}
+
+//
+// Test: update_completion narrows from multiple to single
+//
+static void test_completion_narrowing() {
+  Input in;
+
+  // /se → /session, /set, /settings → multiple → no completion
+  in.input_buf_ = "/se";
+  in.update_completion();
+  assert(!in.completion_active_);
+
+  // /ses → /session only → suffix "sion"
+  in.input_buf_ = "/ses";
+  in.update_completion();
+  assert(in.completion_active_);
+  assert(in.completion_suffix_ == "sion");
+
+  // /sess → /session only → suffix "ion"
+  in.input_buf_ = "/sess";
+  in.update_completion();
+  assert(in.completion_active_);
+  assert(in.completion_suffix_ == "ion");
+
+  // /s → /session, /set, /settings, /save → multiple
+  in.input_buf_ = "/s";
+  in.update_completion();
+  assert(!in.completion_active_);
+
+  // /sa → /save only → suffix "ve"
+  in.input_buf_ = "/sa";
+  in.update_completion();
+  assert(in.completion_active_);
+  assert(in.completion_suffix_ == "ve");
+
+  cout << "test_completion_narrowing passed" << endl;
+}
+
+//
+// Test: update_completion is case-insensitive
+//
+static void test_completion_case_insensitive() {
+  Input in;
+
+  in.input_buf_ = "/MO";
+  in.update_completion();
+  assert(in.completion_active_);
+  assert(in.completion_suffix_ == "del");
+
+  in.input_buf_ = "/MOD";
+  in.update_completion();
+  assert(in.completion_active_);
+  assert(in.completion_suffix_ == "el");
+
+  in.input_buf_ = "/HELP";
+  in.update_completion();
+  assert(!in.completion_active_);  // exact match, no suffix
+
+  in.input_buf_ = "/hElp";
+  in.update_completion();
+  assert(!in.completion_active_);  // exact match (case-insensitive)
+
+  cout << "test_completion_case_insensitive passed" << endl;
+}
+
+//
+// Test: dismiss_completion clears state
+//
+static void test_dismiss_completion() {
+  Input in;
+
+  in.input_buf_ = "/mo";
+  in.update_completion();
+  assert(in.completion_active_);
+  assert(in.completion_suffix_ == "del");
+
+  in.dismiss_completion();
+  assert(!in.completion_active_);
+  assert(in.completion_suffix_.empty());
+
+  cout << "test_dismiss_completion passed" << endl;
+}
+
+//
+// Test: update_completion dismisses when buffer no longer matches
+//
+static void test_completion_dismiss_on_edit() {
+  Input in;
+
+  in.input_buf_ = "/mo";
+  in.update_completion();
+  assert(in.completion_active_);
+
+  // User types a space → no longer a valid prefix
+  in.input_buf_ = "/mo ";
+  in.update_completion();
+  assert(!in.completion_active_);
+
+  // User backspaces the slash
+  in.input_buf_ = "m";
+  in.update_completion();
+  assert(!in.completion_active_);
+
+  cout << "test_completion_dismiss_on_edit passed" << endl;
+}
+
 void input_test() {
   test_pos_of_word_start();
   test_pos_of_word_end();
@@ -342,6 +713,16 @@ void input_test() {
   test_word_with_underscore();
   test_empty_buffer();
   test_multiple_spaces();
+  test_completion_no_slash();
+  test_completion_slash_only();
+  test_completion_single_match();
+  test_completion_exact_match();
+  test_completion_multiple_matches();
+  test_completion_common_prefix();
+  test_completion_narrowing();
+  test_completion_case_insensitive();
+  test_dismiss_completion();
+  test_completion_dismiss_on_edit();
 
   cout << "\nAll input tests passed!\n" << endl;
 }

@@ -8,28 +8,22 @@
 
 #include "ui_text.h"
 #include "icon.h"
+#include "slash_commands.h"
 
 namespace ui {
 
 void help(Tui &tui) {
   tui.append_line(ICON_SYS + "Commands:");
-  tui.append_line(ICON_SYS + "  /model  [path]           load a GGUF model (picker if no path)");
-  tui.append_line(ICON_SYS + "  /embed  [path]           load an embedding model (picker if no path)");
-  tui.append_line(ICON_SYS + "  /rag    [path]           index file or directory (picker if no path)");
-  tui.append_line(ICON_SYS + "  /memory                  KV / VRAM / layer stats");
-  tui.append_line(ICON_SYS + "  /clear                   reset conversation");
-  tui.append_line(ICON_SYS + "  /settings                show current settings");
-  tui.append_line(ICON_SYS + "  /theme                   toggle the theme (F12)");
-  tui.append_line(ICON_SYS + "  /audio  [test|volume <v>]  enable/disable audio, test tone, set volume");
-  tui.append_line(ICON_SYS + "  /set    <key> <value>    change a setting live");
-  tui.append_line(ICON_SYS + "  /save   [file]           save chat transcript (plain text)");
-  tui.append_line(ICON_SYS + "  /session [file]          save structured session snapshot");
-  tui.append_line(ICON_SYS + "  /allow  [path]           allow read access to a directory");
-  tui.append_line(ICON_SYS + "  /allow  list             list allowed directories");
-  tui.append_line(ICON_SYS + "  /allow  remove [path]    remove an allowed directory");
-  tui.append_line(ICON_SYS + "  /revoke <name>           remove an approved RUN command");
-  tui.append_line(ICON_SYS + "  /audit  [path]           scan codebase for model-hostility issues");
-  tui.append_line(ICON_SYS + "  /help                    this message");
+  for (const auto &cmd : slash_commands()) {
+    std::string line = cmd.name;
+    if (cmd.usage[0] != '\0') {
+      line += ' ';
+      line += cmd.usage;
+    }
+    while (line.size() < 26) { line += ' '; }
+    line += cmd.description;
+    tui.append_line(ICON_SYS + "  " + line);
+  }
   tui.append_line(ICON_SYS + "  exit / quit              exit Hali");
   tui.append_line(ICON_SYS + "Settable keys (via /set):");
   tui.append_line(ICON_SYS + "  temperature  top_p  top_k  min_p  penalty_repeat");
@@ -198,19 +192,19 @@ void usage() {
             "\n"
             "Settings are persisted to ~/.config/hali/settings.json.\n"
             "\n"
-            "Slash commands inside hali:\n"
-            "  /model  [path]           load / hot-reload a GGUF (picker if no path)\n"
-            "  /embed  [path]           load an embedding model  (picker if no path)\n"
-            "  /rag    [path]           index file or directory  (picker if no path)\n"
-            "  /memory                  KV / VRAM / layer stats\n"
-            "  /settings                show current settings\n"
-            "  /clear                   reset conversation\n"
-            "  /allow  [path]           allow read access to a directory\n"
-            "  /allow  list             list allowed directories\n"
-            "  /allow  remove [path]    remove an allowed directory\n"
-            "  /audit  [path]           scan codebase for model-hostility issues\n"
-            "  /help                    list commands\n"
-            );
+            "Slash commands inside hali:\n");
+  for (const auto &cmd : slash_commands()) {
+    std::string line = "  ";
+    line += cmd.name;
+    if (cmd.usage[0] != '\0') {
+      line += ' ';
+      line += cmd.usage;
+    }
+    while (line.size() < 26) { line += ' '; }
+    line += cmd.description;
+    line += '\n';
+    std::puts(line.c_str());
+  }
 }
   
 //

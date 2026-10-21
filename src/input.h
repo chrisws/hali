@@ -28,6 +28,8 @@ class Input {
   int get_scroll_offset() const { return scroll_offset_; }
   void set_scroll_offset(int offset) { scroll_offset_ = offset; }
   int get_cursor_pos() const { return cursor_pos_; }
+  bool completion_active() const { return completion_active_; }
+  const std::string &completion_suffix() const { return completion_suffix_; }
   void load(const std::string &path) { history_.load(path); }
   void save(const std::string &path) const { history_.save(path); }
 
@@ -53,6 +55,13 @@ class Input {
   int scroll_offset_;
   InputHistory history_;
   std::unordered_map<std::string, Handler> dispatch_;
+
+  // ── slash command completion ──────────────────────────────────────
+  std::string completion_suffix_;
+  bool completion_active_ = false;
+  void update_completion();
+  void accept_completion(TuiContext &tui);
+  void dismiss_completion();
 };
 
 #endif

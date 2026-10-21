@@ -28,6 +28,7 @@ add_executable(hali_tests
   ../src/audio.cpp
   ../src/audio_impl.cpp
   ../src/config.cpp
+  ../src/slash_commands.cpp
   ../src/planner.cpp
   ../src/audit.cpp
   src/gpu_info_stub.cpp

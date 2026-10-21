@@ -42,6 +42,7 @@ namespace Color {
     INPUT_PROMPT,
     INPUT_TEXT,
     INPUT_CURSOR,
+    INPUT_COMPLETION,
     CHAT_BACKGROUND,
     INPUT_BACKGROUND,
     HEADER_BACKGROUND,
@@ -86,6 +87,7 @@ namespace Color {
     constexpr RGB INPUT_PROMPT              = {100, 210, 255};
     constexpr RGB INPUT_TEXT                = {230, 230, 230};
     constexpr RGB INPUT_CURSOR              = {180, 230, 255};
+    constexpr RGB INPUT_COMPLETION          = {115, 115, 115};
     constexpr RGB CHAT_BACKGROUND           = {  0, 29, 38 };
     constexpr RGB INPUT_BACKGROUND          = {  6, 35, 45 };
     constexpr RGB HEADER_BACKGROUND         = {  0, 35, 45 };
@@ -105,6 +107,8 @@ namespace Color {
             return INPUT_PROMPT;
           case Color::ColorElement::INPUT_CURSOR:
             return INPUT_CURSOR;
+          case Color::ColorElement::INPUT_COMPLETION:
+            return INPUT_COMPLETION;
           case Color::ColorElement::CHAT_BACKGROUND:
             return CHAT_BACKGROUND;
           case Color::ColorElement::INPUT_BACKGROUND:
@@ -152,6 +156,7 @@ namespace Color {
     constexpr RGB INPUT_PROMPT              = {187, 134, 252};  // primary #BB86FC
     constexpr RGB INPUT_TEXT                = {230, 225, 229};  // on-surface #E6E1E5
     constexpr RGB INPUT_CURSOR              = {  3, 218, 198};  // secondary #03DAC6
+    constexpr RGB INPUT_COMPLETION          = {115, 112, 114};  // dimmed on-surface
     constexpr RGB CHAT_BACKGROUND           = { 18,  18,  18};  // background #121212
     constexpr RGB INPUT_BACKGROUND          = { 30,  30,  30};  // surface #1E1E1E
     constexpr RGB HEADER_BACKGROUND         = { 41,  41,  41};  // surface-variant #292929
@@ -180,6 +185,8 @@ namespace Color {
             return INPUT_PROMPT;
           case Color::ColorElement::INPUT_CURSOR:
             return INPUT_CURSOR;
+          case Color::ColorElement::INPUT_COMPLETION:
+            return INPUT_COMPLETION;
           case Color::ColorElement::CHAT_BACKGROUND:
             return CHAT_BACKGROUND;
           case Color::ColorElement::INPUT_BACKGROUND:
@@ -227,6 +234,7 @@ namespace Color {
     constexpr RGB INPUT_PROMPT              = { 37,  99, 235};
     constexpr RGB INPUT_TEXT                = { 31,  41,  55};
     constexpr RGB INPUT_CURSOR              = { 37,  99, 235};
+    constexpr RGB INPUT_COMPLETION          = {140, 148, 160};
     constexpr RGB CHAT_BACKGROUND           = {255, 255, 255};
     constexpr RGB INPUT_BACKGROUND          = {245, 247, 250};
     constexpr RGB HEADER_BACKGROUND         = {240, 242, 245};
@@ -254,6 +262,8 @@ namespace Color {
             return INPUT_PROMPT;
           case Color::ColorElement::INPUT_CURSOR:
             return INPUT_CURSOR;
+          case Color::ColorElement::INPUT_COMPLETION:
+            return INPUT_COMPLETION;
           case Color::ColorElement::CHAT_BACKGROUND:
             return CHAT_BACKGROUND;
           case Color::ColorElement::INPUT_BACKGROUND:
@@ -301,6 +311,7 @@ namespace Color {
     constexpr RGB INPUT_PROMPT              = {100, 210, 255};
     constexpr RGB INPUT_TEXT                = {230, 230, 230};
     constexpr RGB INPUT_CURSOR              = {180, 230, 255};
+    constexpr RGB INPUT_COMPLETION          = {115, 115, 115};
     constexpr RGB CHAT_BACKGROUND           = {18, 22, 30};
     constexpr RGB INPUT_BACKGROUND          = {22, 28, 38};
     constexpr RGB HEADER_BACKGROUND         = {30, 40, 55};
@@ -320,6 +331,8 @@ namespace Color {
             return INPUT_PROMPT;
           case Color::ColorElement::INPUT_CURSOR:
             return INPUT_CURSOR;
+          case Color::ColorElement::INPUT_COMPLETION:
+            return INPUT_COMPLETION;
           case Color::ColorElement::CHAT_BACKGROUND:
             return CHAT_BACKGROUND;
           case Color::ColorElement::INPUT_BACKGROUND:

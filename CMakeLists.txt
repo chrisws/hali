@@ -197,6 +197,7 @@ add_executable(hali
   src/mcp_client.cpp
   src/json.cpp
   src/input.cpp
+  src/slash_commands.cpp
   src/llama_sb_rag.cpp
   src/llama_sb.cpp
   src/llama_sb_mtp.cpp

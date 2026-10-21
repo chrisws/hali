@@ -9,9 +9,11 @@
 #include "input.h"
 #include "logging.h"
 #include "string_utils.h"
+#include "slash_commands.h"
 
 #include <functional>
 #include <unordered_map>
+#include <vector>
 
 Input::Input()
   : mouse_mode_(false)
@@ -263,6 +265,23 @@ void Input::build_dispatch() {
     tui.render();
     return true;
   };
+
+  dispatch_["TAB"] = [this](const InputEvent &, TuiContext &tui, std::string &) -> bool {
+    if (completion_active_ && !completion_suffix_.empty()) {
+      input_buf_.insert(cursor_pos_, completion_suffix_);
+      cursor_pos_ += static_cast<int>(completion_suffix_.size());
+      dismiss_completion();
+      tui.redraw_input();
+      tui.render();
+      return true;
+    }
+    // No active completion → insert a space
+    input_buf_.insert(cursor_pos_, 1, ' ');
+    ++cursor_pos_;
+    tui.redraw_input();
+    tui.render();
+    return true;
+  };
 }
 
 //
@@ -413,6 +432,87 @@ int Input::lowercase_word(const int pos) {
   return start;
 }
 
+//
+// Update the slash command completion state.
+// Called after every edit to the input buffer.
+// Shows a completion suffix when:
+//   - Exactly one command matches → complete the full name
+//   - Multiple commands match → complete the longest common prefix
+//
+void Input::update_completion() {
+  if (input_buf_.empty() || input_buf_[0] != '/') {
+    dismiss_completion();
+    return;
+  }
+  // Case-insensitive prefix match
+  std::string lower_buf = input_buf_;
+  for (auto &c : lower_buf) {
+    c = static_cast<char>(tolower(static_cast<unsigned char>(c)));
+  }
+  // Collect all matching command names
+  std::vector<std::string> matches;
+  for (const auto &cmd : slash_commands()) {
+    std::string lower_cmd = cmd.name;
+    for (auto &c : lower_cmd) {
+      c = static_cast<char>(tolower(static_cast<unsigned char>(c)));
+    }
+    if (lower_cmd.size() >= lower_buf.size() &&
+        lower_cmd.substr(0, lower_buf.size()) == lower_buf) {
+      matches.push_back(cmd.name);
+    }
+  }
+  if (matches.empty()) {
+    dismiss_completion();
+    return;
+  }
+  std::string suffix;
+  if (matches.size() == 1) {
+    // Single match: complete the full name
+    suffix = matches[0].substr(input_buf_.size());
+  } else {
+    // Multiple matches: find the longest common prefix
+    std::string common = matches[0];
+    for (size_t i = 1; i < matches.size(); ++i) {
+      size_t j = 0;
+      while (j < common.size() && j < matches[i].size() && common[j] == matches[i][j]) {
+        ++j;
+      }
+      common.resize(j);
+    }
+    // Only show suffix if common prefix extends beyond current buffer
+    if (common.size() > input_buf_.size()) {
+      suffix = common.substr(input_buf_.size());
+    }
+  }
+  if (!suffix.empty()) {
+    completion_suffix_ = suffix;
+    completion_active_ = true;
+  } else {
+    dismiss_completion();
+  }
+}
+
+//
+// Accept the current completion: insert the suffix into the buffer.
+//
+void Input::accept_completion(TuiContext &tui) {
+  if (completion_active_ && !completion_suffix_.empty()) {
+    input_buf_.insert(cursor_pos_, completion_suffix_);
+    cursor_pos_ += static_cast<int>(completion_suffix_.size());
+    dismiss_completion();
+    tui.redraw_input();
+    tui.render();
+  }
+}
+
+//
+// Clear the completion state.
+//
+void Input::dismiss_completion() {
+  completion_suffix_.clear();
+  completion_active_ = false;
+}
+
 static std::string make_key_name(const InputEvent &ev) {
   std::string s;
   if (ev.is_ctrl()) s += "C-";
@@ -497,6 +597,10 @@ std::string Input::readline(TuiContext &tui) {
     auto ev = tui.get_event();
     if (ev.is(Key::ENTER) || ev.is(Key::NL) || ev.is(Key::CR)) {
       log_write(LEVEL_DEBUG, "input", "Key ENTER/NL/CR pressed");
+      if (completion_active_ && !completion_suffix_.empty()) {
+        input_buf_.insert(cursor_pos_, completion_suffix_);
+        dismiss_completion();
+      }
       std::string result = input_buf_;
       if (!result.empty()) {
         history_.push(result);
@@ -633,6 +737,7 @@ std::string Input::readline(TuiContext &tui) {
                 ev.val(), ev.is_shift(), ev.is_ctrl(), ev.is_edit(), ev.is_ascii(), ev.is_resize());
       continue;
     }
+    update_completion();
     tui.redraw_input();
     tui.render();
   }

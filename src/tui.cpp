@@ -385,6 +385,13 @@ void Tui::redraw_input() const {
     if (!after.empty()) {
       ncplane_putstr_yx(inputpl_, 1, cx + 1, after.c_str());
     }
+
+    // draw completion suffix in dimmed color
+    if (input_.completion_active()) {
+      set_plane_fg(inputpl_, Color::ColorElement::INPUT_COMPLETION);
+      ncplane_putstr_yx(inputpl_, 1, cx + 1 + static_cast<int>(after.size()),
+                        input_.completion_suffix().c_str());
+    }
   }
 }
 
