@@ -28,6 +28,22 @@ static KVCachePreset to_kv_preset(const std::string &str) {
   return KVCachePreset::Compact;
 }
 
+static std::string rope_type_to_string(llama_rope_scaling_type t) {
+  switch (t) {
+    case LLAMA_ROPE_SCALING_TYPE_LINEAR:   return "linear";
+    case LLAMA_ROPE_SCALING_TYPE_YARN:     return "yarn";
+    case LLAMA_ROPE_SCALING_TYPE_LONGROPE: return "longrope";
+    default:                               return "none";
+  }
+}
+
+static llama_rope_scaling_type to_rope_type(const std::string &str) {
+  if (str == "linear")   return LLAMA_ROPE_SCALING_TYPE_LINEAR;
+  if (str == "yarn")     return LLAMA_ROPE_SCALING_TYPE_YARN;
+  if (str == "longrope") return LLAMA_ROPE_SCALING_TYPE_LONGROPE;
+  return LLAMA_ROPE_SCALING_TYPE_UNSPECIFIED;
+}
+
 HaliConfig::HaliConfig() {
   sandbox_ = fs::current_path().string();
   for (const auto &tool : ALLOWED_TOOLS) {
@@ -108,6 +124,10 @@ void HaliConfig::load_settings() {
     model.get_float("penalty_freq", penalty_freq_);
     model.get_float("penalty_present", penalty_present_);
     model.get_bool("offload_kqv", offload_kqv_);
+    std::string rope_str;
+    model.get_str("rope_scaling", rope_str);
+    rope_scaling_type_ = to_rope_type(rope_str);
+    model.get_float("rope_freq_scale", rope_freq_scale_);
   }
 
   // ── rag section ────────────────────────────────────────────────
@@ -177,6 +197,37 @@ void HaliConfig::load_settings() {
     extra_dirs_.clear();
     for (const auto &d : dirs) {
       extra_dirs_.emplace_back(d.get_str());
+    }
+  }
+
+  // ── behavior / paths / access ──────────────────────────────────
+  root.get_bool("thinking", thinking_);
+  root.get_int("web_port", web_port_);
+  root.get_str("sandbox", sandbox_);
+  root.get_str("backup_path", backup_path_);
+  root.get_int("val_write_size_warn", val_write_size_warn_);
+
+  std::vector<json::JsonValue> kfs;
+  if (root.get_array("knowledge_files", kfs)) {
+    knowledge_files_.clear();
+    for (const auto &k : kfs) {
+      knowledge_files_.emplace_back(k.get_str());
+    }
+  }
+
+  std::vector<json::JsonValue> mfs;
+  if (root.get_array("mcp_filter", mfs)) {
+    mcp_filter_.clear();
+    for (const auto &m : mfs) {
+      mcp_filter_.emplace_back(m.get_str());
+    }
+  }
+
+  std::vector<json::JsonValue> ras;
+  if (root.get_array("run_allowed", ras)) {
+    run_allowed_.clear();
+    for (const auto &r : ras) {
+      run_allowed_.emplace_back(r.get_str());
     }
   }
 }
@@ -472,6 +523,8 @@ std::string HaliConfig::introspect() const {
   model.set_float("penalty_present", penalty_present_);
   model.set_int("penalty_last_n", penalty_last_n_);
   model.set_bool("offload_kqv", offload_kqv_);
+  model.set_str("rope_scaling", rope_type_to_string(rope_scaling_type_));
+  model.set_float("rope_freq_scale", rope_freq_scale_);
 
   // rag
   auto rag = root.get_child("rag");
@@ -521,6 +574,16 @@ std::string HaliConfig::introspect() const {
 
   // extra_dirs
   root.set_arr("extra_dirs", extra_dirs_);
+
+  // behavior / paths / access
+  root.set_bool("thinking", thinking_);
+  root.set_int("web_port", web_port_);
+  root.set_str("sandbox", sandbox_);
+  root.set_str("backup_path", backup_path_);
+  root.set_arr("knowledge_files", knowledge_files_);
+  root.set_arr("mcp_filter", mcp_filter_);
+  root.set_int("val_write_size_warn", val_write_size_warn_);
+  root.set_arr("run_allowed", run_allowed_);
 
   return doc.to_string(json::WriteFlag::Pretty);
 }

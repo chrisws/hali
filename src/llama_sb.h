@@ -82,8 +82,8 @@ struct LlamaLoad {
   int n_threads;        // threads for single-token generation
   int n_threads_batch;  // threads for prompt / batch processing
   // Context extension (relevant when VRAM caps n_ctx)
-  enum llama_rope_scaling_type rope_scaling_type;  // NONE / LINEAR / YARN / LONGROPE
-  float rope_freq_scale;    // 0 = use model default
+  enum llama_rope_scaling_type rope_scaling_type = LLAMA_ROPE_SCALING_TYPE_UNSPECIFIED;
+  float rope_freq_scale = 0.0f;  // 0 = use model default
   KVCachePreset kv_cache_preset;
   // MTP (Multi-Token Prediction) speculative decoding
   bool mtp_enabled = true;   // auto-detect if true, force off if false

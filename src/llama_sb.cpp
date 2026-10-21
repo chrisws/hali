@@ -231,6 +231,8 @@ bool Llama::load_model(const LlamaLoad &load) {
     cparams.no_perf = true;
     cparams.attention_type = LLAMA_ATTENTION_TYPE_UNSPECIFIED;
     cparams.flash_attn_type = LLAMA_FLASH_ATTN_TYPE_ENABLED;
+    cparams.rope_scaling_type = load.rope_scaling_type;
+    cparams.rope_freq_scale   = load.rope_freq_scale;
 
     switch (load.kv_cache_preset) {
       case KVCachePreset::F16:
