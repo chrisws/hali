@@ -101,6 +101,12 @@ void settings(Tui &tui, HaliConfig &cfg) {
   tui.append_line(ICON_SYS + "  log_level       : " + cfg.log_level_str_);
   tui.append_line(ICON_SYS + "  log_file        : " + (cfg.log_file_.empty() ? "(none)" : cfg.log_file_));
   tui.append_line(ICON_SYS + "  log_filter      : " + (cfg.log_filter_.empty() ? "(none)" : cfg.log_filter_));
+  tui.append_line(ICON_SYS + "  log_erase       : " + bool_str(cfg.log_erase_));
+
+  tui.append_line(ICON_SYS + "── Validation ─────────────────────────────────");
+  tui.append_line(ICON_SYS + "  write_validate  : " + bool_str(cfg.val_write_validate_));
+  tui.append_line(ICON_SYS + "  patch_validate  : " + bool_str(cfg.val_patch_validate_));
+  tui.append_line(ICON_SYS + "  write_size_warn : " + std::to_string(cfg.val_write_size_warn_));
 
   tui.append_line(ICON_SYS + "── MCP ────────────────────────────────────────");
   tui.append_line(ICON_SYS + "  mcp_host        : " + (cfg.mcp_host_.empty() ? "(none)" : cfg.mcp_host_));
@@ -128,10 +134,12 @@ void settings(Tui &tui, HaliConfig &cfg) {
     tui.append_line(ICON_SYS + "  extra_dirs      : (none)");
   }
   if (!cfg.run_allowed_.empty()) {
-    tui.append_line(ICON_SYS + "  run_allowed     :");
-    for (const auto &r : cfg.run_allowed_) {
-      tui.append_line(ICON_SYS + "    - " + r);
+    std::string list;
+    for (size_t i = 0; i < cfg.run_allowed_.size(); i++) {
+      if (i > 0) { list += ", "; }
+      list += cfg.run_allowed_[i];
     }
+    tui.append_line(ICON_SYS + "  run_allowed     : " + list);
   } else {
     tui.append_line(ICON_SYS + "  run_allowed     : (none)");
   }
