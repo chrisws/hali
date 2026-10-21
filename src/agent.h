@@ -10,6 +10,7 @@
 #define AGENT_H
 
 #include <functional>
+#include <set>
 #include <string>
 #include <unordered_map>
 
@@ -38,6 +39,7 @@ struct Agent {
   ~Agent() = default;
 
   bool run_turn(const std::string &user_message);
+  bool run_turn_with_skill(const std::string &skill_text, const std::string &user_msg);
   std::string last_response() const { return last_response_; }
   bool setup_embed(const std::string &path);
   bool setup_model();
@@ -75,6 +77,7 @@ struct Agent {
   bool model_loaded_ = false;
   std::string system_prompt_;
   int flush_count_ = 0;
+  std::set<std::string> loaded_skills_;
 
   UsageLog usage_log_;
   Planner planner_;

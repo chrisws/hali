@@ -357,7 +357,6 @@ std::string HaliConfig::prompt_core() const {
     "  TOOL:RND                   random float 0..1\n"
     "  TOOL:RAG    <query>        query the RAG index for additional context\n"
     "  TOOL:ASK    <query>        ask the user for clarification or additional context\n"
-    "  TOOL:GRAPH  <json>         display tree/bar charts.\n"
     "  TOOL:TABLE  <R>x<C> <rows>  format pipe-delimited rows into an aligned table\n"
     "  TOOL:INTROSPECT            show current model settings\n"
     "  TOOL:CURL   <url>          HTTP GET, returns response body (max 32 KB)\n"
@@ -391,10 +390,6 @@ std::string HaliConfig::prompt_core() const {
     "- `--context=<n>` shows n lines before/after each match\n"
     "- `--lines=<start>,<end>` restricts search to a line range (like sed -n)\n"
     "- `--name` matches the pattern against filenames (glob) instead of file content\n\n"
-
-    "## TOOL:GRAPH Rules\n"
-    "- For TOOL:GRAPH, Reference `skills/graph.md` when you need the full schema details\n"
-    "- Only expand the context when actively working with graphs\n\n"
 
     "## TOOL:TABLE Rules\n"
     "- ALWAYS use TOOL:TABLE when presenting tabular data (comparisons, columnar lists, summaries with 2+ columns)\n"

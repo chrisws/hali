@@ -26,6 +26,7 @@ const std::vector<SlashCommand> &slash_commands() {
     {"/allow-remove", "[path]",        "remove an allowed directory"},
     {"/revoke",       "<name>",        "remove an approved RUN command"},
     {"/audit",    "[path]",            "scan codebase for model-hostility issues"},
+    {"/skill",    "[name] [kickoff]",  "load a skill into the conversation"},
     {"/help",     "",                  "this message"},
   };
   return commands;

@@ -26,6 +26,7 @@
 #include "webview.h"
 #include "icon.h"
 #include "audio.h"
+#include "skills_generated.h"
 
 //
 // ── Slash command support functions ──────────────────────────────────────
@@ -392,6 +393,40 @@ static void slash_audit(const std::string &rest, HaliConfig &cfg, Tui &tui, Agen
 }
 
 //
+// /skill [name] [kickoff] – load a skill into the conversation
+//
+static void slash_skill(const std::string &rest_in, HaliConfig &cfg,
+                        Agent &agent, Tui &tui) {
+  std::string rest = rest_in;
+  if (rest.empty()) {
+    auto items = skill_display_names();
+    int idx = tui.list_picker(items, "Load Skill");
+    if (idx < 0) {
+      tui.append_line(ICON_SYS + "/skill cancelled.");
+      tui.redraw_all();
+      return;
+    }
+    rest = SKILLS[idx].name;
+  }
+
+  auto sp = rest.find(' ');
+  std::string name = (sp == std::string::npos) ? rest : rest.substr(0, sp);
+  std::string kickoff = (sp == std::string::npos) ? "" : rest.substr(sp + 1);
+
+  const SkillEntry *entry = skill_lookup(name);
+  if (!entry) {
+    tui.append_line(ICON_ERR + "Unknown skill: " + name);
+    tui.append_line(ICON_SYS + "Type /skill (no arg) to see available skills.");
+    tui.redraw_all();
+    return;
+  }
+
+  agent.run_turn_with_skill(entry->text, kickoff);
+  tui.append_line(ICON_SYS + "Loaded skill: " + name);
+  tui.redraw_all();
+}
+
+//
 // Slash command dispatcher
 //
 static void handle_slash(const std::string &input, HaliConfig &cfg, Agent &agent, Tui &tui) {
@@ -478,6 +513,10 @@ static void handle_slash(const std::string &input, HaliConfig &cfg, Agent &agent
   }
   if (verb == "/audit") {
     slash_audit(rest, cfg, tui, agent);
+    return;
+  }
+  if (verb == "/skill") {
+    slash_skill(rest, cfg, agent, tui);
     return;
   }
 

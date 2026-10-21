@@ -183,6 +183,7 @@ void Agent::reset_conversation(const std::string &sysprompt) {
   llama_->reset();
   cfg_.load_settings();
   apply_generation_params();
+  loaded_skills_.clear();
   iter_ = std::make_unique<LlamaIter>();
   if (!llama_->add_message(*iter_, "system", system_prompt_)) {
     tui_.append_line(ICON_ERR + "System prompt injection: " + llama_->last_error());
@@ -851,6 +852,27 @@ bool Agent::run_turn(const std::string &user_message) {
 
   tui_.redraw_all();
   return true;
+}
+
+bool Agent::run_turn_with_skill(const std::string &skill_text, const std::string &user_msg) {
+  if (!model_loaded_ || !iter_) {
+    tui_.append_line(ICON_ERR + "No model loaded. Use /model <path>");
+    tui_.redraw_all();
+    return false;
+  }
+  // Inject skill text as a tool_result message
+  std::string content = "Skill loaded:\n" + skill_text;
+  if (!llama_->add_message(*iter_, "tool_result", content)) {
+    tui_.append_line(ICON_ERR + "skill inject: " + llama_->last_error());
+    tui_.redraw_all();
+    return false;
+  }
+  // Default kickoff if none provided
+  std::string msg = user_msg;
+  if (msg.empty()) {
+    msg = "Skill loaded. What would you like to do?";
+  }
+  return run_turn(msg);
 }
 
 void Agent::dump_usage_log(const std::string &path) const {

@@ -183,6 +183,9 @@ if(NOT EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/yyjson/src/yyjson.h)
   message(FATAL_ERROR "yyjson submodule missing — run: git submodule update --init --recursive")
 endif()
 
+# ── Skill codegen ──────────────────────────────────────────────────────────
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/gen_skills.cmake)
+
 # -----------------------------
 # hali executable
 # -----------------------------
@@ -227,6 +230,7 @@ target_include_directories(hali PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/src
   ${CMAKE_CURRENT_SOURCE_DIR}/yyjson/src
   ${CMAKE_CURRENT_SOURCE_DIR}/libs
+  ${CMAKE_BINARY_DIR}
 )
 
 target_link_libraries(hali PRIVATE
