@@ -385,6 +385,7 @@ class Tui final: TuiContext {
 
   // ── lifecycle ─────────────────────────────────────────────────────
   void init();
+  static void cleanup();
   void resize();
   bool is_escape();
   bool has_input() const;

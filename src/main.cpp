@@ -13,6 +13,8 @@
 #include <vector>
 
 #include "llama.h"
+#include "ggml.h"
+
 #include "config.h"
 #include "tui.h"
 #include "agent.h"
@@ -591,10 +593,22 @@ static void parse_args(int argc, char **argv, HaliConfig &cfg,
 }
 
 //
+// ggml abort handler
+//
+extern "C" void abort_callback(const char *error_message) {
+  Tui::cleanup();
+  std::fprintf(stderr, "\n\033[1;31mHali fatal error:\033[0m\n%s\n\n", error_message);
+  std::fprintf(stderr, "Reduce gpu_layers or close other applications using the GPU.\n\n");
+  exit(1);
+}
+
+//
 // main()
 //
 int main(int argc, char **argv) {
   HaliConfig cfg;
+
+  ggml_set_abort_callback(abort_callback);
 
   // ── Parse arguments (command-line overrides saved settings) ──────
   bool do_mcp_test = false;

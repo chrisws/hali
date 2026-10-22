@@ -27,6 +27,8 @@
 // max scan for NCTYPE_PRESS in kity-term or NCTYPE_UNKNOWN in gnome terminal
 #define MAX_FIND_PRESS 4
 
+static notcurses *s_nc_ = nullptr;
+
 InputEvent::InputEvent(notcurses *nc) {
   notcurses_get_blocking(nc, &in_);
   int iter = 0;
@@ -62,6 +64,13 @@ Tui::~Tui() {
   if (nc_) {
     notcurses_stop(nc_);
     nc_ = nullptr;
+  }
+}
+
+void Tui::cleanup() {
+  if (s_nc_) {
+    notcurses_stop(s_nc_);
+    s_nc_ = nullptr;
   }
 }
 
@@ -180,6 +189,7 @@ void Tui::init() {
     std::fputs("notcurses_init failed\n", stderr);
     std::exit(1);
   }
+  s_nc_ = nc_;
   stdpl_ = notcurses_stdplane(nc_);
   notcurses_term_dim_yx(nc_, reinterpret_cast<unsigned*>(&term_rows_), reinterpret_cast<unsigned*>(&term_cols_));
 
