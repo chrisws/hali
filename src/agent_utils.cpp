@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <filesystem>
 #include <fstream>
+#include <ranges>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -19,8 +20,24 @@
 
 #include "agent_utils.h"
 #include "string_utils.h"
+#include "shell_util.h"
+#include "tui.h"
+#include "config.h"
+#include "file.h"
+#include "webview.h"
 
 namespace fs = std::filesystem;
+
+//
+// Run a callable in a background thread, ticking the TUI spinner while waiting.
+//
+std::string run_with_spinner(Tui &tui, const std::function<std::string()> &fn) {
+  auto fut = std::async(std::launch::async, fn);
+  while (fut.wait_for(std::chrono::milliseconds(100)) == std::future_status::timeout) {
+    tui.tick_spinner();
+  }
+  return fut.get();
+}
 
 //
 // handling for strip_code_fences
@@ -371,13 +388,13 @@ SearchFlags parse_search_flags(const std::string &flags_str) {
   return f;
 }
 
-bool glob_match(const std::string &str, const std::string &pattern, size_t si = 0, size_t pi = 0) {
+bool local_glob_match(const std::string &str, const std::string &pattern, size_t si = 0, size_t pi = 0) {
   while (pi < pattern.size()) {
     if (pattern[pi] == '*') {
       while (pi < pattern.size() && pattern[pi] == '*') pi++;
       if (pi == pattern.size()) return true;
       for (size_t s = si; s <= str.size(); s++) {
-        if (glob_match(str, pattern, s, pi)) return true;
+        if (local_glob_match(str, pattern, s, pi)) return true;
       }
       return false;
     } else if (pattern[pi] == '?') {
@@ -415,17 +432,7 @@ bool glob_match(const std::string &str, const std::string &pattern, size_t si = 
 
 bool matches_include(const std::string &filename, const std::string &glob) {
   if (glob.empty()) return true;
-  return glob_match(filename, glob);
-}
-
-bool has_shell_metachars(const std::string &pattern) {
-  return pattern.find(';') != std::string::npos ||
-         pattern.find('|') != std::string::npos ||
-         pattern.find('&') != std::string::npos ||
-         pattern.find('`') != std::string::npos ||
-         pattern.find("$(") != std::string::npos ||
-         pattern.find('>') != std::string::npos ||
-         pattern.find('<') != std::string::npos;
+  return local_glob_match(filename, glob);
 }
 
 std::string search_single_file(const std::string &filepath, const std::string &pattern, const SearchFlags &flags) {
@@ -577,7 +584,7 @@ std::string tool_search(const std::string &sandbox, const std::string &pattern, 
   for (const auto &file : files) {
     if (flags.name) {
       std::string filename = fs::path(file).filename().string();
-      if (glob_match(filename, pattern)) {
+      if (local_glob_match(filename, pattern)) {
         oss << file << "\n";
       }
     } else {
@@ -878,4 +885,48 @@ void ThinkParser::set_mode(Mode m) {
 
 void ThinkParser::reset() {
   mode_ = is_gemma_4_ ? Thunk : Init;
+}
+
+//
+// TOOL:RUN
+//
+std::string tool_run(HaliConfig &cfg, Tui &tui, const std::string &arg1, const std::string &arg2) {
+  const std::string args = arg1 + " " + arg2;
+  bool permitted = std::ranges::any_of(cfg.run_allowed_, [&](const std::string &a) {return a == args;});
+  if (!permitted) {
+    if (!tui.confirm_dialog(std::format("Allow {} {} to run?", arg1, arg2))) {
+      return "ERROR: '" + args + "' is not permitted to run.";
+    }
+    cfg.run_allowed_.emplace_back(args);
+    cfg.user_run_allowed_.add(args);
+  }
+  tui.show_tool("running: " + args);
+
+  return run_with_spinner(tui, [args]() -> std::string {
+    std::string out = run_shell_command(args);
+    if (out.size() > 4096) {
+      out = out.substr(0, 4096) + "\n…(truncated)";
+    }
+    return out;
+  });
+}
+
+//
+// Backup helper
+//
+void backup_file(const HaliConfig &cfg, Tui &tui, const std::string &path) {
+  if (!utils::is_blank(cfg.backup_path_)) {
+    const auto confirm = tool_write_backup(cfg.backup_path_, path);
+    tui.show_tool("backup: " + confirm);
+  }
+}
+
+//
+// Broadcast reload to webview
+//
+void broadcast_reload(const HaliConfig &cfg, Tui &tui) {
+  if (cfg.web_port_ != -1) {
+    tui.show_tool("reload browser");
+    webview::broadcast_reload();
+  }
 }

@@ -14,10 +14,7 @@
 #include "json.h"
 #include "gpu_info.h"
 
-static const std::vector<std::string> ALLOWED_TOOLS = {
-  "wc", "stat", "tr", "cut", "sort", "uniq", "od", "xxd", "git",
-  "file", "uname", "whoami", "pwd", "id", "g++", "date", "make"
-};
+static const std::vector<std::string> ALLOWED_TOOLS = {};
 
 static KVCachePreset to_kv_preset(const std::string &str) {
   if (str == "f16") {
@@ -78,6 +75,12 @@ std::string history_path() {
   const char *home = getenv("HOME");
   std::string base = home ? std::string(home) : ".";
   return base + "/.config/hali/history.txt";
+}
+
+std::string usage_log_path() {
+  const char *home = getenv("HOME");
+  std::string base = home ? std::string(home) : ".";
+  return base + "/.config/hali/usage_log.json";
 }
 
 void HaliConfig::set_config(const std::string &config) {
@@ -342,7 +345,7 @@ std::string HaliConfig::prompt_core() const {
 
     "## Available Tools\n"
     "  TOOL:LIST   [dir]          list files (default: sandbox root)\n"
-    "  TOOL:READ   <file>         read file contents (max 32 KB; use TOOL:SEARCH for larger files)\n"
+    "  TOOL:READ   <file>         read file contents (max 32 KB; use --lines=<start>,<end> for ranges)\n"
     "  TOOL:SEARCH <pattern> <path> [flags]  search files (flags: --recursive --line-numbers --count --line-count --files-only --name --include=<glob> --context=<n> --lines=<start>,<end>)\n"
     "  TOOL:APPEND <file> <text>  append text to an existing file\n"
     "  TOOL:PATCH  <file> <tags>  patch an existing file - see below\n"
@@ -351,12 +354,17 @@ std::string HaliConfig::prompt_core() const {
     "  TOOL:EXISTS <file>         YES or NO\n"
     "  TOOL:RUN    <prog> [args]  run program inside sandbox\n"
     "  TOOL:BUILD  [mode]         setup/build/test/clean (auto-detects CMake, Gradle, Maven, Python; modes: setup, build, test, clean, default=all)\n"
+    "  TOOL:STAT   <file>         file metadata (size, type, perms, line/word/char count)\n"
+    "  TOOL:SYSINFO               system info (user, uid, hostname, OS, kernel, arch, cwd)\n"
+    "  TOOL:GIT    <sub> [args]   git (status, log, diff, add, commit, branch, show)\n"
+    "  TOOL:HEX    <file> [off] [len]  hex dump\n"
     "  TOOL:REPLACE <file> <find>|<replace> [flags]  replace text in file (flags: --all, --count)\n"
     "  TOOL:DATE                  current date\n"
     "  TOOL:TIME                  current time\n"
     "  TOOL:RND                   random float 0..1\n"
     "  TOOL:RAG    <query>        query the RAG index for additional context\n"
     "  TOOL:ASK    <query>        ask the user for clarification or additional context\n"
+    "  TOOL:CHOICE <question> <options>  multiple-choice popup (options: pipe-delimited)\n"
     "  TOOL:TABLE  <R>x<C> <rows>  format pipe-delimited rows into an aligned table\n"
     "  TOOL:INTROSPECT            show current model settings\n"
     "  TOOL:CURL   <url>          HTTP GET, returns response body (max 32 KB)\n"

@@ -73,6 +73,7 @@ elseif(LLAMA_BACKEND STREQUAL "CUDA")
   if(CMAKE_CUDA_COMPILER)
     enable_language(CUDA)
     set(GGML_CUDA ON CACHE BOOL "" FORCE)
+    set(GGML_CUDA_GRAPHS ON CACHE BOOL "" FORCE)
   else()
     message(FATAL_ERROR "CUDA backend requested but nvcc not found")
   endif()
@@ -82,7 +83,8 @@ elseif(LLAMA_BACKEND STREQUAL "AUTO")
   if(CMAKE_CUDA_COMPILER)
     enable_language(CUDA)
     set(GGML_CUDA ON CACHE BOOL "" FORCE)
-    message(STATUS "CUDA detected - enabling GGML_CUDA")
+    set(GGML_CUDA_GRAPHS ON CACHE BOOL "" FORCE)
+    message(STATUS "CUDA detected - enabling GGML_CUDA + CUDA graphs")
   else()
     set(GGML_OPENMP ON CACHE BOOL "" FORCE)
     set(GGML_NATIVE ON CACHE BOOL "" FORCE)
@@ -207,7 +209,11 @@ add_executable(hali
   src/llama_sb_suffix.cpp
   src/file.cpp
   src/agent.cpp
+  src/agent_dispatch.cpp
   src/agent_utils.cpp
+  src/shell_util.cpp
+  src/sysinfo.cpp
+  src/git_tool.cpp
   src/audit.cpp
   src/usage_log.cpp
   src/build.cpp

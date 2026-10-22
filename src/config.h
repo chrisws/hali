@@ -24,6 +24,11 @@ namespace fs = std::filesystem;
 std::string history_path();
 
 //
+// Returns the usage log file path: ~/.config/hali/usage_log.json
+//
+std::string usage_log_path();
+
+//
 // HaliConfig
 //
 struct HaliConfig {

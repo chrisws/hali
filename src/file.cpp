@@ -417,13 +417,42 @@ std::string read_file(const std::string &path) {
     return "ERROR: cannot open [" + path + "]";
   }
   if (size > MAX_READ_SIZE) {
-    return std::format("ERROR: file too large (%zu bytes). Use TOOL:SEARCH to read specific sections.", size);
+    return std::format("ERROR: file too large (%zu bytes). Use TOOL:READ with --lines=<start>,<end> to read specific sections.", size);
   }
   std::ifstream f(path, std::ios::binary);
   if (!f) {
     return "ERROR: cannot open [" + path + "]";
   }
   std::ostringstream oss; oss << f.rdbuf();
+  return oss.str();
+}
+
+//
+// read_file_range - read a specific line range from a file (1-based, inclusive)
+//
+std::string read_file_range(const std::string &path, int start_line, int end_line) {
+  if (start_line < 1 || end_line < start_line) {
+    return "ERROR: invalid line range " + std::to_string(start_line) + "," + std::to_string(end_line);
+  }
+  std::ifstream f(path);
+  if (!f) {
+    return "ERROR: cannot open [" + path + "]";
+  }
+  std::string line;
+  int lineno = 0;
+  std::ostringstream oss;
+  while (std::getline(f, line)) {
+    lineno++;
+    if (lineno >= start_line && lineno <= end_line) {
+      oss << line << "\n";
+    }
+    if (lineno > end_line) {
+      break;
+    }
+  }
+  if (oss.str().empty()) {
+    return "ERROR: no lines in range " + std::to_string(start_line) + "," + std::to_string(end_line);
+  }
   return oss.str();
 }
 

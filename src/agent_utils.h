@@ -9,8 +9,19 @@
 #ifndef AGENT_UTILS_H
 #define AGENT_UTILS_H
 
+#include <chrono>
+#include <functional>
+#include <future>
 #include <string>
 #include <vector>
+
+struct Tui;
+
+//
+// Run a callable in a background thread, ticking the TUI spinner while waiting.
+// Use for any tool operation that may block for >2 seconds.
+//
+std::string run_with_spinner(Tui &tui, const std::function<std::string()> &fn);
 
 bool hasDangerousPatterns(const std::string &command, const std::vector<std::string> &run_allowed);
 std::string join_path(const std::string &a, const std::string &b);
@@ -58,7 +69,6 @@ struct SearchArgs {
 SearchArgs parse_search_args(const std::string &arg1, const std::string &arg2);
 SearchFlags parse_search_flags(const std::string &flags_str);
 bool matches_include(const std::string &filename, const std::string &glob);
-bool has_shell_metachars(const std::string &pattern);
 std::string search_single_file(const std::string &filepath, const std::string &pattern, const SearchFlags &flags);
 std::string tool_search(const std::string &sandbox, const std::string &pattern, const std::string &path_arg, const std::string &flags_str, const std::vector<std::string> &extra_dirs = {});
 
@@ -74,6 +84,19 @@ struct ReplaceArgs {
 
 ReplaceArgs parse_replace_args(const std::string &arg2);
 std::string tool_replace(const std::string &sandbox, const std::string &file, const std::string &arg2);
+
+//
+// Shared constants
+//
+constexpr std::string SESSION_MD = "SESSION.md";
+
+//
+// TOOL:RUN / backup / broadcast helpers
+//
+struct HaliConfig;
+std::string tool_run(HaliConfig &cfg, Tui &tui, const std::string &arg1, const std::string &arg2);
+void backup_file(const HaliConfig &cfg, Tui &tui, const std::string &path);
+void broadcast_reload(const HaliConfig &cfg, Tui &tui);
 
 //
 // TOOL:TABLE

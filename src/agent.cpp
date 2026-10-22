@@ -11,6 +11,7 @@
 #include <filesystem>
 #include <fstream>
 #include <functional>
+#include <future>
 #include <mutex>
 #include <sstream>
 #include <string>
@@ -30,55 +31,15 @@
 #include "webview.h"
 #include "icon.h"
 #include "agent_utils.h"
+#include "shell_util.h"
 #include "build.h"
 #include "planner.h"
+#include "sysinfo.h"
+#include "git_tool.h"
 
-//
-// SESSION.md - see config.cpp
-//
-constexpr std::string SESSION_MD = "SESSION.md";
 
-static std::string tool_run(HaliConfig &cfg, Tui &tui, const std::string &arg1, const std::string &arg2) {
-  const std::string args = arg1 + " " + arg2;
-  bool permitted = ranges::any_of(cfg.run_allowed_, [&](const std::string &a) {return a == args;});
-  if (!permitted) {
-    if (!tui.confirm_dialog(std::format("Allow {} {} to run?", arg1, arg2))) {
-      return "ERROR: '" + args + "' is not permitted to run.";
-    }
-    cfg.run_allowed_.emplace_back(args);
-    cfg.user_run_allowed_.add(args);
-  }
-  const std::string command = args + " 2>&1";
-  tui.show_tool("running: " + command);
-  FILE *fp = popen(command.c_str(), "r");
-  if (!fp) {
-    return "ERROR: popen failed";
-  }
-  std::string out;
-  char buf[256];
-  while (fgets(buf, sizeof(buf), fp)) {
-    out += buf;
-  }
-  pclose(fp);
-  if (out.size() > 4096) {
-    out = out.substr(0, 4096) + "\n…(truncated)";
-  }
-  return out;
-}
 
-static void backup_file(const HaliConfig &cfg, Tui &tui, const std::string &path) {
-  if (!utils::is_blank(cfg.backup_path_)) {
-    const auto confirm = tool_write_backup(cfg.backup_path_, path);
-    tui.show_tool("backup: " + confirm);
-  }
-}
 
-static void broadcast_reload(const HaliConfig &cfg, Tui &tui) {
-  if (cfg.web_port_ != -1) {
-    tui.show_tool("reload browser");
-    webview::broadcast_reload();
-  }
-}
 
 static void broadcast_message(const HaliConfig &cfg, Tui &tui, const std::string &message) {
   if (cfg.web_port_ != -1 && !utils::is_blank(message)) {
@@ -162,17 +123,17 @@ bool Agent::setup_model() {
 bool Agent::setup_embed(const std::string &path) {
   tui_.show_loading_modal_popup("embedding model: " + fs::path(path).filename().string());
   tui_.redraw_all();
-  embed_llama_ = std::make_unique<Llama>();
-  if (!embed_llama_->load_embedding_model(path)) {
+  rag_.embed_llama = std::make_unique<Llama>();
+  if (!rag_.embed_llama->load_embedding_model(path)) {
     tui_.dismiss_modal_popup();
-    tui_.append_line(ICON_ERR + embed_llama_->last_error());
+    tui_.append_line(ICON_ERR + rag_.embed_llama->last_error());
     tui_.redraw_all();
-    embed_llama_.reset();
+    rag_.embed_llama.reset();
     return false;
   }
   tui_.dismiss_modal_popup();
-  rag_db_      = std::make_unique<RagDB>();
-  rag_session_ = std::make_unique<RagSession>();
+  rag_.rag_db      = std::make_unique<RagDB>();
+  rag_.rag_session = std::make_unique<RagSession>();
   tui_.append_line(ICON_SYS + "Embedding model ready.");
   tui_.redraw_all();
   return true;
@@ -217,6 +178,36 @@ float Agent::tokens_per_sec() const {
   return static_cast<float>(iter_->_tokens_generated / elapsed);
 }
 
+LlamaMemoryInfo Agent::get_mem_info() {
+  auto now = std::chrono::steady_clock::now();
+  if (now - last_mem_update_ > std::chrono::seconds(1)) {
+    cached_mem_info_ = llama_->memory_info();
+    last_mem_update_ = now;
+  }
+  return cached_mem_info_;
+}
+
+void Agent::broadcast_throttled(const std::string &msg) {
+  if (cfg_.web_port_ == -1 || utils::is_blank(msg)) {
+    return;
+  }
+  broadcast_.broadcast_buffer += msg;
+  auto now = std::chrono::steady_clock::now();
+  if (now - broadcast_.last_broadcast > std::chrono::milliseconds(100)) {
+    flush_broadcast();
+  }
+}
+
+void Agent::flush_broadcast() {
+  if (broadcast_.broadcast_buffer.empty()) {
+    return;
+  }
+  tui_.show_tool("send to browser");
+  webview::broadcast_message(broadcast_.broadcast_buffer);
+  broadcast_.broadcast_buffer.clear();
+  broadcast_.last_broadcast = std::chrono::steady_clock::now();
+}
+
 std::string Agent::memory_info_status() const {
   float kv_percent = llama_->memory_kv_percent();
   auto message = kv_percent > 75 ? "(Warning: Approaching limit)" : "";
@@ -240,26 +231,32 @@ std::string Agent::memory_info_text() const {
 }
 
 std::string Agent::rag_tool(const std::string &agent_query) const {
+  // Return cached result if same query this turn
+  if (agent_query == rag_.last_query && !rag_.last_result.empty()) {
+    return rag_.last_result;
+  }
   std::string result;
-  if (embed_llama_ && rag_db_ && rag_session_) {
-    result = embed_llama_->rag_retrieve(*rag_db_, agent_query, cfg_.rag_top_k_, *rag_session_);
+  if (rag_.active()) {
+    result = rag_.embed_llama->rag_retrieve(*rag_.rag_db, agent_query, cfg_.rag_top_k_, *rag_.rag_session);
     if (result.empty()) {
-      result = std::string("RAG: no context found: ") + embed_llama_->last_error();
+      result = std::string("RAG: no context found: ") + rag_.embed_llama->last_error();
     }
   } else {
     result = "RAG: not enabled";
   }
+  rag_.last_query = agent_query;
+  rag_.last_result = result;
   return result;
 }
 
 bool Agent::rag_load_index(const std::string &path) const {
-  if (!embed_llama_ || !rag_db_) {
+  if (!rag_.active()) {
     tui_.append_line(ICON_ERR + "Load an embedding model first: /embed <path>");
     tui_.redraw_all();
     return false;
   }
 
-  if (!rag_db_->load(path)) {
+  if (!rag_.rag_db->load(path)) {
     tui_.append_line(ICON_SYS + "failed to load");
     tui_.redraw_all();
   }
@@ -268,7 +265,7 @@ bool Agent::rag_load_index(const std::string &path) const {
 }
 
 bool Agent::rag_index(const std::string &path) const {
-  if (!embed_llama_ || !rag_db_) {
+  if (!rag_.active()) {
     tui_.append_line(ICON_ERR + "Load an embedding model first: /embed <path>");
     tui_.redraw_all();
     return false;
@@ -277,14 +274,14 @@ bool Agent::rag_index(const std::string &path) const {
   auto index_one = [&](const std::string &filepath) {
     tui_.append_line(ICON_SYS + "  indexing: " + filepath);
     tui_.redraw_all();
-    if (!embed_llama_->rag_index(*rag_db_, filepath)) {
-      tui_.append_line(ICON_ERR + "rag_load: " + embed_llama_->last_error());
+    if (!rag_.embed_llama->rag_index(*rag_.rag_db, filepath)) {
+      tui_.append_line(ICON_ERR + "rag_load: " + rag_.embed_llama->last_error());
       tui_.redraw_all();
     }
   };
 
   // must be set before indexing
-  rag_db_->embed_dim = embed_llama_->get_embed_dim();
+  rag_.rag_db->embed_dim = rag_.embed_llama->get_embed_dim();
 
   fs::path rp(path);
   std::error_code ec;
@@ -301,7 +298,7 @@ bool Agent::rag_index(const std::string &path) const {
   std::string save_path = join_path(cfg_.sandbox_, "rag-index.bin");
   tui_.append_line(ICON_SYS + "saving index: " + save_path);
   tui_.redraw_all();
-  return rag_db_->save(save_path);
+  return rag_.rag_db->save(save_path);
 }
 
 std::string Agent::restart() {
@@ -325,267 +322,6 @@ std::string Agent::restart() {
 //
 // Tool dispatch
 //
-ToolMap Agent::build_tool_dispatch() {
-  ToolMap tools;
-
-  tools["TOOL:DATE"] = [this](const std::string &a1, const std::string &a2) -> std::string {
-    tui_.show_tool("TOOL:DATE");
-    char buf[32]; time_t t = time(nullptr);
-    strftime(buf, sizeof(buf), "%Y-%m-%d", localtime(&t));
-    return buf;
-  };
-  tools["TOOL:TIME"] = [this](const std::string &a1, const std::string &a2) -> std::string {
-    tui_.show_tool("TOOL:TIME");
-    char buf[32]; time_t t = time(nullptr);
-    strftime(buf, sizeof(buf), "%H:%M:%S", localtime(&t));
-    return buf;
-  };
-  tools["TOOL:RND"] = [this](const std::string &a1, const std::string &a2) -> std::string {
-    tui_.show_tool("TOOL:RND");
-    return std::to_string(static_cast<double>(rand()) / RAND_MAX);
-  };
-  tools["TOOL:RAG"] = [this](const std::string &a1, const std::string &a2) -> std::string {
-    tui_.show_tool("TOOL:RAG");
-    return rag_tool(a1);
-  };
-  tools["TOOL:LIST"] = [this](const std::string &a1, const std::string &a2) -> std::string {
-    std::string dir = resolve_path(cfg_.sandbox_, a1);
-    if (!path_allowed(cfg_.sandbox_, cfg_.extra_dirs_, dir)) {
-      return "ERROR: path outside sandbox";
-    }
-    tui_.show_tool("listing: " + dir);
-    return list_dir(dir);
-  };
-  tools["TOOL:EXISTS"] = [this](const std::string &a1, const std::string &a2) -> std::string {
-    std::string p = resolve_path(cfg_.sandbox_, a1);
-    if (!path_allowed(cfg_.sandbox_, cfg_.extra_dirs_, p)) {
-      return "ERROR: path outside sandbox";
-    }
-    tui_.show_tool("checking: " + p);
-    return fs::exists(p) ? "YES" : "NO";
-  };
-  tools["TOOL:READ"] = [this](const std::string &a1, const std::string &a2) -> std::string {
-    tui_.show_tool("reading: " + a1);
-    turn_files_read_++;
-    std::string p = resolve_path(cfg_.sandbox_, a1);
-    if (!path_allowed(cfg_.sandbox_, cfg_.extra_dirs_, p)) {
-      return "ERROR: path outside sandbox";
-    }
-    return read_file(p);
-  };
-  tools["TOOL:SEARCH"] = [this](const std::string &a1, const std::string &a2) -> std::string {
-    SearchArgs sa = parse_search_args(a1, a2);
-    tui_.show_tool("search: " + sa.pattern + " " + sa.path_and_flags);
-    turn_files_read_++;
-    std::string path_part, flags_part;
-    auto space_pos = sa.path_and_flags.find(' ');
-    if (space_pos != std::string::npos) {
-      path_part = sa.path_and_flags.substr(0, space_pos);
-      flags_part = sa.path_and_flags.substr(space_pos + 1);
-    } else {
-      path_part = sa.path_and_flags;
-    }
-    return tool_search(cfg_.sandbox_, sa.pattern, path_part, flags_part, cfg_.extra_dirs_);
-  };
-  tools["TOOL:WRITE"] = [this](const std::string &a1, const std::string &a2) -> std::string {
-    tui_.show_tool("writing: " + a1);
-    turn_files_written_++;
-    const auto path = resolve_path(cfg_.sandbox_, a1);
-    if (!path_in_sandbox(cfg_.sandbox_, path)) {
-      return "ERROR: path outside sandbox";
-    }
-    const auto data = strip_code_fences(a1, a2);
-    if (!utils::ends_with(path, SESSION_MD)) {
-      if (cfg_.permission_prompt_ && !tui_.confirm_dialog(std::format("Allow model to write {}?", path))) {
-        return "ERROR: action prevented by user";
-      } else if (!cfg_.val_write_validate_) {
-        const auto validate = tool_write_validate(path, data, cfg_.val_write_size_warn_);
-        if (!validate.empty() && !tui_.confirm_dialog(std::format("[{}] - Allow model to write {}?", validate, path))) {
-          return "ERROR: action prevented by user - " + validate;
-        }
-      }
-    }
-    backup_file(cfg_, tui_, path);
-    const auto result = tool_write(path, data);
-    if (!utils::starts_with(result, "OK")) {
-      tui_.append_token(ICON_ERR + data);
-      tui_.append_token(ICON_ERR + result);
-    } else {
-      broadcast_reload(cfg_, tui_);
-    }
-    return result;
-  };
-  tools["TOOL:PATCH"] = [this](const std::string &a1, const std::string &a2) -> std::string {
-    tui_.show_tool("patch: " + a1);
-    turn_files_written_++;
-    const auto path = resolve_path(cfg_.sandbox_, a1);
-    if (!path_in_sandbox(cfg_.sandbox_, path)) {
-      return "ERROR: path outside sandbox";
-    }
-    if (!cfg_.val_patch_validate_) {
-      const auto validate = tool_patch_validate(path, a2);
-      if (!validate.empty()) {
-        tui_.append_token(ICON_ERR + a2);
-        if (!tui_.confirm_dialog(std::format("[{}] - Allow model to patch {}?", validate, path))) {
-          return "ERROR: action prevented by user - " + validate;
-        }
-      }
-    }
-    backup_file(cfg_, tui_, path);
-    const auto result = tool_patch(path, a2);
-    if (!utils::starts_with(result, "OK")) {
-      tui_.append_token(ICON_ERR + a2);
-      tui_.append_token(ICON_ERR + result);
-    } else {
-      broadcast_reload(cfg_, tui_);
-    }
-    return result;
-  };
-  tools["TOOL:APPEND"] = [this](const std::string &a1, const std::string &a2) -> std::string {
-    tui_.show_tool("append: " + a1);
-    turn_files_written_++;
-    const auto path = resolve_path(cfg_.sandbox_, a1);
-    if (!path_in_sandbox(cfg_.sandbox_, path)) {
-      return "ERROR: path outside sandbox";
-    }
-    backup_file(cfg_, tui_, path);
-    const auto result = tool_append(path, a2);
-    if (!utils::starts_with(result, "OK")) {
-      tui_.append_token(ICON_ERR + result);
-    } else {
-      broadcast_reload(cfg_, tui_);
-    }
-    return result;
-  };
-  tools["TOOL:MKDIR"] = [this](const std::string &a1, const std::string &a2) -> std::string {
-    std::string p = resolve_path(cfg_.sandbox_, a1);
-    tui_.show_tool("mkdir: " + a1);
-    if (!path_in_sandbox(cfg_.sandbox_, p)) {
-      return "ERROR: path outside sandbox";
-    }
-    return make_dir(p) ? "OK: created " + a1 : "ERROR: mkdir failed for " + a1;
-  };
-  tools["TOOL:CURL"] = [this](const std::string &a1, const std::string &a2) -> std::string {
-    tui_.show_tool("curl: " + a1);
-    return tool_curl(a1);
-  };
-  tools["TOOL:INTROSPECT"] = [this](const std::string &a1, const std::string &a2) -> std::string {
-    tui_.show_tool("introspecting: " + a1);
-    return cfg_.introspect();
-  };
-  tools["TOOL:ASK"] = [this](const std::string &a1, const std::string &a2) -> std::string {
-    tui_.set_thinking(false);
-    tui_.show_tool("asking: " + a1 + " " + a2);
-    if (cfg_.audio_user_prompt_) { audio::play_user_prompt(); }
-    return tui_.readline();
-  };
-  tools["TOOL:RESTART"] = [this](const std::string &a1, const std::string &a2) -> std::string {
-    tui_.show_tool("restart ...");
-    return restart();
-  };
-  tools["TOOL:PERMISSION"] = [this](const std::string &a1, const std::string &a2) -> std::string {
-    tui_.set_thinking(false);
-    tui_.show_tool("asking permission: " + a1 + " " + a2);
-    if (cfg_.audio_user_prompt_) { audio::play_user_prompt(); }
-    return tui_.confirm_dialog(a1 + " " + a2) ? "YES" : "NO";
-  };
-  tools["TOOL:RUN"] = [this](const std::string &a1, const std::string &a2) -> std::string {
-    return tool_run(cfg_, tui_, a1, a2);
-  };
-  tools["TOOL:BUILD"] = [this](const std::string &a1, const std::string &a2) -> std::string {
-    auto result = build_run(cfg_.sandbox_, a1, [&](const std::string &msg) {
-      tui_.show_tool(msg);
-    }, a2);
-    return result.output_;
-  };
-  tools["TOOL:REPLACE"] = [this](const std::string &a1, const std::string &a2) -> std::string {
-    tui_.show_tool("replace: " + a1);
-    const auto path = resolve_path(cfg_.sandbox_, a1);
-    if (cfg_.permission_prompt_ && !tui_.confirm_dialog(std::format("Allow model to replace in {}?", path))) {
-      return "ERROR: action prevented by user";
-    }
-    backup_file(cfg_, tui_, path);
-    auto result = tool_replace(cfg_.sandbox_, a1, a2);
-    if (!utils::starts_with(result, "OK")) {
-      tui_.append_token(ICON_ERR + result);
-    } else {
-      broadcast_reload(cfg_, tui_);
-    }
-    return result;
-  };
-  tools["TOOL:MCP"] = [this](const std::string &a1, const std::string &a2) -> std::string {
-    tui_.show_tool("mcp: " + a1);
-    return mcp_client_.call_tool(a1, a2, cfg_.sandbox_);
-  };
-  tools["TOOL:GRAPH"] = [this](const std::string &a1, const std::string &a2) -> std::string {
-    const int cols = tui_.get_term_cols() * 0.75;
-    auto graphResult = tool_graph(cols, a1 + a2);
-    if (graphResult.success_) { tui_.append_lines(graphResult.data_); }
-    return graphResult.success_ ? "OK" : graphResult.message_;
-  };
-  tools["TOOL:TABLE"] = [this](const std::string &a1, const std::string &a2) -> std::string {
-    const auto result = tool_table(a1, a2);
-    if (!result.error.empty()) {
-      tui_.show_tool("table error: " + result.error);
-      tui_.append_line(a2);
-      return result.error;
-    }
-    tui_.append_lines(result.rows);
-    return "OK";
-  };
-  tools["TOOL:PLAY"] = [this](const std::string &a1, const std::string &a2) -> std::string {
-    const std::string notes = a1 + " " + a2;
-    tui_.show_tool("play: " + notes);
-    auto result = audio::play_script(notes);
-    if (!result.error.empty()) { return result.error; }
-    audio::play_events(result.events);
-    size_t total = 0;
-    for (const auto &ev : result.events) { total += ev.size(); }
-    return "OK: played " + std::to_string(total) + " notes in "
-           + std::to_string(result.events.size()) + " events";
-  };
-  tools["TOOL:PLAN"] = [this](const std::string &a1, const std::string &a2) -> std::string {
-    const std::string cmd = utils::trim(a1 + " " + a2);
-    if (cmd.empty()) {
-      tui_.show_tool("plan: display");
-      if (planner_.steps().empty()) {
-        return "No active plan. Use TOOL:PLAN set <goal> to create one.";
-      }
-      return planner_.to_markdown();
-    }
-    auto space = cmd.find(' ');
-    const std::string verb = (space == std::string::npos) ? cmd : cmd.substr(0, space);
-    const std::string arg  = (space == std::string::npos) ? "" : utils::trim(cmd.substr(space + 1));
-    if (verb == "set") {
-      tui_.show_tool("plan: set goal");
-      planner_.set_goal(arg);
-      return "OK: goal set to \"" + arg + "\"";
-    }
-    if (verb == "add") {
-      tui_.show_tool("plan: add step");
-      planner_.add_step(arg);
-      return "OK: added step \"" + arg + "\" (" + std::to_string(planner_.steps().size()) + " total)";
-    }
-    if (verb == "advance") {
-      tui_.show_tool("plan: advance");
-      planner_.advance();
-      if (planner_.complete()) {
-        return "OK: plan complete.";
-      }
-      return "OK: advanced. " + planner_.to_markdown();
-    }
-    if (verb == "skip") {
-      tui_.show_tool("plan: skip");
-      size_t idx = 0;
-      try { idx = std::stoul(arg); } catch (...) { return "ERROR: invalid index: " + arg; }
-      planner_.skip(idx);
-      return "OK: skipped step " + arg + ". " + planner_.to_markdown();
-    }
-    return "ERROR: unknown plan command: " + verb + " (use: set, add, advance, skip)";
-  };
-  return tools;
-}
-
 std::string Agent::process_tool(const std::string &cmd) {
   std::string op, arg1, arg2;
   auto WS = cmd.find_first_of(" \n");
@@ -636,16 +372,16 @@ void Agent::invoke_tool(const std::string &buffer, const std::string_view templa
   }
 
   log_write(LEVEL_DEBUG, "agent", "tool request: [%s]", tool.c_str());
-  turn_tool_calls_++;
+  turn_.tool_calls++;
   std::string result = process_tool(tool);
   if (result.empty()) {
     result = "TOOL produced no results";
   }
   if (result.rfind("ERROR", 0) == 0) {
-    turn_tool_errors_++;
+    turn_.tool_errors++;
   }
   const std::string content = TOOL_RESULT + std::vformat(template_str, std::make_format_args(result)) + memory_info_status();
-  tui_.update_usage(tokens_per_sec(), llama_->memory_info());
+  tui_.update_usage(tokens_per_sec(), get_mem_info());
   if (!llama_->add_message(*iter_, "tool_result", content)) {
     tui_.append_line(ICON_ERR + "tool result inject: " + llama_->last_error());
   }
@@ -653,7 +389,7 @@ void Agent::invoke_tool(const std::string &buffer, const std::string_view templa
     tui_.append_line(ICON_ERR + "failed to evoke tool response: " + llama_->last_error());
   }
   if (llama_->is_memory_flush()) {
-    if (++flush_count_ > MAX_FLUSH_RETRIES) {
+    if (++broadcast_.flush_count > MAX_FLUSH_RETRIES) {
       tui_.append_line(ICON_ERR + "Multiple memory flushes detected. Stopping auto-continue.");
       tui_.redraw_all();
       return;
@@ -683,13 +419,15 @@ bool Agent::run_turn(const std::string &user_message) {
   }
 
   std::string effective_message = user_message;
-  if (embed_llama_ && rag_db_ && rag_session_) {
-    std::string context = embed_llama_->rag_retrieve(*rag_db_, user_message, cfg_.rag_top_k_, *rag_session_);
+  if (rag_.active()) {
+    std::string context = rag_.embed_llama->rag_retrieve(*rag_.rag_db, user_message, cfg_.rag_top_k_, *rag_.rag_session);
+    rag_.last_query = user_message;
+    rag_.last_result = context;
     if (!context.empty()) {
       log_write(LEVEL_DEBUG, "agent", "RAG: %s", context.c_str());
       effective_message = "Context:\n" + context + "\n\nUser: " + user_message;
     } else {
-      log_write(LEVEL_DEBUG, "agent", "RAG: no context found [%s]", embed_llama_->last_error());
+      log_write(LEVEL_DEBUG, "agent", "RAG: no context found [%s]", rag_.embed_llama->last_error());
     }
   }
   if (!iter_) {
@@ -697,17 +435,15 @@ bool Agent::run_turn(const std::string &user_message) {
     tui_.redraw_all();
     return false;
   }
-  flush_count_ = 0;
-  turn_number_++;
-  turn_tool_calls_ = 0;
-  turn_tool_errors_ = 0;
-  turn_files_read_ = 0;
-  turn_files_written_ = 0;
+  broadcast_.reset();
+  turn_.number++;
+  turn_.reset();
+  rag_.reset_cache();
   last_response_.clear();
   bool flushed = false;
   if (!llama_->add_message(*iter_, "user", effective_message)) {
     if (llama_->is_memory_flush()) {
-      if (++flush_count_ > MAX_FLUSH_RETRIES) {
+      if (++broadcast_.flush_count > MAX_FLUSH_RETRIES) {
         tui_.append_line(ICON_ERR + "Multiple memory flushes detected. Stopping auto-continue.");
         tui_.redraw_all();
         return false;
@@ -733,14 +469,15 @@ bool Agent::run_turn(const std::string &user_message) {
 
   tui_.set_thinking(true);
   std::string buffer;
+  int tick_count = 0;
 
   auto fetch_tool = [&]() -> void {
     while (iter_->_has_next && !tui_.is_escape()) {
       const std::string tok = llama_->next(*iter_);
       buffer += tok;
       tui_.tick_spinner();
-      if (auto pos = buffer.find("</think>"); pos != std::string::npos) {
-        break;
+      if (++tick_count % 5 == 0) {
+        tui_.tick_spinner();
       }
     }
   };
@@ -808,22 +545,34 @@ bool Agent::run_turn(const std::string &user_message) {
         }
       } else {
         auto token = buffer.substr(0, pos + 1);
-        tui_.append_token(token);
-        broadcast_message(cfg_, tui_, token);
+        broadcast_.line_batch += token;
         last_response_ += token;
+        if (++broadcast_.line_batch_count >= 3) {
+          tui_.append_token(broadcast_.line_batch);
+          broadcast_throttled(broadcast_.line_batch);
+          broadcast_.line_batch.clear();
+          broadcast_.line_batch_count = 0;
+        }
       }
       buffer = buffer.substr(pos + 1);
     }
   }
 
+  if (!broadcast_.line_batch.empty()) {
+    tui_.append_token(broadcast_.line_batch);
+    broadcast_throttled(broadcast_.line_batch);
+    broadcast_.line_batch.clear();
+    broadcast_.line_batch_count = 0;
+  }
   if (!buffer.empty()) {
     tui_.append_token(buffer);
-    broadcast_message(cfg_, tui_, buffer);
+    broadcast_throttled(buffer);
     last_response_ += buffer;
   }
+  flush_broadcast();
 
   tui_.set_thinking(false);
-  tui_.update_usage(tokens_per_sec(), llama_->memory_info());
+  tui_.update_usage(tokens_per_sec(), get_mem_info());
 
   char stat[128];
   const auto pattern = ICON_SYS + "%.1f tok/s  (%d tokens)  %.1fs elapsed  KV %.1f%%";
@@ -835,16 +584,16 @@ bool Agent::run_turn(const std::string &user_message) {
   tui_.append_line(stat);
 
   // Record usage log for this turn
-  TurnMetrics tm;
-  tm.turn_number       = turn_number_;
-  tm.llm_latency_ms    = elapsed_seconds() * 1000.0;
-  tm.completion_tokens = iter_->_tokens_generated;
-  tm.tool_call_count   = turn_tool_calls_;
-  tm.tool_error_count  = turn_tool_errors_;
-  tm.kv_usage_pct      = llama_->memory_kv_percent();
-  tm.files_read        = turn_files_read_;
-  tm.files_written     = turn_files_written_;
-  usage_log_.record_turn(tm);
+  TurnMetrics metrics;
+  metrics.turn_number       = turn_.number;
+  metrics.llm_latency_ms    = elapsed_seconds() * 1000.0;
+  metrics.completion_tokens = iter_->_tokens_generated;
+  metrics.tool_call_count   = turn_.tool_calls;
+  metrics.tool_error_count  = turn_.tool_errors;
+  metrics.kv_usage_pct      = llama_->memory_kv_percent();
+  metrics.files_read        = turn_.files_read;
+  metrics.files_written     = turn_.files_written;
+  usage_log_.record_turn(metrics);
   log_write(LEVEL_DEBUG, "usage_log", "%s", usage_log_.summary().c_str());
   if (usage_log_.kv_trending_high()) {
     tui_.append_line(ICON_SYS + "KV usage trending high — consider restarting soon.");

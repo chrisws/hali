@@ -1166,6 +1166,8 @@ static void test_file_internal_validation() {
   cout << "test_file_internal_validation passed" << endl;
 }
 
+static void test_read_file_range();
+
 void file_test() {
   test_isBalanced();
   test_parsePatch();
@@ -1227,6 +1229,7 @@ void file_test() {
   test_read_file_not_found();
   test_read_file_too_large();
   test_read_file_empty();
+  test_read_file_range();
   cout << "\nAll read_file tests passed!\n" << endl;
 
   test_make_dir_new();
@@ -1241,4 +1244,50 @@ void file_test() {
 
   test_file_internal_validation();
   cout << "\nAll file internal validation tests passed!\n" << endl;
+}
+
+// Test read_file_range
+static void test_read_file_range() {
+  string test_file = "/tmp/test_read_range.txt";
+
+  // Create a file with 10 known lines
+  {
+    ofstream out(test_file);
+    for (int i = 1; i <= 10; i++) {
+      out << "line" << i << "\n";
+    }
+  }
+
+  // Basic range: lines 3-5
+  string result = read_file_range(test_file, 3, 5);
+  assert(result == "line3\nline4\nline5\n");
+
+  // Single line
+  result = read_file_range(test_file, 7, 7);
+  assert(result == "line7\n");
+
+  // Full range
+  result = read_file_range(test_file, 1, 10);
+  assert(result == "line1\nline2\nline3\nline4\nline5\nline6\nline7\nline8\nline9\nline10\n");
+
+  // Range extending past EOF (should clamp)
+  result = read_file_range(test_file, 9, 15);
+  assert(result == "line9\nline10\n");
+
+  // Invalid: start > end
+  result = read_file_range(test_file, 5, 3);
+  assert(result.find("ERROR: invalid line range") != string::npos);
+
+  // Invalid: start < 1
+  result = read_file_range(test_file, 0, 5);
+  assert(result.find("ERROR: invalid line range") != string::npos);
+
+  // Non-existent file
+  result = read_file_range("/tmp/nonexistent_range_file.txt", 1, 5);
+  assert(result.find("ERROR: cannot open") != string::npos);
+
+  // Clean up
+  fs::remove(test_file);
+
+  cout << "test_read_file_range passed" << endl;
 }

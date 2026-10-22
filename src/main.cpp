@@ -741,7 +741,7 @@ int main(int argc, char **argv) {
   log_write(LEVEL_INFO, "main", "hali exiting");
 
   // Dump usage log for post-hoc analysis.
-  agent.dump_usage_log(cfg.sandbox_ + "/usage_log.json");
+  agent.dump_usage_log(usage_log_path());
 
   log_close();
 

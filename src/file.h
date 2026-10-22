@@ -21,6 +21,7 @@ std::string tool_write_backup(const std::string &backup_path, const std::string 
 std::string tool_write_validate(const std::string &path, const std::string &data,
                                 int size_warn = 1000);
 std::string read_file(const std::string &path);
+std::string read_file_range(const std::string &path, int start_line, int end_line);
 bool make_dir(const std::string &path);
 std::string list_dir(const std::string &path);
 

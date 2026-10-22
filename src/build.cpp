@@ -12,6 +12,7 @@
 #include <thread>
 
 #include "build.h"
+#include "shell_util.h"
 
 namespace fs = std::filesystem;
 
@@ -52,17 +53,7 @@ static BuildSystem detect_build_system(const std::string &sandbox) {
 static std::string run_command(const std::string &cmd,
                                const std::function<void(const std::string &)> &status) {
   status("build: " + cmd);
-  const std::string full_cmd = cmd + " 2>&1";
-  FILE *fp = popen(full_cmd.c_str(), "r");
-  if (!fp) {
-    return "ERROR: popen failed for: " + cmd;
-  }
-  std::string out;
-  char buf[256];
-  while (fgets(buf, sizeof(buf), fp)) {
-    out += buf;
-  }
-  pclose(fp);
+  std::string out = run_shell_command(cmd);
   if (out.size() > 4096) {
     const size_t head = 1024;
     const size_t tail = 3072;

@@ -20,6 +20,7 @@ add_executable(hali_tests
   ../src/logging.cpp
   ../src/string_utils.cpp
   ../src/agent_utils.cpp
+  ../src/shell_util.cpp
   ../src/build.cpp
   ../src/usage_log.cpp
   ../src/mcp_format.cpp
@@ -31,7 +32,11 @@ add_executable(hali_tests
   ../src/slash_commands.cpp
   ../src/planner.cpp
   ../src/audit.cpp
+  ../src/sysinfo.cpp
+  ../src/git_tool.cpp
   src/gpu_info_stub.cpp
+  src/tui_stub.cpp
+  src/webview_stub.cpp
   src/utf8_test.cpp
   src/file_test.cpp
   src/graph_test.cpp
@@ -54,6 +59,8 @@ add_executable(hali_tests
   src/config_test.cpp
   src/test_planner.cpp
   src/audit_test.cpp
+  src/sysinfo_test.cpp
+  src/git_tool_test.cpp
   src/main.cpp
 )
 

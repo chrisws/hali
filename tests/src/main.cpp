@@ -20,6 +20,8 @@ void config_test();
 void audit_test();
 void think_parser_test();
 void planner_test();
+void sysinfo_test();
+void git_tool_test();
 
 #include "logging.h"
 
@@ -47,5 +49,7 @@ int main() {
   audio_test();
   think_parser_test();
   planner_test();
+  sysinfo_test();
+  git_tool_test();
   return 0;
 }

@@ -20,6 +20,7 @@
 #include "logging.h"
 #include "string_utils.h"
 #include "agent_utils.h"
+#include "shell_util.h"
 
 // https://modelcontextprotocol.io/specification/2025-03-26/basic/lifecycle
 

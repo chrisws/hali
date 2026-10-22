@@ -5,6 +5,7 @@
 #include <fstream>
 #include <filesystem>
 #include "agent_utils.h"
+#include "shell_util.h"
 
 namespace fs = std::filesystem;
 

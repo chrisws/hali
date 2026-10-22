@@ -27,6 +27,56 @@ using ToolMap = std::unordered_map<std::string, ToolFn>;
 constexpr int MAX_FLUSH_RETRIES = 3;
 
 //
+// Per-turn state, reset at the start of each run_turn
+//
+struct TurnState {
+  int number        = 0;
+  int tool_calls    = 0;
+  int tool_errors   = 0;
+  int files_read    = 0;
+  int files_written = 0;
+
+  void reset() {
+    tool_calls    = 0;
+    tool_errors   = 0;
+    files_read    = 0;
+    files_written = 0;
+  }
+};
+
+//
+// Throttled broadcast / line-batching state
+//
+struct BroadcastState {
+  int flush_count        = 0;
+  std::string line_batch;
+  int line_batch_count   = 0;
+  std::string broadcast_buffer;
+  std::chrono::steady_clock::time_point last_broadcast{};
+
+  void reset() {
+    flush_count      = 0;
+    line_batch.clear();
+    line_batch_count = 0;
+    broadcast_buffer.clear();
+  }
+};
+
+//
+// RAG (retrieval-augmented generation) subsystem state
+//
+struct RagState {
+  std::unique_ptr<Llama>      embed_llama;
+  std::unique_ptr<RagDB>      rag_db;
+  std::unique_ptr<RagSession> rag_session;
+  mutable std::string last_query;
+  mutable std::string last_result;
+
+  bool active() const { return embed_llama && rag_db && rag_session; }
+  void reset_cache() const { last_query.clear(); last_result.clear(); }
+};
+
+//
 // Agent
 //
 struct Agent {
@@ -62,6 +112,8 @@ struct Agent {
   double elapsed_seconds() const;
   float tokens_per_sec() const;
   void invoke_tool(const std::string &buffer, std::string_view template_str);
+  void broadcast_throttled(const std::string &msg);
+  void flush_broadcast();
 
   HaliConfig &cfg_;
   Tui &tui_;
@@ -69,24 +121,19 @@ struct Agent {
 
   std::unique_ptr<Llama> llama_;
   std::unique_ptr<LlamaIter> iter_;
-  std::unique_ptr<Llama> embed_llama_;
-  std::unique_ptr<RagDB> rag_db_;
-  std::unique_ptr<RagSession> rag_session_;
   ToolMap tools_;
-
   bool model_loaded_ = false;
   std::string system_prompt_;
-  int flush_count_ = 0;
   std::set<std::string> loaded_skills_;
-
   UsageLog usage_log_;
   Planner planner_;
   std::string last_response_;
-  int turn_number_ = 0;
-  int turn_tool_calls_ = 0;
-  int turn_tool_errors_ = 0;
-  int turn_files_read_ = 0;
-  int turn_files_written_ = 0;
+  TurnState turn_;
+  BroadcastState broadcast_;
+  std::chrono::steady_clock::time_point last_mem_update_{};
+  LlamaMemoryInfo cached_mem_info_{};
+  LlamaMemoryInfo get_mem_info();
+  RagState rag_;
 };
 
 #endif
