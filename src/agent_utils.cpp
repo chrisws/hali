@@ -834,7 +834,10 @@ size_t ThinkParser::check_start(const std::string &buffer) {
     return 0;
   }
   static const std::vector<std::string> tags = {
-    "<think>", "<|think|>", "<think|>", "<|channel>thought"
+    "<think>",
+    "<think|>",
+    "<|channel>thought",
+    "<|think|>"
   };
   for (const auto &tag : tags) {
     if (buffer.rfind(tag, 0) == 0) {
@@ -853,9 +856,11 @@ ThinkParser::EndResult ThinkParser::check_end(const std::string &buffer) {
 
   static const std::vector<std::string> tags = {
     "</think>",
-    "</|think|>",
     "</think|>",
-    "</thought>"
+    "</think|\n\n",
+    "</thought>",
+    "</|think|>",
+    "</|think|\n\n"
   };
 
   for (const auto &tag : tags) {
