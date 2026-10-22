@@ -5,14 +5,15 @@
 #include "agent_utils.h"
 
 // Build tag strings via concatenation to avoid harness interference
-static std::string T_OPEN()  { return "<" "think" ">"; }
-static std::string T_CLOSE() { return "</" "think" ">"; }
-static std::string T_OPEN2()  { return "<|" "think" "|>"; }
+static std::string T_CLOSE()  { return "</" "think" ">"; }
 static std::string T_CLOSE2() { return "</|" "think" "|>"; }
-static std::string T_OPEN3()  { return "<" "think" "|>"; }
 static std::string T_CLOSE3() { return "</" "think" "|>"; }
-static std::string T_OPEN4()  { return "<|" "channel" ">thought"; }
 static std::string T_CLOSE4() { return "</" "thought" ">"; }
+static std::string T_CLOSE5() { return "</|" "think" "|\n\n"; }
+static std::string T_OPEN()   { return "<" "think" ">"; }
+static std::string T_OPEN2()  { return "<|" "think" "|>"; }
+static std::string T_OPEN3()  { return "<" "think" "|>"; }
+static std::string T_OPEN4()  { return "<|" "channel" ">thought"; }
 
 void think_parser_test() {
   std::cout << "=== ThinkParser Tests ===" << std::endl;
@@ -105,6 +106,13 @@ void think_parser_test() {
     assert(r.found);
     assert(r.thought == "y");
     assert(r.tag_len == T_CLOSE4().size());
+
+    // Channel thought variant
+    tp.set_mode(ThinkParser::Think);
+    r = tp.check_end("y" + T_CLOSE5());
+    assert(r.found);
+    assert(r.thought == "y");
+    assert(r.tag_len == T_CLOSE5().size());
 
     // No close tag found
     tp.set_mode(ThinkParser::Think);
