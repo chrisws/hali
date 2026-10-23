@@ -62,6 +62,8 @@ struct HaliConfig {
   float top_p_          = 0.95f;
   bool  offload_kqv_    = true;
   bool  permission_prompt_ = false;
+  bool  disable_run_      = false;
+  bool  disable_save_on_exit_ = false;
   bool  thinking_       = true;
   int   log_level_      = GGML_LOG_LEVEL_CONT;
   int   n_batch_        = 512;
@@ -101,9 +103,9 @@ struct HaliConfig {
   bool  audio_tool_tick_  = false;
   bool  audio_user_prompt_ = false;
 
-  // Validation gates (skip validate calls for capable models)
-  bool  val_write_validate_ = false;
-  bool  val_patch_validate_ = false;
+  // Validation gates (disable validate calls for capable models)
+  bool  disable_write_validate_ = false;
+  bool  disable_patch_validate_ = false;
   int   val_write_size_warn_ = 1000;
 
   KVCachePreset kv_preset_ = KVCachePreset::Compact;

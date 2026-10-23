@@ -184,14 +184,16 @@ void HaliConfig::load_settings() {
     logging.get_bool("erase", log_erase_);
   }
 
-  // ── permission_prompt ──────────────────────────────────────────
+  // ── permission_prompt / disable_run / disable_save_on_exit ─────
   root.get_bool("permission_prompt", permission_prompt_);
+  root.get_bool("disable_run", disable_run_);
+  root.get_bool("disable_save_on_exit", disable_save_on_exit_);
 
   // ── validation section ─────────────────────────────────────────
   auto validation = root.get_child("validation");
   if (validation.is_object()) {
-    validation.get_bool("write_validate", val_write_validate_);
-    validation.get_bool("patch_validate", val_patch_validate_);
+    validation.get_bool("disable_write_validate", disable_write_validate_);
+    validation.get_bool("disable_patch_validate", disable_patch_validate_);
   }
 
   // ── extra_dirs section ─────────────────────────────────────────
@@ -292,7 +294,8 @@ std::string HaliConfig::prompt_knowledge() const {
 }
 
 std::string HaliConfig::prompt_core() const {
-  return
+  std::string p;
+  p +=
     "## Core Principle\n"
     "Always follow this loop: THINK → DECIDE → ACT → RESPOND\n\n"
 
@@ -342,8 +345,11 @@ std::string HaliConfig::prompt_core() const {
     "  TOOL:PATCH  <file> <tags>  patch an existing file - see below\n"
     "  TOOL:WRITE  <file> <text>  write text to file\n"
     "  TOOL:MKDIR  <dir>          create a subfolder inside the sandbox\n"
-    "  TOOL:EXISTS <file>         YES or NO\n"
-    "  TOOL:RUN    <prog> [args]  run program inside sandbox\n"
+    "  TOOL:EXISTS <file>         YES or NO\n";
+  if (!disable_run_) {
+    p += "  TOOL:RUN    <prog> [args]  run program inside sandbox\n";
+  }
+  p +=
     "  TOOL:BUILD  [mode]         setup/build/test/clean (auto-detects CMake, Gradle, Maven, Python; modes: setup, build, test, clean, default=all)\n"
     "  TOOL:STAT   <file>         file metadata (size, type, perms, line/word/char count)\n"
     "  TOOL:SYSINFO               system info (user, uid, hostname, OS, kernel, arch, cwd)\n"
@@ -395,6 +401,7 @@ std::string HaliConfig::prompt_core() const {
     "- Do NOT write markdown tables (| col | col |) in your response text\n"
     "- Format: first line is <R>x<C>, then one pipe-delimited row per line\n"
     "- Example: TOOL:TABLE 3x2 Name|Value\\nfoo|1\\nbar|2\n\n";
+  return p;
 }
 
 std::string HaliConfig::prompt_file_ops() const {
@@ -560,11 +567,13 @@ std::string HaliConfig::introspect() const {
   logging.set_bool("erase", log_erase_);
 
   root.set_bool("permission_prompt", permission_prompt_);
+  root.set_bool("disable_run", disable_run_);
+  root.set_bool("disable_save_on_exit", disable_save_on_exit_);
 
   // validation
   auto validation = root.get_child("validation");
-  validation.set_bool("write_validate", val_write_validate_);
-  validation.set_bool("patch_validate", val_patch_validate_);
+  validation.set_bool("disable_write_validate", disable_write_validate_);
+  validation.set_bool("disable_patch_validate", disable_patch_validate_);
 
   // extra_dirs
   root.set_arr("extra_dirs", extra_dirs_);

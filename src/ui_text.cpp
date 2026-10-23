@@ -98,9 +98,9 @@ void settings(Tui &tui, HaliConfig &cfg) {
   tui.append_line(ICON_SYS + "  log_erase       : " + bool_str(cfg.log_erase_));
 
   tui.append_line(ICON_SYS + "── Validation ─────────────────────────────────");
-  tui.append_line(ICON_SYS + "  write_validate  : " + bool_str(cfg.val_write_validate_));
-  tui.append_line(ICON_SYS + "  patch_validate  : " + bool_str(cfg.val_patch_validate_));
-  tui.append_line(ICON_SYS + "  write_size_warn : " + std::to_string(cfg.val_write_size_warn_));
+  tui.append_line(ICON_SYS + "  disable_write_validate : " + bool_str(cfg.disable_write_validate_));
+  tui.append_line(ICON_SYS + "  disable_patch_validate : " + bool_str(cfg.disable_patch_validate_));
+  tui.append_line(ICON_SYS + "  write_size_warn          : " + std::to_string(cfg.val_write_size_warn_));
 
   tui.append_line(ICON_SYS + "── MCP ────────────────────────────────────────");
   tui.append_line(ICON_SYS + "  mcp_host        : " + (cfg.mcp_host_.empty() ? "(none)" : cfg.mcp_host_));

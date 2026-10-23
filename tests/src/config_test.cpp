@@ -306,8 +306,8 @@ static void test_log_erase_load() {
 
 static void test_validation_defaults() {
   HaliConfig cfg;
-  assert(cfg.val_write_validate_ == false);
-  assert(cfg.val_patch_validate_ == false);
+  assert(cfg.disable_write_validate_ == false);
+  assert(cfg.disable_patch_validate_ == false);
   cout << "test_validation_defaults passed" << endl;
 }
 
@@ -316,8 +316,8 @@ static void test_validation_load() {
   const string content =
     "{\n"
     "  \"validation\": {\n"
-    "    \"write_validate\": true,\n"
-    "    \"patch_validate\": false\n"
+    "    \"disable_write_validate\": true,\n"
+    "    \"disable_patch_validate\": false\n"
     "  }\n"
     "}\n";
   {
@@ -329,8 +329,8 @@ static void test_validation_load() {
   cfg.set_config(path);
   cfg.load_settings();
 
-  assert(cfg.val_write_validate_ == true);
-  assert(cfg.val_patch_validate_ == false);
+  assert(cfg.disable_write_validate_ == true);
+  assert(cfg.disable_patch_validate_ == false);
 
   string json = cfg.introspect();
   auto doc = json::parse(json);
@@ -338,8 +338,8 @@ static void test_validation_load() {
   auto root = doc.get_root();
   auto validation = root.get_child("validation");
   bool v1 = false, v2 = false;
-  assert(validation.get_bool("write_validate", v1));
-  assert(validation.get_bool("patch_validate", v2));
+  assert(validation.get_bool("disable_write_validate", v1));
+  assert(validation.get_bool("disable_patch_validate", v2));
   assert(v1 == true);
   assert(v2 == false);
 

@@ -22,7 +22,7 @@ namespace json {
 
 // Parse flags for yyjson_write
 enum class WriteFlag {
-  Pretty = 1,
+  Pretty = 65,  // YYJSON_WRITE_PRETTY | YYJSON_WRITE_PRETTY_TWO_SPACES
   Compact = 0
 };
 

@@ -754,6 +754,11 @@ int main(int argc, char **argv) {
 
   log_write(LEVEL_INFO, "main", "hali exiting");
 
+  // Persist settings on exit (unless disabled).
+  if (!cfg.disable_save_on_exit_) {
+    cfg.save_settings();
+  }
+
   // Dump usage log for post-hoc analysis.
   agent.dump_usage_log(usage_log_path());
 

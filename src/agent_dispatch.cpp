@@ -113,7 +113,7 @@ ToolMap Agent::build_tool_dispatch() {
     if (!utils::ends_with(path, SESSION_MD)) {
       if (cfg_.permission_prompt_ && !tui_.confirm_dialog(std::format("Allow model to write {}?", path))) {
         return "ERROR: action prevented by user";
-      } else if (!cfg_.val_write_validate_) {
+      } else if (!cfg_.disable_write_validate_) {
         const auto validate = tool_write_validate(path, data, cfg_.val_write_size_warn_);
         if (!validate.empty() && !tui_.confirm_dialog(std::format("[{}] - Allow model to write {}?", validate, path))) {
           return "ERROR: action prevented by user - " + validate;
@@ -137,7 +137,7 @@ ToolMap Agent::build_tool_dispatch() {
     if (!path_in_sandbox(cfg_.sandbox_, path)) {
       return "ERROR: path outside sandbox";
     }
-    if (!cfg_.val_patch_validate_) {
+    if (!cfg_.disable_patch_validate_) {
       const auto validate = tool_patch_validate(path, a2);
       if (!validate.empty()) {
         tui_.append_token(ICON_ERR + a2);
@@ -205,6 +205,9 @@ ToolMap Agent::build_tool_dispatch() {
     return tui_.confirm_dialog(a1 + " " + a2) ? "YES" : "NO";
   };
   tools["TOOL:RUN"] = [this](const std::string &a1, const std::string &a2) -> std::string {
+    if (cfg_.disable_run_) {
+      return "ERROR: TOOL:RUN is disabled by configuration";
+    }
     return tool_run(cfg_, tui_, a1, a2);
   };
   tools["TOOL:BUILD"] = [this](const std::string &a1, const std::string &a2) -> std::string {
@@ -347,6 +350,8 @@ ToolMap Agent::build_tool_dispatch() {
     if (idx < 0) {
       return "CANCELLED";
     }
+    tui_.append_line(ICON_TOOL + "← " + options[idx]);
+    tui_.redraw_all();
     return options[idx];
   };
   return tools;
