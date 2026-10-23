@@ -50,7 +50,7 @@ struct HaliConfig {
   std::string model_path_;
   std::string embed_path_;
   std::string backup_path_;
-  std::string sandbox_;
+  std::string sandbox_; // not a recorded setting
   std::string config_ = "hali.config.json";
 
   float min_p_          = 0.0f;

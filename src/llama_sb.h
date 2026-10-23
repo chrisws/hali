@@ -290,7 +290,6 @@ struct Llama {
 
   // generation parameters
   void add_stop(const char *stop) { _stop_sequences.push_back(stop); }
-  void clear_stops() { _stop_sequences.clear(); }
   void set_penalty_last_n(int32_t penalty_last_n) { _penalty_last_n = penalty_last_n; dirty(); }
   void set_penalty_repeat(float penalty_repeat) { _penalty_repeat = penalty_repeat; dirty(); }
   void set_penalty_freq(float penalty_freq) { _penalty_freq = penalty_freq; dirty(); }

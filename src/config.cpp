@@ -206,7 +206,6 @@ void HaliConfig::load_settings() {
   // ── behavior / paths / access ──────────────────────────────────
   root.get_bool("thinking", thinking_);
   root.get_int("web_port", web_port_);
-  root.get_str("sandbox", sandbox_);
   root.get_str("backup_path", backup_path_);
   root.get_int("val_write_size_warn", val_write_size_warn_);
 
@@ -223,14 +222,6 @@ void HaliConfig::load_settings() {
     mcp_filter_.clear();
     for (const auto &m : mfs) {
       mcp_filter_.emplace_back(m.get_str());
-    }
-  }
-
-  std::vector<json::JsonValue> ras;
-  if (root.get_array("run_allowed", ras)) {
-    run_allowed_.clear();
-    for (const auto &r : ras) {
-      run_allowed_.emplace_back(r.get_str());
     }
   }
 }
@@ -581,12 +572,10 @@ std::string HaliConfig::introspect() const {
   // behavior / paths / access
   root.set_bool("thinking", thinking_);
   root.set_int("web_port", web_port_);
-  root.set_str("sandbox", sandbox_);
   root.set_str("backup_path", backup_path_);
   root.set_arr("knowledge_files", knowledge_files_);
   root.set_arr("mcp_filter", mcp_filter_);
   root.set_int("val_write_size_warn", val_write_size_warn_);
-  root.set_arr("run_allowed", run_allowed_);
 
   return doc.to_string(json::WriteFlag::Pretty);
 }

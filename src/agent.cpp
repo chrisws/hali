@@ -37,10 +37,6 @@
 #include "sysinfo.h"
 #include "git_tool.h"
 
-
-
-
-
 static void broadcast_message(const HaliConfig &cfg, Tui &tui, const std::string &message) {
   if (cfg.web_port_ != -1 && !utils::is_blank(message)) {
     tui.show_tool("send to browser");
