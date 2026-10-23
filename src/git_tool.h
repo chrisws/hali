@@ -12,7 +12,8 @@
 #include <string>
 
 // Run a whitelisted git subcommand in the given sandbox directory.
-// Allowed subcommands: status, log, diff, add, commit, branch, show
+// Allowed subcommands: status, log, diff, add, commit, branch, show,
+//                      rm, config, submodule, stash, tag
 // Returns the command output, or an ERROR string on failure.
 std::string git_run(const std::string &subcommand, const std::string &args,
                     const std::string &sandbox);
