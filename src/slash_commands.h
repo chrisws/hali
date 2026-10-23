@@ -12,6 +12,10 @@
 #include <string>
 #include <vector>
 
+struct HaliConfig;
+struct Agent;
+struct Tui;
+
 struct SlashCommand {
   const char *name;
   const char *usage;
@@ -19,5 +23,10 @@ struct SlashCommand {
 };
 
 const std::vector<SlashCommand> &slash_commands();
+
+/**
+ * @brief Dispatch a slash command (input starts with '/').
+ */
+void handle_slash(const std::string &input, HaliConfig &cfg, Agent &agent, Tui &tui);
 
 #endif

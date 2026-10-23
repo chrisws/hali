@@ -636,3 +636,21 @@ void Agent::save_mtp_best_settings() {
   log_write(LEVEL_INFO, "agent", "MTP best settings saved: n_max=%d n_min=%d p_min=%.3f pos_threshold=%.3f",
             cfg_.mtp_n_max_, cfg_.mtp_n_min_, cfg_.mtp_p_min_, cfg_.mtp_pos_threshold_);
 }
+
+std::vector<std::string> Agent::tool_names() const {
+  std::vector<std::string> names;
+  names.reserve(tools_.size());
+  for (const auto &pair : tools_) {
+    names.push_back(pair.first);
+  }
+  std::sort(names.begin(), names.end());
+  return names;
+}
+
+std::string Agent::invoke_tool_by_name(const std::string &name, const std::string &a1, const std::string &a2) {
+  auto it = tools_.find(name);
+  if (it == tools_.end()) {
+    return "ERROR: unknown tool: " + name;
+  }
+  return it->second(a1, a2);
+}

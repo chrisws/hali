@@ -395,11 +395,17 @@ static void test_completion_single_match() {
   assert(in.completion_active_);
   assert(in.completion_suffix_ == "lear");
 
-  // /t → /theme → suffix "heme"
-  in.input_buf_ = "/t";
+  // /th → /theme → suffix "eme"
+  in.input_buf_ = "/th";
   in.update_completion();
   assert(in.completion_active_);
-  assert(in.completion_suffix_ == "heme");
+  assert(in.completion_suffix_ == "eme");
+
+  // /to → /tool → suffix "ol"
+  in.input_buf_ = "/to";
+  in.update_completion();
+  assert(in.completion_active_);
+  assert(in.completion_suffix_ == "ol");
 
   // /e → /embed → suffix "mbed"
   in.input_buf_ = "/e";

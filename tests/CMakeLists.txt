@@ -9,6 +9,8 @@ project(hali_tests C CXX)
 
 find_package(OpenSSL REQUIRED)
 
+include(${CMAKE_CURRENT_SOURCE_DIR}/../cmake/gen_skills.cmake)
+
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -36,6 +38,7 @@ add_executable(hali_tests
   ../src/git_tool.cpp
   src/gpu_info_stub.cpp
   src/tui_stub.cpp
+  src/agent_stub.cpp
   src/webview_stub.cpp
   src/utf8_test.cpp
   src/file_test.cpp
@@ -71,6 +74,7 @@ endif()
 
 # Basic test includes (no llama, no curl dependencies)
 target_include_directories(hali_tests PRIVATE
+  ${CMAKE_BINARY_DIR}
   ${CMAKE_CURRENT_SOURCE_DIR}
   ${CMAKE_CURRENT_SOURCE_DIR}/../yyjson/src
   ${CMAKE_CURRENT_SOURCE_DIR}/../src
