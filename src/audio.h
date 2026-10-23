@@ -88,6 +88,15 @@ ScriptResult play_script(const std::string &notes_str);
  */
 void play_test();
 
+/**
+ * @brief Render note events into a 16-bit mono WAV file.
+ * @param events  The note events to render (sine waves with exponential decay).
+ * @param path    Output file path.
+ * @param sample_rate  Sample rate in Hz (default 44100).
+ * @return true on success, false on failure.
+ */
+bool save_wav(const std::vector<NoteEvent> &events, const std::string &path, int sample_rate = 44100);
+
 /** @brief Play a short bright ascending "tick" (tool completion). */
 void play_tool_tick();
 

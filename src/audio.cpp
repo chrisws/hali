@@ -10,7 +10,9 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <deque>
+#include <fstream>
 #include <mutex>
 #include <sstream>
 #include <string>
@@ -29,28 +31,68 @@ static constexpr int MAX_RAMP = 512;
 static constexpr int RAMP_SCALE = 20;
 static constexpr int MAX_QUEUE_SIZE = 250;
 
+// ── Crossfade curves ────────────────────────────────────────────────────────
+// Three-phase: ramp → harmonise (hold) → ramp
+// During the "harmonise" plateau both tones are at H, giving a brief
+// moment where both chords are clearly present together.
+
+static constexpr float HARMONISE_LEVEL = 0.7f;
+static constexpr float PHASE_RAMP     = 0.35f;  // 35% ramp
+static constexpr float PHASE_HOLD     = 0.30f;  // 30% hold
+// Phase 3 = 1.0 - PHASE_RAMP - PHASE_HOLD = 35% ramp
+
+static float fade_in_curve(float t) {
+  // t: 0→1.  Amplitude: 0 → H → 1
+  float p1 = PHASE_RAMP;
+  float p2 = p1 + PHASE_HOLD;
+  if (t < p1) {
+    return HARMONISE_LEVEL * (t / p1);
+  } else if (t < p2) {
+    return HARMONISE_LEVEL;
+  } else {
+    return HARMONISE_LEVEL + (1.0f - HARMONISE_LEVEL) * ((t - p2) / (1.0f - p2));
+  }
+}
+
+static float fade_out_curve(float t) {
+  // t: 0→1.  Amplitude: 1 → H → 0
+  float p1 = PHASE_RAMP;
+  float p2 = p1 + PHASE_HOLD;
+  if (t < p1) {
+    return 1.0f - (1.0f - HARMONISE_LEVEL) * (t / p1);
+  } else if (t < p2) {
+    return HARMONISE_LEVEL;
+  } else {
+    return HARMONISE_LEVEL * ((1.0f - t) / (1.0f - p2));
+  }
+}
+
 // ── Sound ───────────────────────────────────────────────────────────────────
 
 struct Sound {
   uint32_t total_samples;
   uint32_t sampled;
   uint32_t delay_samples;
-  uint32_t faded_in;
-  uint32_t fade_out;
+  uint32_t fade_in_samples;
+  uint32_t fade_out_samples;
   float amplitude;
   float increment;
   float phase;
 
-  Sound(double freq_hz, double duration_s, float volume, uint32_t delay = 0)
+  Sound(double freq_hz, double duration_s, float volume, uint32_t delay = 0,
+        uint32_t fade_in = 0, uint32_t fade_out = 0)
     : total_samples((uint32_t)(duration_s * SAMPLE_RATE)),
       sampled(0),
       delay_samples(delay),
-      faded_in(0),
-      fade_out(0),
+      fade_in_samples(fade_in),
+      fade_out_samples(fade_out),
       amplitude(volume),
       increment((float)(PI2 * freq_hz / SAMPLE_RATE)),
       phase(0.0f) {
-    faded_in = fade_out = std::min((int)total_samples / RAMP_SCALE, MAX_RAMP);
+    if (fade_in_samples == 0)
+      fade_in_samples = std::min((int)total_samples / RAMP_SCALE, MAX_RAMP);
+    if (fade_out_samples == 0)
+      fade_out_samples = std::min((int)total_samples / RAMP_SCALE, MAX_RAMP);
   }
 
   bool active() const { return sampled < delay_samples + total_samples; }
@@ -61,14 +103,26 @@ struct Sound {
       return 0.0f;
     }
     uint32_t eff = sampled - delay_samples;
+    if (eff >= total_samples) {
+      sampled++;
+      return 0.0f;
+    }
     float result = sinf(phase) * amplitude;
     phase = fmodf(phase + increment, PI2);
     sampled++;
 
-    if (faded_in != 0 && eff < faded_in) {
-      result *= (float)eff / (float)faded_in;
-    } else if (fade_out != 0 && (total_samples - eff) < fade_out) {
-      result *= (float)(total_samples - eff) / (float)fade_out;
+    // Exponential decay matching save_wav: exp(-3t/T)
+    // Brings amplitude to ~5% by the end of the note, giving a
+    // natural fade-out so consecutive chords blend smoothly.
+    float decay = expf(-3.0f * (float)eff / (float)total_samples);
+    result *= decay;
+
+    if (fade_in_samples != 0 && eff < fade_in_samples) {
+      float t = (float)eff / (float)fade_in_samples;
+      result *= fade_in_curve(t);
+    } else if (fade_out_samples != 0 && (total_samples - eff) < fade_out_samples) {
+      float t = (float)(eff - (total_samples - fade_out_samples)) / (float)fade_out_samples;
+      result *= fade_out_curve(t);
     }
     return result;
   }
@@ -88,10 +142,12 @@ static std::deque<Sound *> g_queue;
 // ── Queue helpers ───────────────────────────────────────────────────────────
 
 static void add(double freq_hz, double duration_s, float volume,
-                uint32_t delay_samples = 0) {
+                uint32_t delay_samples = 0, uint32_t fade_in = 0,
+                uint32_t fade_out = 0) {
   std::lock_guard<std::mutex> lock(g_lock);
   if (g_queue.size() >= MAX_QUEUE_SIZE) return;
-  g_queue.push_back(new Sound(freq_hz, duration_s, volume * g_volume, delay_samples));
+  g_queue.push_back(new Sound(freq_hz, duration_s, volume * g_volume,
+                             delay_samples, fade_in, fade_out));
 }
 
 static void clear_queue() {
@@ -188,14 +244,38 @@ void play_tone(double freq_hz, double duration_s, double volume) {
 
 void play_events(const std::vector<NoteEvent> &events) {
   if (!g_enabled) return;
-  uint32_t delay = 0;
+
+  // Compute crossfade duration: 50ms or 25% of shortest chord, whichever is less.
+  // This ensures the crossfade is short enough not to muddy the transition
+  // but long enough to eliminate the click from the dip-to-silence.
+  double min_dur = 1e9;
   for (const auto &event : events) {
+    for (const auto &note : event) {
+      min_dur = std::min(min_dur, note.second);
+    }
+  }
+  uint32_t crossfade = (uint32_t)(std::min(0.05, min_dur * 0.25) * SAMPLE_RATE);
+
+  uint32_t delay = 0;
+  for (size_t i = 0; i < events.size(); i++) {
+    const auto &event = events[i];
     double max_dur = 0.0;
     for (const auto &note : event) {
-      add(note.first, note.second, 1.0f, delay);
       max_dur = std::max(max_dur, note.second);
     }
-    delay += (uint32_t)(max_dur * SAMPLE_RATE);
+
+    // First chord: fade-in only (auto). Last chord: fade-out only (auto).
+    // Middle chords: crossfade on both edges.
+    uint32_t fade_in = (i == 0) ? 0 : crossfade;
+    uint32_t fade_out = (i == events.size() - 1) ? 0 : crossfade;
+
+    for (const auto &note : event) {
+      add(note.first, note.second, 1.0f, delay, fade_in, fade_out);
+    }
+
+    // Next chord starts `crossfade` samples before this one ends,
+    // creating an overlap where both are active and blending.
+    delay += (uint32_t)(max_dur * SAMPLE_RATE) - crossfade;
   }
   ensure_started();
 }
@@ -432,6 +512,74 @@ void play_user_prompt() {
     { {1318.51, 0.15} },
   };
   play_events(std::vector<NoteEvent>(std::begin(events), std::end(events)));
+}
+
+bool save_wav(const std::vector<NoteEvent> &events, const std::string &path, int sample_rate) {
+  // Render all events into a single sample buffer
+  std::vector<float> samples;
+  for (const auto &ev : events) {
+    int n_samples = 0;
+    for (const auto &note : ev) {
+      n_samples = std::max(n_samples, static_cast<int>(note.second * sample_rate));
+    }
+    if (n_samples == 0) continue;
+    for (int i = 0; i < n_samples; ++i) {
+      float t = static_cast<float>(i) / sample_rate;
+      float sum = 0.0f;
+      for (const auto &note : ev) {
+        if (t < note.second) {
+          double decay = std::exp(-3.0 * t / note.second);
+          sum += static_cast<float>(std::sin(2.0 * M_PI * note.first * t) * decay);
+        }
+      }
+      samples.push_back(sum / static_cast<float>(ev.size()));
+    }
+  }
+
+  if (samples.empty()) return false;
+
+  // Build WAV file in memory
+  const int16_t *pcm = nullptr;
+  std::vector<int16_t> pcm_data(samples.size());
+  for (size_t i = 0; i < samples.size(); ++i) {
+    float clamped = std::clamp(samples[i], -1.0f, 1.0f);
+    pcm_data[i] = static_cast<int16_t>(clamped * 32767.0f);
+  }
+
+  const uint32_t data_size = static_cast<uint32_t>(pcm_data.size() * sizeof(int16_t));
+  const uint32_t file_size = 36 + data_size;
+  const uint16_t audio_format = 1;   // PCM
+  const uint16_t channels = 1;
+  const uint32_t byte_rate = static_cast<uint32_t>(sample_rate * channels * 2);
+  const uint16_t block_align = channels * 2;
+  const uint16_t bits_per_sample = 16;
+
+  std::ofstream f(path, std::ios::binary);
+  if (!f) return false;
+
+  // RIFF header
+  f.write("RIFF", 4);
+  f.write(reinterpret_cast<const char *>(&file_size), 4);
+  f.write("WAVE", 4);
+
+  // fmt chunk
+  f.write("fmt ", 4);
+  uint32_t fmt_size = 16;
+  f.write(reinterpret_cast<const char *>(&fmt_size), 4);
+  f.write(reinterpret_cast<const char *>(&audio_format), 2);
+  f.write(reinterpret_cast<const char *>(&channels), 2);
+  f.write(reinterpret_cast<const char *>(&sample_rate), 4);
+  f.write(reinterpret_cast<const char *>(&byte_rate), 4);
+  f.write(reinterpret_cast<const char *>(&block_align), 2);
+  f.write(reinterpret_cast<const char *>(&bits_per_sample), 2);
+
+  // data chunk
+  f.write("data", 4);
+  f.write(reinterpret_cast<const char *>(&data_size), 4);
+  f.write(reinterpret_cast<const char *>(pcm_data.data()), data_size);
+
+  f.close();
+  return f.good();
 }
 
 } // namespace audio
