@@ -8,12 +8,14 @@
 
 #include "input.h"
 #include "logging.h"
-#include "string_utils.h"
 #include "slash_commands.h"
 
 #include <functional>
 #include <unordered_map>
 #include <vector>
+#include <string>
+#include <algorithm>
+#include <cctype>
 
 Input::Input()
   : mouse_mode_(false)

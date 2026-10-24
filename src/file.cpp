@@ -9,9 +9,15 @@
 #include <string>
 #include <fstream>
 #include <format>
-#include <regex>
 #include <filesystem>
-#include <memory>
+#include <vector>
+#include <utility>
+#include <system_error>
+#include <ios>
+#include <iterator>
+#include <chrono>
+#include <ctime>
+#include <sstream>
 
 #include "file.h"
 #include "string_utils.h"

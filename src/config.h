@@ -19,14 +19,14 @@
 namespace fs = std::filesystem;
 
 //
-// Returns the input history file path: ~/.config/hali/history.txt
+// Returns the input history file path: <sandbox>/.hali/history.txt
 //
-std::string history_path();
+std::string history_path(const std::string &sandbox);
 
 //
-// Returns the usage log file path: ~/.config/hali/usage_log.json
+// Returns the usage log file path: <sandbox>/.hali/usage_log.json
 //
-std::string usage_log_path();
+std::string usage_log_path(const std::string &sandbox);
 
 //
 // HaliConfig
@@ -128,10 +128,10 @@ struct HaliConfig {
   std::vector<std::string> mcp_filter_;
 
 private:
+  static std::string prompt_file_ops();
+  static std::string prompt_interaction();
   std::string prompt_identity() const;
   std::string prompt_core() const;
-  std::string prompt_file_ops() const;
-  std::string prompt_interaction() const;
   std::string prompt_audio() const;
   std::string prompt_knowledge() const;
 };

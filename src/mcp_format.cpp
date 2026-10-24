@@ -6,6 +6,9 @@
 // Download the GNU Public License (GPL) from www.gnu.org
 //
 
+#include <string>
+#include <vector>
+
 #include "mcp_format.h"
 
 static std::string quote(const std::string& value) {

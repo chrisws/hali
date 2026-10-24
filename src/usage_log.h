@@ -29,6 +29,8 @@ struct UsageLog {
   int    total_tool_calls = 0;
   int    total_tool_errors = 0;
   double peak_kv_pct      = 0.0;
+  int    total_tokens     = 0;
+  int    cumulative_tokens = 0;
 
   void record_turn(const TurnMetrics &m);
   std::string summary() const;
@@ -36,6 +38,9 @@ struct UsageLog {
   std::string to_json() const;
   void dump(const std::string &path) const;
   void clear();
+  int session_tokens() const;
+  void load_cumulative(const std::string &path);
+  std::string badge_svg() const;
 };
 
 #endif

@@ -11,12 +11,15 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <cctype>
 #include <deque>
 #include <fstream>
 #include <mutex>
 #include <sstream>
 #include <string>
 #include <vector>
+#include <utility>
+#include <ios>
 
 #include "miniaudio.h"
 #include "logging.h"

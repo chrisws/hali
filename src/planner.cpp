@@ -7,6 +7,8 @@
 //
 
 #include <sstream>
+#include <string>
+#include <vector>
 
 #include "planner.h"
 

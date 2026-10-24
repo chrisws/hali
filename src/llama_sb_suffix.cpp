@@ -11,6 +11,8 @@
 // follows them.  At draft time the last N tokens are looked up and the
 // continuation is returned, chained up to max_draft tokens deep.
 
+#include <vector>
+#include "llama.h"
 #include "llama_sb_suffix.h"
 
 // FNV-1a constants (64-bit)

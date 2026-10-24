@@ -7,22 +7,27 @@
 //
 
 #include <algorithm>
-#include <array>
-#include <chrono>
 #include <cmath>
 #include <cstddef>
-#include <curl/curl.h>
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
-#include <memory>
+#include <format>
+#include <mutex>
 #include <poll.h>
-#include <random>
+#include <system_error>
+#include <memory>
+#include <vector>
+#include <notcurses/notcurses.h>
 
 #include "tui.h"
 #include "icon.h"
 #include "string_utils.h"
 #include "logging.h"
 #include "file.h"
+#include "llama_sb.h"
 
 // max scan for NCTYPE_PRESS in kity-term or NCTYPE_UNKNOWN in gnome terminal
 #define MAX_FIND_PRESS 4

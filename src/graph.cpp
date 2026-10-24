@@ -9,7 +9,10 @@
 #include <algorithm>
 #include <sstream>
 #include <iomanip>
-#include <regex>
+#include <string>
+#include <vector>
+#include <utility>
+#include <optional>
 #include "graph.h"
 #include <format>
 #include "json.h"

@@ -9,9 +9,7 @@
 #ifndef AGENT_UTILS_H
 #define AGENT_UTILS_H
 
-#include <chrono>
 #include <functional>
-#include <future>
 #include <string>
 #include <vector>
 

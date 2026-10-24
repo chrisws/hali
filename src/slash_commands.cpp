@@ -13,6 +13,8 @@
 #include <sstream>
 #include <string>
 #include <vector>
+#include <utility>
+#include <system_error>
 
 #include "config.h"
 #include "agent.h"
@@ -21,6 +23,7 @@
 #include "audio.h"
 #include "ui_text.h"
 #include "audit.h"
+#include "build.h"
 #include "skills_generated.h"
 
 namespace fs = std::filesystem;
@@ -120,7 +123,10 @@ static void slash_audio(const std::string &rest, HaliConfig &cfg, Agent &agent, 
       { {392.00, 0.4}, {493.88, 0.4}, {587.33, 0.4} },
       { {523.25, 0.6}, {659.25, 0.6}, {783.99, 0.6}, {1046.50, 0.6} },
     };
-    std::string wav_path = cfg.sandbox_ + "/hali.wav";
+    std::string hali_dir = cfg.sandbox_ + "/.hali";
+    std::error_code ec;
+    fs::create_directories(hali_dir, ec);
+    std::string wav_path = hali_dir + "/hali.wav";
     if (audio::save_wav(std::vector<audio::NoteEvent>(std::begin(test_events), std::end(test_events)), wav_path)) {
       tui.append_line(ICON_SYS + "Waveform saved to " + wav_path);
       agent.notify("Inspect " + wav_path + " using TOOL:HEX to verify the waveform is a valid WAV file with the expected C-F-G-C chord progression.");
@@ -430,6 +436,53 @@ static void slash_skill(const std::string &rest_in, HaliConfig &cfg,
 }
 
 //
+// /lint – list source files and run clang-tidy lint
+//
+static void slash_lint(const std::string &rest, HaliConfig &cfg, Tui &tui) {
+  const std::string sandbox = cfg.sandbox_;
+  const std::string src_dir = sandbox + "/src";
+
+  // Collect source files
+  std::vector<std::string> files;
+  if (fs::exists(src_dir) && fs::is_directory(src_dir)) {
+    for (const auto &entry : fs::recursive_directory_iterator(src_dir)) {
+      if (entry.is_regular_file()) {
+        auto ext = entry.path().extension();
+        if (ext == ".cpp" || ext == ".cc" || ext == ".c") {
+          files.push_back(entry.path().string());
+        }
+      }
+    }
+  }
+
+  if (files.empty()) {
+    tui.append_line(ICON_SYS + "No C/C++ source files found in src/.");
+    tui.redraw_all();
+    return;
+  }
+
+  // Show file list in table format
+  tui.append_line(ICON_SYS + "Source files to lint (" + std::to_string(files.size()) + "):");
+  std::string table_rows;
+  int i = 0;
+  for (const auto &f : files) {
+    auto slash = f.rfind('/');
+    std::string name = (slash != std::string::npos) ? f.substr(slash + 1) : f;
+    table_rows += std::to_string(++i) + "|" + name + "\n";
+  }
+  tui.append_line("TOOL:TABLE " + std::to_string(files.size() + 1) + "x2 #|File\n" + table_rows);
+  tui.redraw_all();
+
+  // Run lint
+  auto status = [&tui](const std::string &msg) {
+    tui.show_tool(msg);
+  };
+  auto result = build_run(sandbox, "lint", status);
+  tui.append_line(ICON_TOOL + result.output_);
+  tui.redraw_all();
+}
+
+//
 // /tool [TOOL:NAME [arg1 [arg2]]] – invoke a tool or list available tools
 //
 static void slash_tool(const std::string &rest, Agent &agent, Tui &tui) {
@@ -558,6 +611,10 @@ void handle_slash(const std::string &input, HaliConfig &cfg, Agent &agent, Tui &
     slash_skill(rest, cfg, agent, tui);
     return;
   }
+  if (verb == "/lint") {
+    slash_lint(rest, cfg, tui);
+    return;
+  }
   if (verb == "/tool") {
     slash_tool(rest, agent, tui);
     return;
@@ -590,6 +647,7 @@ const std::vector<SlashCommand> &slash_commands() {
     {"/revoke",       "<name>",        "remove an approved RUN command"},
     {"/audit",    "[path]",            "scan codebase for model-hostility issues"},
     {"/skill",    "[name] [kickoff]",  "load a skill into the conversation"},
+    {"/lint",     "",                  "list source files and run clang-tidy"},
     {"/tool",     "[TOOL:NAME [args]]","invoke a tool (no args lists all tools)"},
     {"/help",     "",                  "this message"},
   };

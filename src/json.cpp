@@ -8,7 +8,8 @@
 
 #include <string>
 #include <fstream>
-#include <format>
+#include <vector>
+#include <cmath>
 #include <yyjson.h>
 #include "json.h"
 #include "logging.h"

@@ -10,6 +10,7 @@
 #include "ggml-backend.h"
 
 #include <algorithm>
+#include <cstddef>
 
 namespace gpu_info {
 

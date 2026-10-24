@@ -7,13 +7,11 @@
 //
 
 #include <algorithm>
-#include <array>
-#include <chrono>
 #include <cmath>
-#include <cstddef>
-#include <filesystem>
-#include <memory>
-#include <vector>
+#include <string>
+#include <cctype>
+#include <utility>
+#include <cstdint>
 
 #include "curl.h"
 

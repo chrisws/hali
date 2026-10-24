@@ -6,9 +6,11 @@
 // Download the GNU Public License (GPL) from www.gnu.org
 //
 
+#include <algorithm>
+#include <filesystem>
 #include <fstream>
 #include <sstream>
-#include <algorithm>
+#include <string>
 
 #include "usage_log.h"
 #include "logging.h"
@@ -18,6 +20,7 @@ void UsageLog::record_turn(const TurnMetrics &m) {
   total_llm_ms    += m.llm_latency_ms;
   total_tool_calls += m.tool_call_count;
   total_tool_errors += m.tool_error_count;
+  total_tokens    += m.completion_tokens;
   if (m.kv_usage_pct > peak_kv_pct) {
     peak_kv_pct = m.kv_usage_pct;
   }
@@ -56,6 +59,8 @@ std::string UsageLog::to_json() const {
   oss << "  \"total_tool_calls\": " << total_tool_calls << ",\n";
   oss << "  \"total_tool_errors\": " << total_tool_errors << ",\n";
   oss << "  \"peak_kv_pct\": " << peak_kv_pct << ",\n";
+  oss << "  \"total_tokens\": " << total_tokens << ",\n";
+  oss << "  \"cumulative_tokens\": " << cumulative_tokens << ",\n";
   oss << "  \"turns\": [\n";
   for (size_t i = 0; i < turns.size(); ++i) {
     const auto &t = turns[i];
@@ -78,6 +83,12 @@ std::string UsageLog::to_json() const {
 }
 
 void UsageLog::dump(const std::string &path) const {
+  // Ensure parent directory exists
+  auto slash = path.rfind('/');
+  if (slash != std::string::npos) {
+    std::string dir = path.substr(0, slash);
+    std::filesystem::create_directories(dir);
+  }
   std::ofstream f(path);
   if (!f) {
     log_write(LEVEL_WARNING, "usage_log", "cannot write %s", path.c_str());
@@ -93,4 +104,80 @@ void UsageLog::clear() {
   total_tool_calls = 0;
   total_tool_errors = 0;
   peak_kv_pct = 0.0;
+  total_tokens = 0;
+}
+
+int UsageLog::session_tokens() const {
+  return total_tokens;
+}
+
+void UsageLog::load_cumulative(const std::string &path) {
+  std::ifstream f(path);
+  if (!f) {
+    return;
+  }
+  std::ostringstream oss;
+  oss << f.rdbuf();
+  std::string content = oss.str();
+
+  // Simple parse: find "cumulative_tokens": N
+  auto pos = content.find("\"cumulative_tokens\":");
+  if (pos == std::string::npos) {
+    return;
+  }
+  pos += 19; // skip past the key and colon
+  while (pos < content.size() && content[pos] == ' ') {
+    pos++;
+  }
+  int val = 0;
+  while (pos < content.size() && content[pos] >= '0' && content[pos] <= '9') {
+    val = val * 10 + (content[pos] - '0');
+    pos++;
+  }
+  cumulative_tokens = val;
+}
+
+std::string UsageLog::badge_svg() const {
+  int tokens = cumulative_tokens > 0 ? cumulative_tokens : total_tokens;
+  std::string token_str;
+  if (tokens >= 1000000) {
+    token_str = std::to_string(tokens / 1000000) + "M";
+  } else if (tokens >= 1000) {
+    token_str = std::to_string(tokens / 1000) + "k";
+  } else {
+    token_str = std::to_string(tokens);
+  }
+  token_str += " tokens";
+
+  // GitHub-style badge: label (left) + value (right)
+  constexpr int label_w = 120;
+  constexpr int value_w = 90;
+  constexpr int total_w = label_w + value_w;
+  const int h = 20;
+  const int r = 3;
+
+  std::ostringstream svg;
+  svg << "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"" << total_w
+      << "\" height=\"" << h << "\" viewBox=\"0 0 " << total_w << " " << h
+      << "\" role=\"img\" aria-label=\"made with hali: " << token_str << "\">\n";
+  svg << "  <title>made with hali: " << token_str << "</title>\n";
+  // Label background (dark)
+  svg << "  <rect width=\"" << label_w << "\" height=\"" << h
+      << "\" rx=\"" << r << "\" fill=\"#555\"/>\n";
+  // Value background (green)
+  svg << "  <rect x=\"" << label_w << "\" width=\"" << value_w
+      << "\" height=\"" << h << "\" rx=\"" << r << "\" fill=\"#4c1\"/>\n";
+  // Mask to round only outer corners
+  svg << "  <rect x=\"" << label_w << "\" width=\"" << (value_w - r)
+      << "\" height=\"" << h << "\" fill=\"#4c1\"/>\n";
+  // Label text
+  svg << "  <text x=\"" << (label_w / 2) << "\" y=\"" << (h / 2 + 4)
+      << "\" font-family=\"monospace\" font-size=\"11\" fill=\"#fff\" "
+      << "text-anchor=\"middle\">made with hali</text>\n";
+  // Value text
+  svg << "  <text x=\"" << (label_w + value_w / 2) << "\" y=\"" << (h / 2 + 4)
+      << "\" font-family=\"monospace\" font-size=\"11\" fill=\"#fff\" "
+      << "text-anchor=\"middle\">" << token_str << "</text>\n";
+  svg << "</svg>\n";
+  return svg.str();
 }

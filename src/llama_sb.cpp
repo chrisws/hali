@@ -7,9 +7,13 @@
 //
 
 #include <format>
-#include <span>
 #include <cmath>
 #include <utility>
+#include <cstddef>
+#include <vector>
+#include <chrono>
+#include <algorithm>
+#include <sstream>
 
 #include "ggml-cuda.h"
 #include "llama.h"

@@ -14,6 +14,10 @@
 #include <sstream>
 #include <string>
 #include <vector>
+#include <utility>
+#include <cstddef>
+#include <ios>
+#include <ostream>
 
 #include "llama_sb.h"
 #include "llama_sb_rag.h"

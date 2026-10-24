@@ -14,6 +14,8 @@
 #include <sstream>
 #include <string>
 #include <vector>
+#include <utility>
+#include <system_error>
 
 #include "json.h"
 
@@ -59,7 +61,6 @@ static FileMetrics scan_file(const std::string &path) {
   int line_num = 0;
   int nesting = 0;
   int func_start = -1;
-  int func_depth_at_start = 0;
   int in_func = 0; // brace depth inside current function body
   int param_commas = 0;
   int param_paren_depth = 0;
@@ -104,8 +105,6 @@ static FileMetrics scan_file(const std::string &path) {
         trimmed.rfind("inline namespace", 0) == 0) {
       pending_ns = true;
     }
-
-    int ns_depth = static_cast<int>(ns_braces.size());
 
     // Track nesting depth via braces (skipping string/char literals and comments)
     {
@@ -160,7 +159,6 @@ static FileMetrics scan_file(const std::string &path) {
           // structural scope (namespace / class)
           if (eff_depth == 1 && func_start == -1) {
             func_start = line_num;
-            func_depth_at_start = nesting;
             in_func = 1;
           } else if (in_func > 0) {
             ++in_func;
@@ -546,9 +544,9 @@ std::string audit_write_report(const AuditResult &r,
            "the list._\n";
   }
 
-  std::error_code ec;
   auto parent = fs::path(path).parent_path();
   if (!parent.empty()) {
+    std::error_code ec;
     fs::create_directories(parent, ec);
     if (ec) {
       return "";
@@ -588,7 +586,7 @@ AuditResult audit_cpp(const std::string &root) {
     }
   }
 
-  std::sort(files.begin(), files.end());
+  std::ranges::sort(files);
   result.total_files = static_cast<int>(files.size());
 
   for (const auto &f : files) {
@@ -598,19 +596,18 @@ AuditResult audit_cpp(const std::string &root) {
   }
 
   // Sort issues: high first, then by file
-  std::sort(result.issues.begin(), result.issues.end(),
-            [](const AuditIssue &a, const AuditIssue &b) {
-              auto rank = [](const std::string &s) {
-                if (s == "high") return 0;
-                if (s == "medium") return 1;
-                return 2;
-              };
-              int ra = rank(a.severity);
-              int rb = rank(b.severity);
-              if (ra != rb) return ra < rb;
-              if (a.file != b.file) return a.file < b.file;
-              return a.line < b.line;
-            });
+  std::ranges::sort(result.issues,
+                    [](const AuditIssue &a, const AuditIssue &b) {
+                      auto rank = [](const std::string &s) {
+                        if (s == "high") return 0;
+                        if (s == "medium") return 1;
+                        return 2;
+                      };
+                      const int ra = rank(a.severity);
+                      if (int rb = rank(b.severity); ra != rb) return ra < rb;
+                      if (a.file != b.file) return a.file < b.file;
+                      return a.line < b.line;
+                    });
 
   result.score = compute_score(result.issues);
   return result;
@@ -713,7 +710,7 @@ void filter_false_positives(AuditResult &r,
     return false;
   };
   r.issues.erase(
-    std::remove_if(r.issues.begin(), r.issues.end(), matches),
+    std::ranges::remove_if(r.issues, matches).begin(),
     r.issues.end());
   // Recompute score after filtering
   r.score = compute_score(r.issues);

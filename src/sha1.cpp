@@ -6,7 +6,10 @@
 // Download the GNU Public License (GPL) from www.gnu.org
 //
 
+#include <array>
+#include <cstdint>
 #include <cstring>
+#include <string>
 
 #include "sha1.h"
 

@@ -9,14 +9,18 @@
 #include <algorithm>
 #include <filesystem>
 #include <fstream>
-#include <ranges>
 #include <sstream>
 #include <string>
 #include <vector>
 #include <chrono>
 #include <cmath>
 #include <cstddef>
-#include <memory>
+#include <functional>
+#include <future>
+#include <cctype>
+#include <system_error>
+#include <ios>
+#include <format>
 
 #include "agent_utils.h"
 #include "string_utils.h"

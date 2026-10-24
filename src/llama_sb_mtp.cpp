@@ -17,9 +17,10 @@
 
 #include <algorithm>
 #include <vector>
+#include <utility>
+#include <chrono>
 #include "llama.h"
 #include "llama_sb.h"
-#include "llama-ext.h"
 #include "logging.h"
 #include "common.h"
 #include "speculative.h"

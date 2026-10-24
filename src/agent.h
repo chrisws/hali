@@ -102,6 +102,7 @@ struct Agent {
   bool model_loaded() const { return model_loaded_; }
   void save_mtp_best_settings();
   void dump_usage_log(const std::string &path) const;
+  void generate_badge(const std::string &sandbox);
   std::vector<std::string> tool_names() const;
   std::string invoke_tool_by_name(const std::string &name, const std::string &a1, const std::string &a2);
 

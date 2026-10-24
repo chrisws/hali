@@ -7,35 +7,35 @@
 //
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
+#include <cstddef>
+#include <cstdio>
 #include <filesystem>
+#include <format>
 #include <fstream>
-#include <functional>
-#include <future>
-#include <mutex>
+#include <ios>
+#include <memory>
 #include <sstream>
 #include <string>
-#include <unordered_map>
+#include <string_view>
+#include <system_error>
 #include <vector>
 
-#include "llama.h"
-#include "config.h"
-#include "tui.h"
-#include "audio.h"
 #include "agent.h"
-#include "logging.h"
-#include "curl.h"
-#include "string_utils.h"
-#include "file.h"
-#include "graph.h"
-#include "webview.h"
-#include "icon.h"
 #include "agent_utils.h"
-#include "shell_util.h"
-#include "build.h"
+#include "audio.h"
+#include "config.h"
+#include "file.h"
+#include "icon.h"
+#include "llama_sb.h"
+#include "llama_sb_rag.h"
+#include "logging.h"
 #include "planner.h"
-#include "sysinfo.h"
-#include "git_tool.h"
+#include "string_utils.h"
+#include "tui.h"
+#include "usage_log.h"
+#include "webview.h"
 
 static void broadcast_message(const HaliConfig &cfg, Tui &tui, const std::string &message) {
   if (cfg.web_port_ != -1 && !utils::is_blank(message)) {
@@ -622,6 +622,29 @@ bool Agent::run_turn_with_skill(const std::string &skill_text, const std::string
 
 void Agent::dump_usage_log(const std::string &path) const {
   usage_log_.dump(path);
+}
+
+void Agent::generate_badge(const std::string &sandbox) {
+  const std::string log_path = sandbox + "/.hali/usage_log.json";
+  const std::string badge_path = sandbox + "/.hali/badge.svg";
+
+  // Load previous cumulative and add this session's tokens.
+  usage_log_.load_cumulative(log_path);
+  usage_log_.cumulative_tokens += usage_log_.session_tokens();
+
+  // Write the updated usage log with cumulative total.
+  usage_log_.dump(log_path);
+
+  // Generate and write the SVG badge.
+  std::string svg = usage_log_.badge_svg();
+  std::ofstream f(badge_path);
+  if (f) {
+    f << svg;
+    log_write(LEVEL_INFO, "agent", "badge written to %s (%d cumulative tokens)",
+              badge_path.c_str(), usage_log_.cumulative_tokens);
+  } else {
+    log_write(LEVEL_WARNING, "agent", "cannot write badge to %s", badge_path.c_str());
+  }
 }
 
 void Agent::save_mtp_best_settings() {

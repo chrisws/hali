@@ -9,6 +9,10 @@
 #include <string>
 #include <fstream>
 #include <sstream>
+#include <vector>
+#include <system_error>
+#include <ios>
+#include <exception>
 
 #include "config.h"
 #include "json.h"
@@ -71,16 +75,12 @@ std::string HaliConfig::settings_path() const {
   return base + "/.config/hali/settings.json";
 }
 
-std::string history_path() {
-  const char *home = getenv("HOME");
-  std::string base = home ? std::string(home) : ".";
-  return base + "/.config/hali/history.txt";
+std::string history_path(const std::string &sandbox) {
+  return sandbox + "/.hali/history.txt";
 }
 
-std::string usage_log_path() {
-  const char *home = getenv("HOME");
-  std::string base = home ? std::string(home) : ".";
-  return base + "/.config/hali/usage_log.json";
+std::string usage_log_path(const std::string &sandbox) {
+  return sandbox + "/.hali/usage_log.json";
 }
 
 void HaliConfig::set_config(const std::string &config) {
@@ -350,7 +350,7 @@ std::string HaliConfig::prompt_core() const {
     p += "  TOOL:RUN    <prog> [args]  run program inside sandbox\n";
   }
   p +=
-    "  TOOL:BUILD  [mode]         setup/build/test/clean (auto-detects CMake, Gradle, Maven, Python; modes: setup, build, test, clean, default=all)\n"
+    "  TOOL:BUILD  [mode]         setup/build/test/clean/lint (auto-detects CMake, Gradle, Maven, Python; modes: setup, build, test, clean, lint, default=all)\n"
     "  TOOL:STAT   <file>         file metadata (size, type, perms, line/word/char count)\n"
     "  TOOL:SYSINFO               system info (user, uid, hostname, OS, kernel, arch, cwd)\n"
     "  TOOL:GIT    <sub> [args]   git (status, log, diff, add, commit, branch, show)\n"
@@ -404,7 +404,7 @@ std::string HaliConfig::prompt_core() const {
   return p;
 }
 
-std::string HaliConfig::prompt_file_ops() const {
+std::string HaliConfig::prompt_file_ops() {
   return
     "## File Writing Rules\n"
     "Use TOOL:WRITE only if explicitly requested. Prefer TOOL:APPEND or TOOL:PATCH\n"
@@ -447,7 +447,7 @@ std::string HaliConfig::prompt_file_ops() const {
     "HALI_END_TOOL\n\n";
 }
 
-std::string HaliConfig::prompt_interaction() const {
+std::string HaliConfig::prompt_interaction() {
   int kv_threshold = gpu_info::kv_restart_threshold();
   return
     "## Interaction Guidelines\n"
@@ -461,7 +461,7 @@ std::string HaliConfig::prompt_interaction() const {
     "  directories, offer to run TOOL:BUILD setup rather than waiting.\n"
     "- Do not interpret conversational words like \"now\", \"build\", or \"test\"\n"
     "  as TOOL:BUILD mode arguments. Only emit TOOL:BUILD when the user\n"
-    "  explicitly asks to build, test, clean, or set up the project.\n\n"
+    "  explicitly asks to build, test, clean, lint, or set up the project.\n\n"
 
     "## Auto-Restart Protocol\n"
     "**When:** - When KV >= " + std::to_string(kv_threshold) + "% (as reported in the tool results footer).\n"

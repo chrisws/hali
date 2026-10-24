@@ -11,13 +11,22 @@
 
 #include <functional>
 #include <string>
+#include <vector>
+
+struct LintWarning {
+  std::string file;
+  int line;
+  std::string check;
+  std::string description;
+};
 
 struct BuildResult {
   bool success_;
   std::string output_;
+  std::vector<LintWarning> lint_details_;
 };
 
-// mode: "setup" | "build" | "test" | "clean" | "all"
+// mode: "setup" | "build" | "test" | "clean" | "lint" | "all"
 // sandbox: root directory of the project
 // subdir: optional subdirectory to build as a sub-project (e.g. "tests")
 // status: callback for progress messages (e.g. tui.show_tool)

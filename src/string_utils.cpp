@@ -7,8 +7,10 @@
 //
 
 #include <cctype>
-#include <cstdint>
+#include <cstddef>
 #include <string>
+#include <string_view>
+#include <vector>
 
 #include "utf8.h"
 #include "string_utils.h"

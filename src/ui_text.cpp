@@ -6,6 +6,10 @@
 // Download the GNU Public License (GPL) from www.gnu.org
 //
 
+#include <cstddef>
+#include <cstdio>
+#include <string>
+
 #include "ui_text.h"
 #include "icon.h"
 #include "slash_commands.h"

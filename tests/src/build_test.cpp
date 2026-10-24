@@ -499,6 +499,51 @@ static void test_python_setup_neither() {
   teardown_sandbox();
 }
 
+//
+// test: lint mode on non-CMake project is rejected
+//
+static void test_lint_non_cmake() {
+  setup_sandbox();
+  write_file(SANDBOX + "/pyproject.toml", "[project]\nname = \"test\"\n");
+  auto r = build_run(SANDBOX, "lint", [](const string &) {});
+  assert(!r.success_);
+  assert(r.output_.find("only supported for CMake") != string::npos);
+  teardown_sandbox();
+}
+
+//
+// test: lint mode on CMake project with no source files succeeds
+//
+static void test_lint_no_sources() {
+  setup_sandbox();
+  write_file(SANDBOX + "/CMakeLists.txt",
+    "cmake_minimum_required(VERSION 3.15)\n"
+    "project(linttest CXX)\n");
+  // No src/ directory, no .cpp files
+  auto r = build_run(SANDBOX, "lint", [](const string &) {});
+  // Should fail at compile_db generation (cmake may not be available in test)
+  // OR succeed with "No C/C++ source files" if compile_db already exists
+  // Either way, it should NOT be "unknown build mode"
+  assert(r.output_.find("unknown build mode") == string::npos);
+  teardown_sandbox();
+}
+
+//
+// test: lint mode is recognised (not rejected as unknown)
+//
+static void test_lint_mode_recognised() {
+  setup_sandbox();
+  write_file(SANDBOX + "/CMakeLists.txt",
+    "cmake_minimum_required(VERSION 3.15)\n"
+    "project(linttest CXX)\n");
+  auto r = build_run(SANDBOX, "lint", [](const string &) {});
+  // Should NOT say "unknown build mode"
+  assert(r.output_.find("unknown build mode") == string::npos);
+  // Will either succeed (no sources) or fail at cmake/clang-tidy step
+  // Both are valid — the point is the mode was recognised
+  teardown_sandbox();
+}
+
 void build_test() {
   cout << "=== Running TOOL:BUILD Unit Tests ===\n\n";
 
@@ -531,6 +576,9 @@ void build_test() {
   RUN_TEST(test_python_setup_pyproject);
   RUN_TEST(test_python_setup_setup_py);
   RUN_TEST(test_python_setup_neither);
+  RUN_TEST(test_lint_non_cmake);
+  RUN_TEST(test_lint_no_sources);
+  RUN_TEST(test_lint_mode_recognised);
 
   cout << "\n=== All TOOL:BUILD tests completed ===\n";
 }

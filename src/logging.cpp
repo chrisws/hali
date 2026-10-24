@@ -18,6 +18,8 @@
 #include <fstream>
 #include <unordered_map>
 #include <unordered_set>
+#include <system_error>
+#include <iterator>
 #include <filesystem>
 
 namespace fs = std::filesystem;

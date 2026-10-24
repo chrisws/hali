@@ -7,9 +7,13 @@
 //
 
 #include <filesystem>
-#include <format>
 #include <fstream>
 #include <thread>
+#include <string>
+#include <cstddef>
+#include <functional>
+#include <vector>
+#include <utility>
 
 #include "build.h"
 #include "shell_util.h"
@@ -50,15 +54,17 @@ static BuildSystem detect_build_system(const std::string &sandbox) {
   return BuildSystem::NONE;
 }
 
+static constexpr size_t kMaxOutputSize = 32768;
+static constexpr size_t kTruncHeadSize = 2048;
+static constexpr size_t kTruncTailSize = 30720;
+
 static std::string run_command(const std::string &cmd,
                                const std::function<void(const std::string &)> &status) {
   status("build: " + cmd);
   std::string out = run_shell_command(cmd);
-  if (out.size() > 4096) {
-    const size_t head = 1024;
-    const size_t tail = 3072;
-    out = out.substr(0, head) + "\n…(truncated)…" +
-          out.substr(out.size() - tail);
+  if (out.size() > kMaxOutputSize) {
+    out = out.substr(0, kTruncHeadSize) + "\n…(truncated)…" +
+          out.substr(out.size() - kTruncTailSize);
   }
   return out;
 }
@@ -241,7 +247,7 @@ static BuildResult setup_cmake(const std::string &sandbox,
   bool ok = true;
 
   result += "==> Configuring main build...\n";
-  auto out = run_command("cmake -S " + sandbox + " -B " + sandbox + "/build -G \"Unix Makefiles\"", status);
+  auto out = run_command("cmake -S " + sandbox + " -B " + sandbox + "/build -G \"Unix Makefiles\" -DCMAKE_EXPORT_COMPILE_COMMANDS=ON", status);
   if (out.find("Error") != std::string::npos || out.find("CMake Error") != std::string::npos) {
     ok = false;
   }
@@ -362,6 +368,173 @@ static BuildResult setup_python(const std::string &sandbox,
   return {ok, result};
 }
 
+static BuildResult build_cmake_lint(const std::string &sandbox,
+                                     const std::function<void(const std::string &)> &status) {
+  const std::string build_dir = sandbox + "/build";
+  const std::string compile_db = build_dir + "/compile_commands.json";
+  std::string result;
+
+  // Step 1: Ensure compile database exists
+  if (!fs::exists(compile_db)) {
+    result += "==> No compile_commands.json found, generating...\n";
+    auto out = run_command("cmake -S " + sandbox + " -B " + build_dir +
+                           " -G \"Unix Makefiles\" -DCMAKE_EXPORT_COMPILE_COMMANDS=ON", status);
+    if (out.find("Error") != std::string::npos) {
+      return {false, result + out + "\n==> Failed to generate compile database.\n"};
+    }
+    result += out;
+  }
+
+  // Step 2: Find clang-tidy
+  auto tidy_check = run_command("which clang-tidy 2>/dev/null", status);
+  if (tidy_check.find("clang-tidy") == std::string::npos) {
+    return {false, "ERROR: clang-tidy not found on PATH.\n"
+                    "Install it with: sudo apt install clang-tidy\n"};
+  }
+
+  // Step 3: Check clang-tidy version (need 14+ for misc-include-cleaner)
+  auto version_out = run_command("clang-tidy --version 2>&1", status);
+  size_t ver_pos = version_out.find("version");
+  if (ver_pos != std::string::npos) {
+    size_t num_start = ver_pos + 7;
+    while (num_start < version_out.size() &&
+           (version_out[num_start] < '0' || version_out[num_start] > '9')) {
+      num_start++;
+    }
+    int major = 0;
+    while (num_start < version_out.size() &&
+           version_out[num_start] >= '0' && version_out[num_start] <= '9') {
+      major = major * 10 + (version_out[num_start] - '0');
+      num_start++;
+    }
+    if (major > 0 && major < 14) {
+      return {false, "ERROR: clang-tidy version " + std::to_string(major) +
+                      " is too old. misc-include-cleaner requires Clang 14+.\n"};
+    }
+  }
+
+  // Step 4: Find source files
+  std::string files_arg;
+  int file_count = 0;
+  auto src_dir = sandbox + "/src";
+  if (fs::exists(src_dir) && fs::is_directory(src_dir)) {
+    for (const auto &entry : fs::recursive_directory_iterator(src_dir)) {
+      if (entry.is_regular_file()) {
+        auto ext = entry.path().extension();
+        if (ext == ".cpp" || ext == ".cc" || ext == ".c") {
+          files_arg += entry.path().string() + " ";
+          file_count++;
+        }
+      }
+    }
+  }
+
+  if (file_count == 0) {
+    result += "==> No C/C++ source files found in src/.\n";
+    result += "==> Lint complete.\n";
+    return {true, result};
+  }
+
+  // Step 5: Run clang-tidy
+  const std::string checks =
+      "-*,misc-include-cleaner,"
+      "bugprone-unused-return-value,"
+      "modernize-use-override,"
+      "readability-const-returns,"
+      "clang-analyzer-core.NullDereference";
+  result += "==> Running clang-tidy on " +
+            std::to_string(file_count) + " file(s)...\n";
+
+  auto out = run_command("clang-tidy --checks='" + checks + "' "
+                         "-p " + build_dir + " " + files_arg, status);
+  result += out;
+
+  // Step 6: Report findings
+  if (out.find("error:") != std::string::npos) {
+    result += "==> Lint FAILED. See errors above.\n";
+    return {false, result};
+  }
+
+  // Step 7: Parse warnings into structured details
+  std::vector<LintWarning> details;
+  {
+    size_t pos = 0;
+    while (pos < out.size()) {
+      size_t eol = out.find('\n', pos);
+      std::string line = (eol == std::string::npos)
+                             ? out.substr(pos)
+                             : out.substr(pos, eol - pos);
+      pos = (eol == std::string::npos) ? out.size() : eol + 1;
+
+      if (line.find("warning:") == std::string::npos) {
+        continue;
+      }
+
+      // Skip "missing include" warnings — only keep redundant ("not used
+      // directly") and all non-include-cleaner checks.
+      if (line.find("misc-include-cleaner") != std::string::npos &&
+          line.find("no header providing") != std::string::npos) {
+        continue;
+      }
+
+      LintWarning w;
+      // file:line:col: warning: description [check]
+      size_t first_colon = line.find(':');
+      size_t second_colon = line.find(':', first_colon + 1);
+
+      // Full path, then shorten to filename
+      std::string full_path = line.substr(0, first_colon);
+      size_t slash = full_path.rfind('/');
+      w.file = (slash != std::string::npos)
+                   ? full_path.substr(slash + 1)
+                   : full_path;
+      w.line = std::stoi(line.substr(first_colon + 1,
+                                     second_colon - first_colon - 1));
+
+      // Description is between "warning: " and " ["
+      size_t warn_pos = line.find("warning:");
+      size_t desc_start = warn_pos + 9;
+      size_t bracket = line.rfind('[');
+      if (bracket != std::string::npos && bracket > desc_start) {
+        w.description = line.substr(desc_start, bracket - desc_start);
+        size_t bracket_close = line.find(']', bracket);
+        w.check = line.substr(bracket + 1, bracket_close - bracket - 1);
+      } else {
+        w.description = line.substr(desc_start);
+        w.check = "unknown";
+      }
+      // Trim trailing whitespace from description
+      while (!w.description.empty() &&
+             (w.description.back() == ' ' || w.description.back() == '\t')) {
+        w.description.pop_back();
+      }
+
+      details.push_back(std::move(w));
+    }
+  }
+
+  // Step 8: Append text summary (first 10)
+  if (!details.empty()) {
+    result += "==> Summary (" + std::to_string(details.size()) + " warnings):\n";
+    int shown = 0;
+    for (const auto &w : details) {
+      if (shown >= 10) {
+        result += "  ... and " + std::to_string(details.size() - 10) + " more\n";
+        break;
+      }
+      result += "  " + std::to_string(shown + 1) + ". " +
+                w.file + ":" + std::to_string(w.line) +
+                " [" + w.check + "] " + w.description + "\n";
+      shown++;
+    }
+  } else {
+    result += "==> No warnings found.\n";
+  }
+
+  result += "==> Lint complete.\n";
+  return {true, result, details};
+}
+
 BuildResult build_run(const std::string &sandbox, const std::string &mode,
                       const std::function<void(const std::string &)> &status,
                       const std::string &subdir) {
@@ -387,8 +560,15 @@ BuildResult build_run(const std::string &sandbox, const std::string &mode,
     }
   }
 
+  if (m == "lint") {
+    if (sys == BuildSystem::CMAKE) {
+      return build_cmake_lint(root, status);
+    }
+    return {false, "ERROR: lint mode is only supported for CMake projects"};
+  }
+
   if (m != "build" && m != "test" && m != "clean" && m != "all") {
-    return {false, "ERROR: unknown build mode: " + m + " (expected: setup, build, test, clean, or all)"};
+    return {false, "ERROR: unknown build mode: " + m + " (expected: setup, build, test, clean, lint, or all)"};
   }
 
   switch (sys) {

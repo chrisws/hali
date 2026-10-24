@@ -6,12 +6,17 @@
 // Download the GNU Public License (GPL) from www.gnu.org
 //
 
-#include <sstream>
-#include <regex>
-#include <fstream>
-#include <filesystem>
-#include <format>
 #include <atomic>
+#include <cctype>
+#include <cstddef>
+#include <filesystem>
+#include <fstream>
+#include <format>
+#include <sstream>
+#include <string>
+#include <vector>
+#include <strings.h>
+#include <curl/curl.h>
 
 #include "mcp_client.h"
 #include "mcp_format.h"

@@ -6,13 +6,15 @@
 // Download the GNU Public License (GPL) from www.gnu.org
 //
 
-#include <random>
 #include <filesystem>
 #include <fstream>
 #include <string>
 #include <vector>
+#include <cstdlib>
+#include <cstdio>
+#include <format>
+#include <system_error>
 
-#include "llama.h"
 #include "ggml.h"
 
 #include "config.h"
@@ -21,7 +23,6 @@
 #include "logging.h"
 #include "curl.h"
 #include "mcp_client.h"
-#include "string_utils.h"
 #include "run_allowed.h"
 #include "ui_text.h"
 #include "webview.h"
@@ -164,7 +165,7 @@ int main(int argc, char **argv) {
   Tui tui;
   tui.init();
   // Load persisted input history so up-arrow works across sessions.
-  tui.history_load(history_path());
+  tui.history_load(history_path(cfg.sandbox_));
   ui::welcome(tui, cfg.sandbox_);
 
   // ── Init WebDev ───────────────────────────────────────────────────
@@ -262,8 +263,13 @@ int main(int argc, char **argv) {
     cfg.save_settings();
   }
 
-  // Dump usage log for post-hoc analysis.
-  agent.dump_usage_log(usage_log_path());
+  // Usage log is always written (even when save is disabled).
+  agent.dump_usage_log(usage_log_path(cfg.sandbox_));
+
+  // Generate SVG badge (tied to disable_save_on_exit).
+  if (!cfg.disable_save_on_exit_) {
+    agent.generate_badge(cfg.sandbox_);
+  }
 
   log_close();
 
@@ -272,7 +278,7 @@ int main(int argc, char **argv) {
 
   // Persist input history for the next session.
   cfg.user_run_allowed_.save(RunAllowed::default_path());
-  tui.history_save(history_path());
+  tui.history_save(history_path(cfg.sandbox_));
   audio::shutdown();
   curl_close();
 

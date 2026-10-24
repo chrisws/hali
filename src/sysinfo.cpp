@@ -8,16 +8,17 @@
 
 #include <cctype>
 #include <cstdio>
-#include <cstring>
 #include <fstream>
+#include <ios>
 #include <sstream>
 #include <string>
 #include <vector>
 
 #include <pwd.h>
 #include <sys/stat.h>
-#include <unistd.h>
+#include <sys/types.h>
 #include <sys/utsname.h>
+#include <unistd.h>
 
 #include "sysinfo.h"
 

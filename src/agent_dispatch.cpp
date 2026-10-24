@@ -10,8 +10,14 @@
 #include <sstream>
 #include <string>
 #include <vector>
+#include <ctime>
+#include <cstdlib>
+#include <format>
+#include <algorithm>
+#include <cstddef>
 
 #include "agent.h"
+#include "agent_utils.h"
 #include "config.h"
 #include "tui.h"
 #include "audio.h"
@@ -19,13 +25,10 @@
 #include "string_utils.h"
 #include "file.h"
 #include "graph.h"
-#include "webview.h"
-#include "shell_util.h"
 #include "build.h"
 #include "planner.h"
 #include "sysinfo.h"
 #include "git_tool.h"
-#include "agent_utils.h"
 #include "curl.h"
 
 namespace fs = std::filesystem;
@@ -34,19 +37,19 @@ ToolMap Agent::build_tool_dispatch() {
   ToolMap tools;
 
   tools["TOOL:DATE"] = [this](const std::string &a1, const std::string &a2) -> std::string {
-    tui_.show_tool("TOOL:DATE");
+    tui_.show_tool("date");
     char buf[32]; time_t t = time(nullptr);
     strftime(buf, sizeof(buf), "%Y-%m-%d", localtime(&t));
     return buf;
   };
   tools["TOOL:TIME"] = [this](const std::string &a1, const std::string &a2) -> std::string {
-    tui_.show_tool("TOOL:TIME");
+    tui_.show_tool("time");
     char buf[32]; time_t t = time(nullptr);
     strftime(buf, sizeof(buf), "%H:%M:%S", localtime(&t));
     return buf;
   };
   tools["TOOL:RND"] = [this](const std::string &a1, const std::string &a2) -> std::string {
-    tui_.show_tool("TOOL:RND");
+    tui_.show_tool("rnd");
     return std::to_string(static_cast<double>(rand()) / RAND_MAX);
   };
   tools["TOOL:RAG"] = [this](const std::string &a1, const std::string &a2) -> std::string {
@@ -215,11 +218,36 @@ ToolMap Agent::build_tool_dispatch() {
       auto result = build_run(cfg_.sandbox_, a1, [&](const std::string &msg) {
         tui_.show_tool(msg);
       }, a2);
-      return result.output_;
+      std::string out = result.output_;
+
+      // Format lint warnings as a table
+      if (!result.lint_details_.empty()) {
+        int show = std::min(static_cast<int>(result.lint_details_.size()), 30);
+        std::string dims = std::to_string(show) + "x4";
+        std::string data = "#|File|Check|Description\n";
+        for (int i = 0; i < show; i++) {
+          const auto &w = result.lint_details_[i];
+          data += std::to_string(i + 1) + "|" +
+                  w.file + ":" + std::to_string(w.line) + "|" +
+                  w.check + "|" + w.description + "\n";
+        }
+        auto table = tool_table(dims, data);
+        if (table.error.empty()) {
+          out += "\n";
+          for (const auto &row : table.rows) {
+            out += row + "\n";
+          }
+          if (static_cast<int>(result.lint_details_.size()) > show) {
+            out += "... and " + std::to_string(result.lint_details_.size() - show) + " more\n";
+          }
+        }
+        tui_.append_lines(table.rows);
+      }
+      return out;
     });
   };
   tools["TOOL:STAT"] = [this](const std::string &a1, const std::string &a2) -> std::string {
-    tui_.show_tool("TOOL:STAT " + a1);
+    tui_.show_tool("stat " + a1);
     const auto path = resolve_path(cfg_.sandbox_, a1);
     if (!path_allowed(cfg_.sandbox_, cfg_.extra_dirs_, path)) {
       return "ERROR: path outside sandbox";
@@ -227,17 +255,17 @@ ToolMap Agent::build_tool_dispatch() {
     return stat_file(path);
   };
   tools["TOOL:SYSINFO"] = [this](const std::string &a1, const std::string &a2) -> std::string {
-    tui_.show_tool("TOOL:SYSINFO");
+    tui_.show_tool("sysinfo");
     return sysinfo_text();
   };
   tools["TOOL:GIT"] = [this](const std::string &a1, const std::string &a2) -> std::string {
-    tui_.show_tool("TOOL:GIT " + a1);
+    tui_.show_tool("git " + a1);
     return run_with_spinner(tui_, [this, &a1, &a2]() {
       return git_run(a1, a2, cfg_.sandbox_);
     });
   };
   tools["TOOL:HEX"] = [this](const std::string &a1, const std::string &a2) -> std::string {
-    tui_.show_tool("TOOL:HEX " + a1);
+    tui_.show_tool("hex " + a1);
     const auto path = resolve_path(cfg_.sandbox_, a1);
     if (!path_allowed(cfg_.sandbox_, cfg_.extra_dirs_, path)) {
       return "ERROR: path outside sandbox";
