@@ -93,8 +93,7 @@ Llama::Llama() :
   //
   // capture logging from the llama.cpp's common module
   //
-  const char *home = getenv("HOME");
-  const auto path = std::string(home ? home : ".") + "/.config/hali/hali-common.log";
+  const auto path = std::string(".hali/hali-common.log");
   common_log_set_file(common_log_main(), path.c_str());
   common_log_set_verbosity_thold(0);
 

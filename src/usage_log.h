@@ -30,7 +30,13 @@ struct UsageLog {
   int    total_tool_errors = 0;
   double peak_kv_pct      = 0.0;
   int    total_tokens     = 0;
-  int    cumulative_tokens = 0;
+
+  // Cumulative values persist across sessions (loaded from disk at startup)
+  int    cumulative_tokens      = 0;
+  int    cumulative_tool_calls  = 0;
+  int    cumulative_tool_errors = 0;
+  int    cumulative_turns       = 0;
+  double cumulative_llm_ms      = 0.0;
 
   void record_turn(const TurnMetrics &m);
   std::string summary() const;

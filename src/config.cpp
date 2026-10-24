@@ -62,17 +62,15 @@ std::string HaliConfig::kv_preset_to_string() const {
 }
 
 //
-// Settings persistence  (~/.config/hali/hali.settings.json)
-// Returns the canonical settings path: ~/.config/hali/settings.json
+// Settings persistence  (<sandbox>/.hali/settings.json)
+// Returns the canonical settings path: <sandbox>/.hali/settings.json
 //
 std::string HaliConfig::settings_path() const {
   // Attempt to read settings from the current working directory first
   if (fs::exists(config_)) {
     return config_;
   }
-  const char *home = getenv("HOME");
-  std::string base = home ? std::string(home) : ".";
-  return base + "/.config/hali/settings.json";
+  return sandbox_ + "/.hali/settings.json";
 }
 
 std::string history_path(const std::string &sandbox) {

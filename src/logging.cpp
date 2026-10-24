@@ -123,8 +123,7 @@ void log_open(const std::string& level, const std::string& file, const std::stri
     } else if (const char *env_path = getenv("HALI_LOG_FILE")) {
       path = env_path;
     } else {
-      const char *home = getenv("HOME");
-      path = std::string(home ? home : ".") + "/.config/hali/hali.log";
+      path = ".hali/hali.log";
     }
     std::error_code ec2;
     fs::path dir = fs::path(path).parent_path();

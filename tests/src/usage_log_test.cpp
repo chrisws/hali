@@ -173,6 +173,93 @@ static void test_clear() {
   cout << "test_clear passed" << endl;
 }
 
+static void test_to_json_cumulative() {
+  UsageLog log;
+  log.cumulative_tokens      = 10000;
+  log.cumulative_tool_calls  = 50;
+  log.cumulative_tool_errors = 5;
+  log.cumulative_turns       = 200;
+  log.cumulative_llm_ms      = 123456.0;
+
+  string json = log.to_json();
+  assert(json.find("\"cumulative_tokens\": 10000") != string::npos);
+  assert(json.find("\"cumulative_tool_calls\": 50") != string::npos);
+  assert(json.find("\"cumulative_tool_errors\": 5") != string::npos);
+  assert(json.find("\"cumulative_turns\": 200") != string::npos);
+  assert(json.find("\"cumulative_llm_ms\": 123456") != string::npos);
+  cout << "test_to_json_cumulative passed" << endl;
+}
+
+static void test_clear_preserves_cumulative() {
+  UsageLog log;
+  log.cumulative_tokens      = 9999;
+  log.cumulative_tool_calls  = 42;
+  log.cumulative_tool_errors = 7;
+  log.cumulative_turns       = 100;
+  log.cumulative_llm_ms      = 50000.0;
+
+  TurnMetrics m;
+  m.turn_number = 1;
+  m.kv_usage_pct = 50.0;
+  log.record_turn(m);
+
+  log.clear();
+  assert(log.turns.empty());
+  assert(log.total_tokens == 0);
+  // Cumulative values must survive clear()
+  assert(log.cumulative_tokens      == 9999);
+  assert(log.cumulative_tool_calls  == 42);
+  assert(log.cumulative_tool_errors == 7);
+  assert(log.cumulative_turns       == 100);
+  assert(log.cumulative_llm_ms      == 50000.0);
+  cout << "test_clear_preserves_cumulative passed" << endl;
+}
+
+static void test_load_cumulative() {
+  const string path = "/tmp/hali_usage_log_cum_test.json";
+  std::error_code ec;
+  std::filesystem::remove(path, ec);
+
+  // Write a JSON file with cumulative values
+  {
+    std::ofstream f(path);
+    f << "{\n"
+      << "  \"total_turns\": 5,\n"
+      << "  \"total_tokens\": 100,\n"
+      << "  \"cumulative_tokens\": 42000,\n"
+      << "  \"cumulative_tool_calls\": 150,\n"
+      << "  \"cumulative_tool_errors\": 12,\n"
+      << "  \"cumulative_turns\": 300,\n"
+      << "  \"cumulative_llm_ms\": 98765.0,\n"
+      << "  \"turns\": []\n"
+      << "}\n";
+  }
+
+  UsageLog log;
+  log.load_cumulative(path);
+
+  assert(log.cumulative_tokens      == 42000);
+  assert(log.cumulative_tool_calls  == 150);
+  assert(log.cumulative_tool_errors == 12);
+  assert(log.cumulative_turns       == 300);
+  assert(log.cumulative_llm_ms      == 98765.0);
+
+  std::filesystem::remove(path, ec);
+  cout << "test_load_cumulative passed" << endl;
+}
+
+static void test_load_cumulative_missing_file() {
+  UsageLog log;
+  log.load_cumulative("/tmp/hali_nonexistent_usage_log.json");
+  // Should remain at defaults
+  assert(log.cumulative_tokens      == 0);
+  assert(log.cumulative_tool_calls  == 0);
+  assert(log.cumulative_tool_errors == 0);
+  assert(log.cumulative_turns       == 0);
+  assert(log.cumulative_llm_ms      == 0.0);
+  cout << "test_load_cumulative_missing_file passed" << endl;
+}
+
 void usage_log_test() {
   cout << "=== Usage Log Tests ===\n\n";
   test_record_turn();
@@ -183,5 +270,9 @@ void usage_log_test() {
   test_to_json();
   test_dump();
   test_clear();
+  test_to_json_cumulative();
+  test_clear_preserves_cumulative();
+  test_load_cumulative();
+  test_load_cumulative_missing_file();
   cout << "\nAll usage log tests passed!\n" << endl;
 }

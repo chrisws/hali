@@ -628,11 +628,14 @@ void Agent::generate_badge(const std::string &sandbox) {
   const std::string log_path = sandbox + "/.hali/usage_log.json";
   const std::string badge_path = sandbox + "/.hali/badge.svg";
 
-  // Load previous cumulative and add this session's tokens.
-  usage_log_.load_cumulative(log_path);
-  usage_log_.cumulative_tokens += usage_log_.session_tokens();
+  // Add this session's totals to the cumulative values (loaded at startup).
+  usage_log_.cumulative_tokens      += usage_log_.session_tokens();
+  usage_log_.cumulative_tool_calls  += usage_log_.total_tool_calls;
+  usage_log_.cumulative_tool_errors += usage_log_.total_tool_errors;
+  usage_log_.cumulative_turns       += static_cast<int>(usage_log_.turns.size());
+  usage_log_.cumulative_llm_ms      += usage_log_.total_llm_ms;
 
-  // Write the updated usage log with cumulative total.
+  // Write the updated usage log with cumulative totals.
   usage_log_.dump(log_path);
 
   // Generate and write the SVG badge.

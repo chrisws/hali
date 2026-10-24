@@ -196,7 +196,7 @@ static void slash_revoke(const std::string &rest, HaliConfig &cfg, Tui &tui) {
     cfg.run_allowed_.erase(
       std::remove(cfg.run_allowed_.begin(), cfg.run_allowed_.end(), rest),
       cfg.run_allowed_.end());
-    cfg.user_run_allowed_.save(RunAllowed::default_path());
+    cfg.user_run_allowed_.save(RunAllowed::default_path(cfg.sandbox_));
     tui.append_line(ICON_SYS + "Revoked: " + rest);
   } else {
     tui.append_line(ICON_ERR + "Not found in approved list: " + rest);

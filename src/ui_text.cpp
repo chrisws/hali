@@ -194,7 +194,7 @@ void usage() {
             "-b, --backup-path <path>  create file backups prior to invoking TOOL:WRITE\n"
             "-h, --help                show this help\n"
             "\n"
-            "Settings are persisted to ~/.config/hali/settings.json.\n"
+            "Settings are persisted to .hali/settings.json under the sandbox.\n"
             "\n"
             "Slash commands inside hali:\n");
   for (const auto &cmd : slash_commands()) {

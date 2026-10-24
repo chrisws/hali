@@ -14,6 +14,7 @@
 
 #include "usage_log.h"
 #include "logging.h"
+#include "json.h"
 
 void UsageLog::record_turn(const TurnMetrics &m) {
   turns.push_back(m);
@@ -61,6 +62,10 @@ std::string UsageLog::to_json() const {
   oss << "  \"peak_kv_pct\": " << peak_kv_pct << ",\n";
   oss << "  \"total_tokens\": " << total_tokens << ",\n";
   oss << "  \"cumulative_tokens\": " << cumulative_tokens << ",\n";
+  oss << "  \"cumulative_tool_calls\": " << cumulative_tool_calls << ",\n";
+  oss << "  \"cumulative_tool_errors\": " << cumulative_tool_errors << ",\n";
+  oss << "  \"cumulative_turns\": " << cumulative_turns << ",\n";
+  oss << "  \"cumulative_llm_ms\": " << cumulative_llm_ms << ",\n";
   oss << "  \"turns\": [\n";
   for (size_t i = 0; i < turns.size(); ++i) {
     const auto &t = turns[i];
@@ -120,21 +125,23 @@ void UsageLog::load_cumulative(const std::string &path) {
   oss << f.rdbuf();
   std::string content = oss.str();
 
-  // Simple parse: find "cumulative_tokens": N
-  auto pos = content.find("\"cumulative_tokens\":");
-  if (pos == std::string::npos) {
+  json::JsonDoc doc = json::JsonDoc::parse(content);
+  if (!doc.is_valid()) {
+    log_write(LEVEL_WARNING, "usage_log", "failed to parse %s", path.c_str());
     return;
   }
-  pos += 19; // skip past the key and colon
-  while (pos < content.size() && content[pos] == ' ') {
-    pos++;
-  }
-  int val = 0;
-  while (pos < content.size() && content[pos] >= '0' && content[pos] <= '9') {
-    val = val * 10 + (content[pos] - '0');
-    pos++;
-  }
-  cumulative_tokens = val;
+
+  json::JsonValue root = doc.get_root();
+  root.get_int("cumulative_tokens", cumulative_tokens);
+  root.get_int("cumulative_tool_calls", cumulative_tool_calls);
+  root.get_int("cumulative_tool_errors", cumulative_tool_errors);
+  root.get_int("cumulative_turns", cumulative_turns);
+  float llm_ms = 0.0f;
+  root.get_float("cumulative_llm_ms", llm_ms);
+  cumulative_llm_ms = llm_ms;
+
+  log_write(LEVEL_INFO, "usage_log", "loaded cumulative: %d tokens, %d turns, %d tool calls, %d errors, %.0f ms",
+            cumulative_tokens, cumulative_turns, cumulative_tool_calls, cumulative_tool_errors, cumulative_llm_ms);
 }
 
 std::string UsageLog::badge_svg() const {

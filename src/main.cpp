@@ -123,6 +123,9 @@ int main(int argc, char **argv) {
   // ── Load persisted settings first (provides defaults) ─────────────
   cfg.load_settings();
 
+  // ── Load user-approved RUN commands ──────────────────────────────
+  cfg.user_run_allowed_.load(RunAllowed::default_path(cfg.sandbox_));
+
   // ── Init logging: CLI -l overrides config defaults ───────────────
   if (!cli_log_level.empty()) {
     log_open(cli_log_level);
@@ -277,7 +280,7 @@ int main(int argc, char **argv) {
   agent.save_mtp_best_settings();
 
   // Persist input history for the next session.
-  cfg.user_run_allowed_.save(RunAllowed::default_path());
+  cfg.user_run_allowed_.save(RunAllowed::default_path(cfg.sandbox_));
   tui.history_save(history_path(cfg.sandbox_));
   audio::shutdown();
   curl_close();

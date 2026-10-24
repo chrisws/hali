@@ -34,12 +34,10 @@ class RunAllowed {
   RunAllowed &operator=(const RunAllowed &) = delete;
 
   /**
-   * @brief Canonical persistence path: ~/.config/hali/user-approved.txt
+   * @brief Canonical persistence path: <sandbox>/.hali/user-approved.txt
    */
-  static std::string default_path() {
-    const char *home = std::getenv("HOME");
-    std::string base = home ? std::string(home) : ".";
-    return base + "/.config/hali/user-approved.txt";
+  static std::string default_path(const std::string &sandbox) {
+    return sandbox + "/.hali/user-approved.txt";
   }
 
   /**

@@ -52,12 +52,12 @@ Most agentic shells assume a hosted API and treat context as free. Hali assumes 
   | `TOOL:HEX`                                              | xxd-style hex dump with optional offset and length, capped at 256 lines                                                                                                                                        |
   | `TOOL:DATE`, `TOOL:TIME`, `TOOL:RND`, `TOOL:INTROSPECT` | Small utility/introspection tools                                                                                                                                                                                                                      |
 
-- **Persistent run-allowlist** — user-approved `TOOL:RUN` program names are saved to `~/.config/hali/user-approved.txt` with timestamps and a 30-day TTL, so approvals survive across sessions without re-prompting. Revoke individual approvals with `/revoke <name>`.
+- **Persistent run-allowlist** — user-approved `TOOL:RUN` program names are saved to `.hali/user-approved.txt` under the sandbox with timestamps and a 30-day TTL, so approvals survive across sessions without re-prompting. Revoke individual approvals with `/revoke <name>`.
 - **MCP client** — connect to external Model Context Protocol servers (e.g. JetBrains IDE built-in MCP servers) with `--mcp`, filter which tools get exposed with `--mcp-filter`, and dry-run the resulting system context with `--mcp-test`. Server connection details live in `mcp.json`.
 - **Skills system** — load one or more markdown skill files into the static system-prompt prefix at session start with `--skill <name>` (no per-turn routing, so it doesn't disrupt the KV cache). `hali.md`, `persona.md`, and `AGENTS.md` are auto-discovered from the current directory if present. Skills can also be loaded mid-conversation with `/skill <name> [kickoff]`. The [`skills/`](skills/) folder ships a starter set covering debugging, TDD, code review, CMake/build troubleshooting, memory-safety review, dependency-free frontend work, SmallBASIC's raylib plugin, free JSON API sourcing, a local-info feed pattern, planning, spiking, code simplification, house style, skill import, and a few just-for-fun ones (chess, an ELIZA-style roleplay, generative interactive fiction, a self-scoring introspection game).
 - **Pure C++ RAG pipeline** — semantic chunker, binary `.db` index, deduplicating `RagSession`, with a folder picker for building indexes on the fly.
 - **Web development mode** — a local HTTP server with live-reload that watches the sandbox for HTML changes. The model can push messages to the browser and trigger reloads, enabling a tight edit-preview loop. Enabled with `-p, --web-port <port>`.
-- **Persistent settings** — configuration lives in `~/.config/hali.settings.json`, or point at a specific file with `-c`/`--config` (defaults to `hali.config.json`).
+- **Persistent settings** — configuration lives in `.hali/settings.json` under the sandbox, or point at a specific file with `-c`/`--config` (defaults to `hali.config.json`).
 - **Test suite** — unit tests under `tests/` (file operations, string/Unicode utilities, SHA-1, MCP message formatting, the graph renderer), runnable via CTest.
 
 ## Sandbox Security
@@ -85,7 +85,7 @@ Read access extends to a configurable list of **extra directories** (`extra_dirs
 2. **Shell-metacharacter detection** — `has_shell_metachars()` rejects arguments containing `;`, `|`, `&`, `>`, `<`, `$`, backticks, or newlines that could enable command injection.
 3. **Dangerous-pattern check** — `hasDangerousPatterns()` flags known-destructive commands (e.g. `rm -rf /`, `dd`, `mkfs`) even when they pass the allowlist.
 
-User-approved programs are persisted to `~/.config/hali/user-approved.txt` with a 30-day TTL.
+User-approved programs are persisted to `.hali/user-approved.txt` under the sandbox with a 30-day TTL.
 
 ### Write protection
 

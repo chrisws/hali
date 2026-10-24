@@ -85,6 +85,7 @@ struct Agent {
     , tui_(tui)
     , mcp_client_(mcp_client) {
     tools_ = build_tool_dispatch();
+    usage_log_.load_cumulative(usage_log_path(cfg_.sandbox_));
   }
   ~Agent() = default;
 
