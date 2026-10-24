@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="150" height="20" viewBox="0 0 150 20" role="img" aria-label="unit tests: 100/1">
+  <title>unit tests: 100/1</title>
+  <rect width="80" height="20" rx="3" fill="#555"/>
+  <rect x="80" width="70" height="20" rx="3" fill="#ae0000"/>
+  <rect x="80" width="67" height="20" fill="#ae0000"/>
+  <text x="40" y="14" font-family="monospace" font-size="11" fill="#fff" text-anchor="middle">unit tests</text>
+  <text x="115" y="14" font-family="monospace" font-size="11" fill="#fff" text-anchor="middle">100/1</text>
+</svg>

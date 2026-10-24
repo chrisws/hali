@@ -21,8 +21,10 @@
 #include "usage_log.h"
 #include "planner.h"
 
-using ToolFn  = std::function<std::string(const std::string &, const std::string &)>;
-using ToolMap = std::unordered_map<std::string, ToolFn>;
+using ToolFn     = std::function<std::string(const std::string &, const std::string &)>;
+using ToolMap    = std::unordered_map<std::string, ToolFn>;
+using ValidateFn = std::function<std::string(const std::string &, const std::string &)>;
+using ExecuteFn  = std::function<std::string(const std::string &)>;
 
 constexpr int MAX_FLUSH_RETRIES = 3;
 
@@ -111,6 +113,16 @@ struct Agent {
   std::string memory_info_status() const;
   std::string process_tool(const std::string &cmd);
   ToolMap build_tool_dispatch();
+  std::string handle_file_write(
+      const std::string &tool_name,
+      const std::string &path_arg,
+      const std::string &data,
+      bool do_permission,
+      const ValidateFn &validate,
+      const ExecuteFn &execute);
+  std::string handle_build(const std::string &a1, const std::string &a2);
+  std::string handle_plan(const std::string &a1, const std::string &a2);
+  std::string handle_choice(const std::string &a1, const std::string &a2);
   std::string rag_tool(const std::string &agent_query) const;
   std::string restart();
   double elapsed_seconds() const;

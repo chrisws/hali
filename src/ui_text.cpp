@@ -118,7 +118,7 @@ void settings(Tui &tui, HaliConfig &cfg) {
 
   tui.append_line(ICON_SYS + "── Paths ──────────────────────────────────────");
   tui.append_line(ICON_SYS + "  sandbox         : " + cfg.sandbox_);
-  tui.append_line(ICON_SYS + "  backup_path     : " + (cfg.backup_path_.empty() ? "(none)" : cfg.backup_path_));
+  tui.append_line(ICON_SYS + "  backups         : " + (cfg.enabled_backups_ ? "enabled" : "disabled"));
   tui.append_line(ICON_SYS + "  config          : " + cfg.config_);
   tui.append_line(ICON_SYS + "  saved to        : " + cfg.settings_path());
 
@@ -191,7 +191,7 @@ void usage() {
             "-t, --think               disable model \"thinking\" output\n"
             "-n, --prompt-permission   require explicit confirmation before destructive tool calls\n"
             "-p, --web-port <port>     enable web development mode with live-reload on the given port\n"
-            "-b, --backup-path <path>  create file backups prior to invoking TOOL:WRITE\n"
+            "-b, --enabled-backups     enable file backups to .hali/backups prior to writes\n"
             "-h, --help                show this help\n"
             "\n"
             "Settings are persisted to .hali/settings.json under the sandbox.\n"

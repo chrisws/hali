@@ -924,8 +924,9 @@ std::string tool_run(HaliConfig &cfg, Tui &tui, const std::string &arg1, const s
 // Backup helper
 //
 void backup_file(const HaliConfig &cfg, Tui &tui, const std::string &path) {
-  if (!utils::is_blank(cfg.backup_path_)) {
-    const auto confirm = tool_write_backup(cfg.backup_path_, path);
+  if (cfg.enabled_backups_) {
+    const std::string backup_dir = cfg.sandbox_ + "/.hali/backups";
+    const auto confirm = tool_write_backup(backup_dir, path);
     tui.show_tool("backup: " + confirm);
   }
 }

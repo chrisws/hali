@@ -206,7 +206,7 @@ void HaliConfig::load_settings() {
   // ── behavior / paths / access ──────────────────────────────────
   root.get_bool("thinking", thinking_);
   root.get_int("web_port", web_port_);
-  root.get_str("backup_path", backup_path_);
+  root.get_bool("enabled_backups", enabled_backups_);
   root.get_int("val_write_size_warn", val_write_size_warn_);
 
   std::vector<json::JsonValue> kfs;
@@ -359,7 +359,7 @@ std::string HaliConfig::prompt_core() const {
     "  TOOL:RND                   random float 0..1\n"
     "  TOOL:RAG    <query>        query the RAG index for additional context\n"
     "  TOOL:ASK    <query>        ask the user for clarification or additional context\n"
-    "  TOOL:CHOICE <question> <options>  multiple-choice popup (options: pipe-delimited)\n"
+    "  TOOL:CHOICE <question>|<opt1>|<opt2>|...  multiple-choice popup (pipe-delimited)\n"
     "  TOOL:TABLE  <R>x<C> <rows>  format pipe-delimited rows into an aligned table\n"
     "  TOOL:INTROSPECT            show current model settings\n"
     "  TOOL:CURL   <url>          HTTP GET, returns response body (max 32 KB)\n"
@@ -579,7 +579,7 @@ std::string HaliConfig::introspect() const {
   // behavior / paths / access
   root.set_bool("thinking", thinking_);
   root.set_int("web_port", web_port_);
-  root.set_str("backup_path", backup_path_);
+  root.set_bool("enabled_backups", enabled_backups_);
   root.set_arr("knowledge_files", knowledge_files_);
   root.set_arr("mcp_filter", mcp_filter_);
   root.set_int("val_write_size_warn", val_write_size_warn_);

@@ -6,6 +6,9 @@ Hali is a local-first agentic coding/chat shell built on [llama.cpp](https://git
 
 <img width="831" height="771" alt="Screenshot From 2026-09-26 07-42-59" src="https://github.com/user-attachments/assets/105b2376-d5c0-48b9-b0d6-6922a758e6cc" />
 
+![made with badge](.hali/badge.svg)
+![unit tests](.hali/test_badge.svg)
+
 ## Why
 
 Most agentic shells assume a hosted API and treat context as free. Hali assumes neither: it's built for consumer GPUs (developed against a 16GB RTX 5060 Ti) where the KV cache is a scarce resource and every tool call has to earn its place in the context window.

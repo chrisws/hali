@@ -544,6 +544,377 @@ static void test_lint_mode_recognised() {
   teardown_sandbox();
 }
 
+//
+// test: HTP parser - valid SUMMARY line
+//
+static void test_htp_summary() {
+  string output =
+    "# Hali Test Protocol v1\n"
+    "PASS file\n"
+    "PASS graph\n"
+    "FAIL string_utils assertion failed at line 42\n"
+    "PASS sha1\n"
+    "SUMMARY 3 4\n";
+  auto r = parse_test_protocol(output);
+  assert(r.found);
+  assert(r.passed == 3);
+  assert(r.total == 4);
+}
+
+//
+// test: HTP parser - no SUMMARY, derive from PASS/FAIL counts
+//
+static void test_htp_no_summary() {
+  string output =
+    "PASS alpha\n"
+    "PASS beta\n"
+    "FAIL gamma something broke\n"
+    "PASS delta\n";
+  auto r = parse_test_protocol(output);
+  assert(r.found);
+  assert(r.passed == 3);
+  assert(r.total == 4);
+}
+
+//
+// test: HTP parser - empty output, no results
+//
+static void test_htp_empty() {
+  string output = "";
+  auto r = parse_test_protocol(output);
+  assert(!r.found);
+  assert(r.passed == 0);
+  assert(r.total == 0);
+}
+
+//
+// test: HTP parser - only comments and informational lines
+//
+static void test_htp_comments_only() {
+  string output =
+    "# This is a comment\n"
+    "Some informational output\n"
+    "Another line of noise\n"
+    "# Another comment\n";
+  auto r = parse_test_protocol(output);
+  assert(!r.found);
+}
+
+//
+// test: HTP parser - mixed with non-protocol output (e.g. compiler warnings)
+//
+static void test_htp_mixed_output() {
+  string output =
+    "g++ -o test main.cpp\n"
+    "main.cpp:10: warning: unused variable\n"
+    "PASS test_one\n"
+    "some random output\n"
+    "PASS test_two\n"
+    "FAIL test_three value was 5, expected 3\n"
+    "SUMMARY 2 3\n";
+  auto r = parse_test_protocol(output);
+  assert(r.found);
+  assert(r.passed == 2);
+  assert(r.total == 3);
+}
+
+//
+// test: HTP parser - malformed SUMMARY line is ignored
+//
+static void test_htp_malformed_summary() {
+  string output =
+    "PASS a\n"
+    "PASS b\n"
+    "SUMMARY not_a_number also_not\n";
+  // Falls back to counting: 2 passed, 0 failed
+  auto r = parse_test_protocol(output);
+  assert(r.found);
+  assert(r.passed == 2);
+  assert(r.total == 2);
+}
+
+//
+// test: HTP parser - SUMMARY with only passed count (total defaults to passed)
+//
+static void test_htp_summary_single_number() {
+  string output =
+    "PASS a\n"
+    "PASS b\n"
+    "PASS c\n"
+    "SUMMARY 3\n";
+  auto r = parse_test_protocol(output);
+  assert(r.found);
+  assert(r.passed == 3);
+  assert(r.total == 3);
+}
+
+//
+// test: HTP parser - all tests passed
+//
+static void test_htp_all_pass() {
+  string output =
+    "PASS one\n"
+    "PASS two\n"
+    "PASS three\n"
+    "SUMMARY 3 3\n";
+  auto r = parse_test_protocol(output);
+  assert(r.found);
+  assert(r.passed == 3);
+  assert(r.total == 3);
+}
+
+//
+// test: HTP parser - all tests failed
+//
+static void test_htp_all_fail() {
+  string output =
+    "FAIL one error A\n"
+    "FAIL two error B\n"
+    "SUMMARY 0 2\n";
+  auto r = parse_test_protocol(output);
+  assert(r.found);
+  assert(r.passed == 0);
+  assert(r.total == 2);
+}
+
+//
+// test: HTP parser - whitespace-only lines are ignored
+//
+static void test_htp_whitespace() {
+  string output =
+    "   \n"
+    "\t\n"
+    "PASS a\n"
+    "   \n"
+    "SUMMARY 1 1\n";
+  auto r = parse_test_protocol(output);
+  assert(r.found);
+  assert(r.passed == 1);
+  assert(r.total == 1);
+}
+
+//
+// test: HTP parser - FAIL line with no message
+//
+static void test_htp_fail_no_message() {
+  string output =
+    "PASS a\n"
+    "FAIL b\n"
+    "SUMMARY 1 2\n";
+  auto r = parse_test_protocol(output);
+  assert(r.found);
+  assert(r.passed == 1);
+  assert(r.total == 2);
+}
+
+//
+// test: CMake setup warns when enable_testing() is missing
+//
+static void test_cmake_setup_missing_enable_testing() {
+  setup_sandbox();
+  write_file(SANDBOX + "/CMakeLists.txt",
+    "cmake_minimum_required(VERSION 3.15)\n"
+    "project(setuptest CXX)\n");
+  write_file(SANDBOX + "/main.cpp", "int main(){return 0;}\n");
+  fs::create_directories(SANDBOX + "/tests");
+  // No enable_testing() in this CMakeLists.txt
+  write_file(SANDBOX + "/tests/CMakeLists.txt",
+    "cmake_minimum_required(VERSION 3.15)\n"
+    "project(setuptest_tests CXX)\n");
+
+  auto r = build_run(SANDBOX, "setup", [](const string &) {});
+  assert(r.output_.find("enable_testing") != string::npos);
+  assert(r.output_.find("WARNING") != string::npos);
+  teardown_sandbox();
+}
+
+//
+// test: CMake setup does NOT warn when enable_testing() is present
+//
+static void test_cmake_setup_has_enable_testing() {
+  setup_sandbox();
+  write_file(SANDBOX + "/CMakeLists.txt",
+    "cmake_minimum_required(VERSION 3.15)\n"
+    "project(setuptest CXX)\n");
+  write_file(SANDBOX + "/main.cpp", "int main(){return 0;}\n");
+  fs::create_directories(SANDBOX + "/tests");
+  // enable_testing() IS present
+  write_file(SANDBOX + "/tests/CMakeLists.txt",
+    "cmake_minimum_required(VERSION 3.15)\n"
+    "project(setuptest_tests CXX)\n"
+    "enable_testing()\n");
+
+  auto r = build_run(SANDBOX, "setup", [](const string &) {});
+  assert(r.output_.find("does not call enable_testing") == string::npos);
+  teardown_sandbox();
+}
+
+//
+// test: JUnit XML parser - single testsuite, all pass
+//
+static void test_junit_single_all_pass() {
+  setup_sandbox();
+  string xml =
+    "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+    "<testsuites>\n"
+    "  <testsuite name=\"all\" tests=\"5\" failures=\"0\" errors=\"0\" time=\"0.1\">\n"
+    "  </testsuite>\n"
+    "</testsuites>\n";
+  string path = SANDBOX + "/results.xml";
+  write_file(path, xml);
+
+  auto r = parse_junit_xml(path);
+  assert(r.found);
+  assert(r.total == 5);
+  assert(r.passed == 5);
+  teardown_sandbox();
+}
+
+//
+// test: JUnit XML parser - single testsuite with failures
+//
+static void test_junit_single_with_failures() {
+  setup_sandbox();
+  string xml =
+    "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+    "<testsuites>\n"
+    "  <testsuite name=\"suite1\" tests=\"10\" failures=\"2\" errors=\"1\" time=\"0.5\">\n"
+    "  </testsuite>\n"
+    "</testsuites>\n";
+  string path = SANDBOX + "/results.xml";
+  write_file(path, xml);
+
+  auto r = parse_junit_xml(path);
+  assert(r.found);
+  assert(r.total == 10);
+  assert(r.passed == 7);  // 10 - 2 failures - 1 error
+  teardown_sandbox();
+}
+
+//
+// test: JUnit XML parser - multiple testsuites are summed
+//
+static void test_junit_multiple_suites() {
+  setup_sandbox();
+  string xml =
+    "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+    "<testsuites>\n"
+    "  <testsuite name=\"a\" tests=\"3\" failures=\"1\" errors=\"0\" time=\"0.1\"/>\n"
+    "  <testsuite name=\"b\" tests=\"7\" failures=\"0\" errors=\"2\" time=\"0.2\"/>\n"
+    "  <testsuite name=\"c\" tests=\"5\" failures=\"0\" errors=\"0\" time=\"0.3\"/>\n"
+    "</testsuites>\n";
+  string path = SANDBOX + "/results.xml";
+  write_file(path, xml);
+
+  auto r = parse_junit_xml(path);
+  assert(r.found);
+  assert(r.total == 15);   // 3+7+5
+  assert(r.passed == 12);  // 15 - 1 - 0 - 0 - 2 - 0
+  teardown_sandbox();
+}
+
+//
+// test: JUnit XML parser - non-existent file returns not found
+//
+static void test_junit_file_not_found() {
+  setup_sandbox();
+  auto r = parse_junit_xml(SANDBOX + "/nonexistent.xml");
+  assert(!r.found);
+  assert(r.total == 0);
+  assert(r.passed == 0);
+  teardown_sandbox();
+}
+
+//
+// test: JUnit XML parser - empty file returns not found
+//
+static void test_junit_empty_file() {
+  setup_sandbox();
+  string path = SANDBOX + "/empty.xml";
+  write_file(path, "");
+
+  auto r = parse_junit_xml(path);
+  assert(!r.found);
+  teardown_sandbox();
+}
+
+//
+// test: JUnit XML parser - XML with no testsuite tags
+//
+static void test_junit_no_testsuite() {
+  setup_sandbox();
+  string xml =
+    "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+    "<testsuites>\n"
+    "</testsuites>\n";
+  string path = SANDBOX + "/results.xml";
+  write_file(path, xml);
+
+  auto r = parse_junit_xml(path);
+  assert(!r.found);
+  teardown_sandbox();
+}
+
+//
+// test: JUnit XML parser - all tests failed (passed clamped to 0)
+//
+static void test_junit_all_failed() {
+  setup_sandbox();
+  string xml =
+    "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+    "<testsuites>\n"
+    "  <testsuite name=\"bad\" tests=\"3\" failures=\"2\" errors=\"2\" time=\"0.1\"/>\n"
+    "</testsuites>\n";
+  string path = SANDBOX + "/results.xml";
+  write_file(path, xml);
+
+  auto r = parse_junit_xml(path);
+  assert(r.found);
+  assert(r.total == 3);
+  assert(r.passed == 0);  // 3 - 2 - 2 = -1, clamped to 0
+  teardown_sandbox();
+}
+
+//
+// test: JUnit XML parser - zero tests in testsuite
+//
+static void test_junit_zero_tests() {
+  setup_sandbox();
+  string xml =
+    "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+    "<testsuites>\n"
+    "  <testsuite name=\"empty\" tests=\"0\" failures=\"0\" errors=\"0\" time=\"0.0\"/>\n"
+    "</testsuites>\n";
+  string path = SANDBOX + "/results.xml";
+  write_file(path, xml);
+
+  auto r = parse_junit_xml(path);
+  assert(r.found);
+  assert(r.total == 0);
+  assert(r.passed == 0);
+  teardown_sandbox();
+}
+
+//
+// test: JUnit XML parser - testsuite with missing attributes defaults to 0
+//
+static void test_junit_missing_attrs() {
+  setup_sandbox();
+  string xml =
+    "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+    "<testsuites>\n"
+    "  <testsuite name=\"partial\" tests=\"4\"/>\n"
+    "</testsuites>\n";
+  string path = SANDBOX + "/results.xml";
+  write_file(path, xml);
+
+  auto r = parse_junit_xml(path);
+  assert(r.found);
+  assert(r.total == 4);
+  assert(r.passed == 4);  // no failures/errors attributes → 0
+  teardown_sandbox();
+}
+
 void build_test() {
   cout << "=== Running TOOL:BUILD Unit Tests ===\n\n";
 
@@ -569,6 +940,8 @@ void build_test() {
   RUN_TEST(test_python_build_syntax_error);
   RUN_TEST(test_cmake_setup_no_tests);
   RUN_TEST(test_cmake_setup_with_tests);
+  RUN_TEST(test_cmake_setup_missing_enable_testing);
+  RUN_TEST(test_cmake_setup_has_enable_testing);
   RUN_TEST(test_maven_setup_existing_pom);
   RUN_TEST(test_gradle_setup_ok);
   RUN_TEST(test_gradle_setup_no_gradlew);
@@ -579,6 +952,26 @@ void build_test() {
   RUN_TEST(test_lint_non_cmake);
   RUN_TEST(test_lint_no_sources);
   RUN_TEST(test_lint_mode_recognised);
+  RUN_TEST(test_htp_summary);
+  RUN_TEST(test_htp_no_summary);
+  RUN_TEST(test_htp_empty);
+  RUN_TEST(test_htp_comments_only);
+  RUN_TEST(test_htp_mixed_output);
+  RUN_TEST(test_htp_malformed_summary);
+  RUN_TEST(test_htp_summary_single_number);
+  RUN_TEST(test_htp_all_pass);
+  RUN_TEST(test_htp_all_fail);
+  RUN_TEST(test_htp_whitespace);
+  RUN_TEST(test_htp_fail_no_message);
+  RUN_TEST(test_junit_single_all_pass);
+  RUN_TEST(test_junit_single_with_failures);
+  RUN_TEST(test_junit_multiple_suites);
+  RUN_TEST(test_junit_file_not_found);
+  RUN_TEST(test_junit_empty_file);
+  RUN_TEST(test_junit_no_testsuite);
+  RUN_TEST(test_junit_all_failed);
+  RUN_TEST(test_junit_zero_tests);
+  RUN_TEST(test_junit_missing_attrs);
 
   cout << "\n=== All TOOL:BUILD tests completed ===\n";
 }

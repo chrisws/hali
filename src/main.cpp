@@ -84,8 +84,8 @@ static void parse_args(int argc, char **argv, HaliConfig &cfg,
       cfg.permission_prompt_ = true;
     } else if (a == "-p" || a == "--web-port") {
       cfg.web_port_ = std::stoi(take_next(a.c_str()));
-    } else if (a == "-b" || a == "--backup-path") {
-      cfg.backup_path_ = take_next(a.c_str());
+    } else if (a == "-b" || a == "--enabled-backups") {
+      cfg.enabled_backups_ = true;
     } else if (a == "-h" || a == "--help") {
       ui::usage();
       std::exit(0);

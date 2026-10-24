@@ -49,7 +49,7 @@ struct HaliConfig {
 
   std::string model_path_;
   std::string embed_path_;
-  std::string backup_path_;
+  bool  enabled_backups_ = false;
   std::string sandbox_; // not a recorded setting
   std::string config_ = "hali.config.json";
 

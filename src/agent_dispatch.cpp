@@ -33,6 +33,178 @@
 
 namespace fs = std::filesystem;
 
+//
+// Common handler for file-write tools (WRITE, PATCH, APPEND, REPLACE).
+// Encapsulates: show_tool, path resolution, sandbox check, optional
+// permission prompt, optional validation, backup, execute, result handling.
+//
+std::string Agent::handle_file_write(
+    const std::string &tool_name,
+    const std::string &path_arg,
+    const std::string &data,
+    bool do_permission,
+    const ValidateFn &validate,
+    const ExecuteFn &execute) {
+  tui_.show_tool(tool_name + ": " + path_arg);
+  turn_.files_written++;
+  const auto path = resolve_path(cfg_.sandbox_, path_arg);
+  if (!path_in_sandbox(cfg_.sandbox_, path)) {
+    return "ERROR: path outside sandbox";
+  }
+  if (do_permission && cfg_.permission_prompt_ &&
+      !tui_.confirm_dialog(std::format("Allow model to write {}?", path))) {
+    return "ERROR: action prevented by user";
+  }
+  if (validate) {
+    const auto warning = validate(path, data);
+    if (!warning.empty()) {
+      tui_.append_token(ICON_ERR + data);
+      if (!tui_.confirm_dialog(std::format("[{}] - Allow model to write {}?", warning, path))) {
+        return "ERROR: action prevented by user - " + warning;
+      }
+    }
+  }
+  backup_file(cfg_, tui_, path);
+  const auto result = execute(path);
+  if (!utils::starts_with(result, "OK")) {
+    tui_.append_token(ICON_ERR + result);
+  } else {
+    broadcast_reload(cfg_, tui_);
+  }
+  return result;
+}
+
+std::string Agent::handle_build(const std::string &a1, const std::string &a2) {
+  return run_with_spinner(tui_, [this, &a1, &a2]() -> std::string {
+    auto result = build_run(cfg_.sandbox_, a1, [&](const std::string &msg) {
+      tui_.show_tool(msg);
+    }, a2);
+    std::string out = result.output_;
+
+    // Format lint warnings as a table
+    if (!result.lint_details_.empty()) {
+      int show = std::min(static_cast<int>(result.lint_details_.size()), 30);
+      std::string dims = std::to_string(show) + "x4";
+      std::string data = "#|File|Check|Description\n";
+      for (int i = 0; i < show; i++) {
+        const auto &w = result.lint_details_[i];
+        data += std::to_string(i + 1) + "|" +
+                w.file + ":" + std::to_string(w.line) + "|" +
+                w.check + "|" + w.description + "\n";
+      }
+      auto table = tool_table(dims, data);
+      if (table.error.empty()) {
+        out += "\n";
+        for (const auto &row : table.rows) {
+          out += row + "\n";
+        }
+        if (static_cast<int>(result.lint_details_.size()) > show) {
+          out += "... and " + std::to_string(result.lint_details_.size() - show) + " more\n";
+        }
+      }
+      tui_.append_lines(table.rows);
+    }
+
+    // Test result badge integration
+    if (result.test_result_.found) {
+      if (result.test_result_.passed == result.test_result_.total) {
+        out += "\n==> All tests passed (" + std::to_string(result.test_result_.total) + ")";
+      } else {
+        int failed = result.test_result_.total - result.test_result_.passed;
+        out += "\n==> Tests failing: " + std::to_string(failed) + " of " + std::to_string(result.test_result_.total);
+      }
+    } else if (a1 == "test" || a1 == "all" || a1.empty()) {
+      out += "\n==> No structured test results detected. Consider using JUnit XML output for structured results.";
+    }
+
+    return out;
+  });
+}
+
+std::string Agent::handle_plan(const std::string &a1, const std::string &a2) {
+  const std::string cmd = utils::trim(a1 + " " + a2);
+  if (cmd.empty()) {
+    tui_.show_tool("plan: display");
+    if (planner_.steps().empty()) {
+      return "No active plan. Use TOOL:PLAN set <goal> to create one.";
+    }
+    return planner_.to_markdown();
+  }
+  auto space = cmd.find(' ');
+  const std::string verb = (space == std::string::npos) ? cmd : cmd.substr(0, space);
+  const std::string arg  = (space == std::string::npos) ? "" : utils::trim(cmd.substr(space + 1));
+  if (verb == "set") {
+    tui_.show_tool("plan: set goal");
+    planner_.set_goal(arg);
+    return "OK: goal set to \"" + arg + "\"";
+  }
+  if (verb == "add") {
+    tui_.show_tool("plan: add step");
+    planner_.add_step(arg);
+    return "OK: added step \"" + arg + "\" (" + std::to_string(planner_.steps().size()) + " total)";
+  }
+  if (verb == "advance") {
+    tui_.show_tool("plan: advance");
+    planner_.advance();
+    if (planner_.complete()) {
+      return "OK: plan complete.";
+    }
+    return "OK: advanced. " + planner_.to_markdown();
+  }
+  if (verb == "skip") {
+    tui_.show_tool("plan: skip");
+    size_t idx = 0;
+    try { idx = std::stoul(arg); } catch (...) { return "ERROR: invalid index: " + arg; }
+    planner_.skip(idx);
+    return "OK: skipped step " + arg + ". " + planner_.to_markdown();
+  }
+  return "ERROR: unknown plan command: " + verb + " (use: set, add, advance, skip)";
+}
+
+std::string Agent::handle_choice(const std::string &a1, const std::string &a2) {
+  // Format: question|opt1|opt2|opt3 (pipe-delimited, no quotes)
+  // a1 and a2 may be split by space, so join them first
+  std::string full = a1;
+  if (!a2.empty()) {
+    full += " " + a2;
+  }
+  full = utils::trim(full);
+  if (full.empty()) {
+    return "ERROR: usage: TOOL:CHOICE question|opt1|opt2|opt3";
+  }
+
+  // Split on pipes
+  std::vector<std::string> parts;
+  std::istringstream iss(full);
+  std::string part;
+  while (std::getline(iss, part, '|')) {
+    auto trimmed = utils::trim(part);
+    if (!trimmed.empty()) {
+      parts.push_back(trimmed);
+    }
+  }
+
+  if (parts.size() < 3) {
+    return "ERROR: need a question and at least 2 options (got " +
+           std::to_string(parts.size()) + " field(s))";
+  }
+
+  const std::string question = parts[0];
+  std::vector<std::string> options;
+  for (size_t i = 1; i < parts.size(); i++) {
+    options.push_back(parts[i]);
+  }
+
+  tui_.show_tool("choice: " + question);
+  int idx = tui_.list_picker(options, question);
+  if (idx < 0) {
+    return "CANCELLED";
+  }
+  tui_.append_line(ICON_TOOL + "\u2190 " + options[idx]);
+  tui_.redraw_all();
+  return options[idx];
+}
+
 ToolMap Agent::build_tool_dispatch() {
   ToolMap tools;
 
@@ -106,74 +278,33 @@ ToolMap Agent::build_tool_dispatch() {
     return tool_search(cfg_.sandbox_, sa.pattern, path_part, flags_part, cfg_.extra_dirs_);
   };
   tools["TOOL:WRITE"] = [this](const std::string &a1, const std::string &a2) -> std::string {
-    tui_.show_tool("writing: " + a1);
-    turn_.files_written++;
-    const auto path = resolve_path(cfg_.sandbox_, a1);
-    if (!path_in_sandbox(cfg_.sandbox_, path)) {
-      return "ERROR: path outside sandbox";
-    }
     const auto data = strip_code_fences(a1, a2);
-    if (!utils::ends_with(path, SESSION_MD)) {
-      if (cfg_.permission_prompt_ && !tui_.confirm_dialog(std::format("Allow model to write {}?", path))) {
-        return "ERROR: action prevented by user";
-      } else if (!cfg_.disable_write_validate_) {
-        const auto validate = tool_write_validate(path, data, cfg_.val_write_size_warn_);
-        if (!validate.empty() && !tui_.confirm_dialog(std::format("[{}] - Allow model to write {}?", validate, path))) {
-          return "ERROR: action prevented by user - " + validate;
-        }
-      }
-    }
-    backup_file(cfg_, tui_, path);
-    const auto result = tool_write(path, data);
-    if (!utils::starts_with(result, "OK")) {
-      tui_.append_token(ICON_ERR + data);
-      tui_.append_token(ICON_ERR + result);
-    } else {
-      broadcast_reload(cfg_, tui_);
-    }
-    return result;
+    const bool skip_validate = utils::ends_with(resolve_path(cfg_.sandbox_, a1), SESSION_MD);
+    return handle_file_write("writing", a1, data, true,
+      [this, &data, skip_validate](const std::string &path, const std::string &) -> std::string {
+        if (skip_validate || cfg_.disable_write_validate_) { return ""; }
+        return tool_write_validate(path, data, cfg_.val_write_size_warn_);
+      },
+      [this, &data](const std::string &path) -> std::string {
+        return tool_write(path, data);
+      });
   };
   tools["TOOL:PATCH"] = [this](const std::string &a1, const std::string &a2) -> std::string {
-    tui_.show_tool("patch: " + a1);
-    turn_.files_written++;
-    const auto path = resolve_path(cfg_.sandbox_, a1);
-    if (!path_in_sandbox(cfg_.sandbox_, path)) {
-      return "ERROR: path outside sandbox";
-    }
-    if (!cfg_.disable_patch_validate_) {
-      const auto validate = tool_patch_validate(path, a2);
-      if (!validate.empty()) {
-        tui_.append_token(ICON_ERR + a2);
-        if (!tui_.confirm_dialog(std::format("[{}] - Allow model to patch {}?", validate, path))) {
-          return "ERROR: action prevented by user - " + validate;
-        }
-      }
-    }
-    backup_file(cfg_, tui_, path);
-    const auto result = tool_patch(path, a2);
-    if (!utils::starts_with(result, "OK")) {
-      tui_.append_token(ICON_ERR + a2);
-      tui_.append_token(ICON_ERR + result);
-    } else {
-      broadcast_reload(cfg_, tui_);
-    }
-    return result;
+    return handle_file_write("patch", a1, a2, false,
+      [this](const std::string &path, const std::string &data) -> std::string {
+        if (cfg_.disable_patch_validate_) { return ""; }
+        return tool_patch_validate(path, data);
+      },
+      [this, &a2](const std::string &path) -> std::string {
+        return tool_patch(path, a2);
+      });
   };
   tools["TOOL:APPEND"] = [this](const std::string &a1, const std::string &a2) -> std::string {
-    tui_.show_tool("append: " + a1);
-    turn_.files_written++;
-    const auto path = resolve_path(cfg_.sandbox_, a1);
-    if (!path_in_sandbox(cfg_.sandbox_, path)) {
-      return "ERROR: path outside sandbox";
-    }
-    backup_file(cfg_, tui_, path);
-    const auto result = tool_append(path, a2);
-    if (!utils::starts_with(result, "OK")) {
-      tui_.append_token(ICON_ERR + result);
-    } else {
-      broadcast_reload(cfg_, tui_);
-    }
-    return result;
+    return handle_file_write("append", a1, a2, false,
+      nullptr,
+      [this, &a2](const std::string &path) -> std::string {
+        return tool_append(path, a2);
+      });
   };
   tools["TOOL:MKDIR"] = [this](const std::string &a1, const std::string &a2) -> std::string {
     std::string p = resolve_path(cfg_.sandbox_, a1);
@@ -214,37 +345,7 @@ ToolMap Agent::build_tool_dispatch() {
     return tool_run(cfg_, tui_, a1, a2);
   };
   tools["TOOL:BUILD"] = [this](const std::string &a1, const std::string &a2) -> std::string {
-    return run_with_spinner(tui_, [this, &a1, &a2]() -> std::string {
-      auto result = build_run(cfg_.sandbox_, a1, [&](const std::string &msg) {
-        tui_.show_tool(msg);
-      }, a2);
-      std::string out = result.output_;
-
-      // Format lint warnings as a table
-      if (!result.lint_details_.empty()) {
-        int show = std::min(static_cast<int>(result.lint_details_.size()), 30);
-        std::string dims = std::to_string(show) + "x4";
-        std::string data = "#|File|Check|Description\n";
-        for (int i = 0; i < show; i++) {
-          const auto &w = result.lint_details_[i];
-          data += std::to_string(i + 1) + "|" +
-                  w.file + ":" + std::to_string(w.line) + "|" +
-                  w.check + "|" + w.description + "\n";
-        }
-        auto table = tool_table(dims, data);
-        if (table.error.empty()) {
-          out += "\n";
-          for (const auto &row : table.rows) {
-            out += row + "\n";
-          }
-          if (static_cast<int>(result.lint_details_.size()) > show) {
-            out += "... and " + std::to_string(result.lint_details_.size() - show) + " more\n";
-          }
-        }
-        tui_.append_lines(table.rows);
-      }
-      return out;
-    });
+    return handle_build(a1, a2);
   };
   tools["TOOL:STAT"] = [this](const std::string &a1, const std::string &a2) -> std::string {
     tui_.show_tool("stat " + a1);
@@ -273,19 +374,11 @@ ToolMap Agent::build_tool_dispatch() {
     return hex_dump(path, a2);
   };
   tools["TOOL:REPLACE"] = [this](const std::string &a1, const std::string &a2) -> std::string {
-    tui_.show_tool("replace: " + a1);
-    const auto path = resolve_path(cfg_.sandbox_, a1);
-    if (cfg_.permission_prompt_ && !tui_.confirm_dialog(std::format("Allow model to replace in {}?", path))) {
-      return "ERROR: action prevented by user";
-    }
-    backup_file(cfg_, tui_, path);
-    auto result = tool_replace(cfg_.sandbox_, a1, a2);
-    if (!utils::starts_with(result, "OK")) {
-      tui_.append_token(ICON_ERR + result);
-    } else {
-      broadcast_reload(cfg_, tui_);
-    }
-    return result;
+    return handle_file_write("replace", a1, a2, true,
+      nullptr,
+      [this, &a1, &a2](const std::string &path) -> std::string {
+        return tool_replace(cfg_.sandbox_, a1, a2);
+      });
   };
   tools["TOOL:MCP"] = [this](const std::string &a1, const std::string &a2) -> std::string {
     tui_.show_tool("mcp: " + a1);
@@ -319,68 +412,10 @@ ToolMap Agent::build_tool_dispatch() {
            + std::to_string(result.events.size()) + " events";
   };
   tools["TOOL:PLAN"] = [this](const std::string &a1, const std::string &a2) -> std::string {
-    const std::string cmd = utils::trim(a1 + " " + a2);
-    if (cmd.empty()) {
-      tui_.show_tool("plan: display");
-      if (planner_.steps().empty()) {
-        return "No active plan. Use TOOL:PLAN set <goal> to create one.";
-      }
-      return planner_.to_markdown();
-    }
-    auto space = cmd.find(' ');
-    const std::string verb = (space == std::string::npos) ? cmd : cmd.substr(0, space);
-    const std::string arg  = (space == std::string::npos) ? "" : utils::trim(cmd.substr(space + 1));
-    if (verb == "set") {
-      tui_.show_tool("plan: set goal");
-      planner_.set_goal(arg);
-      return "OK: goal set to \"" + arg + "\"";
-    }
-    if (verb == "add") {
-      tui_.show_tool("plan: add step");
-      planner_.add_step(arg);
-      return "OK: added step \"" + arg + "\" (" + std::to_string(planner_.steps().size()) + " total)";
-    }
-    if (verb == "advance") {
-      tui_.show_tool("plan: advance");
-      planner_.advance();
-      if (planner_.complete()) {
-        return "OK: plan complete.";
-      }
-      return "OK: advanced. " + planner_.to_markdown();
-    }
-    if (verb == "skip") {
-      tui_.show_tool("plan: skip");
-      size_t idx = 0;
-      try { idx = std::stoul(arg); } catch (...) { return "ERROR: invalid index: " + arg; }
-      planner_.skip(idx);
-      return "OK: skipped step " + arg + ". " + planner_.to_markdown();
-    }
-    return "ERROR: unknown plan command: " + verb + " (use: set, add, advance, skip)";
+    return handle_plan(a1, a2);
   };
   tools["TOOL:CHOICE"] = [this](const std::string &a1, const std::string &a2) -> std::string {
-    if (a1.empty() || a2.empty()) {
-      return "ERROR: usage: TOOL:CHOICE \"question\" \"opt1|opt2|opt3\"";
-    }
-    tui_.show_tool("choice: " + a1);
-    std::vector<std::string> options;
-    std::istringstream iss(a2);
-    std::string opt;
-    while (std::getline(iss, opt, '|')) {
-      auto trimmed = utils::trim(opt);
-      if (!trimmed.empty()) {
-        options.push_back(trimmed);
-      }
-    }
-    if (options.size() < 2) {
-      return "ERROR: need at least 2 options (got " + std::to_string(options.size()) + ")";
-    }
-    int idx = tui_.list_picker(options, a1);
-    if (idx < 0) {
-      return "CANCELLED";
-    }
-    tui_.append_line(ICON_TOOL + "← " + options[idx]);
-    tui_.redraw_all();
-    return options[idx];
+    return handle_choice(a1, a2);
   };
   return tools;
 }

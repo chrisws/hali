@@ -69,6 +69,212 @@ static std::string run_command(const std::string &cmd,
   return out;
 }
 
+//
+// Parse ctest output for "N% tests passed, M tests failed out of T"
+// Returns {passed, total}. Returns {0,0} if not found.
+//
+static std::pair<int,int> parse_test_results(const std::string &output) {
+  int passed = 0, total = 0;
+  auto pos = output.find("tests passed");
+  if (pos == std::string::npos) return {0, 0};
+  // Walk backwards past non-digits (space, %) to find the number
+  int i = static_cast<int>(pos) - 1;
+  while (i >= 0 && (output[i] == ' ' || output[i] == '%')) i--;
+  while (i >= 0 && output[i] >= '0' && output[i] <= '9') i--;
+  int start = i + 1;
+  if (start >= static_cast<int>(pos)) return {0, 0};
+  passed = std::stoi(output.substr(start, pos - start));
+  // Find "out of N"
+  auto out_pos = output.find("out of ", pos);
+  if (out_pos == std::string::npos) return {passed, passed};
+  out_pos += 7;
+  total = 0;
+  while (out_pos < static_cast<int>(output.size()) && output[out_pos] >= '0' && output[out_pos] <= '9') {
+    total = total * 10 + (output[out_pos] - '0');
+    out_pos++;
+  }
+  return {passed, total};
+}
+
+//
+// Parse output using the Hali Test Protocol (HTP) v1.
+//
+// Protocol specification:
+//   - Lines starting with "PASS " indicate a passed test:  PASS <test_name>
+//   - Lines starting with "FAIL " indicate a failed test:  FAIL <test_name> <message>
+//   - A line starting with "SUMMARY " provides the final count: SUMMARY <passed> <total>
+//   - Lines starting with "#" are comments (ignored)
+//   - All other lines are informational output (ignored by parser)
+//
+// The SUMMARY line is authoritative. If no SUMMARY line is found, the parser
+// falls back to counting PASS/FAIL lines. If neither is found, TestResult.found
+// is false.
+//
+TestResult parse_test_protocol(const std::string &output) {
+  TestResult result;
+  int pass_count = 0;
+  int fail_count = 0;
+  bool has_summary = false;
+
+  size_t pos = 0;
+  while (pos < output.size()) {
+    size_t eol = output.find('\n', pos);
+    std::string line = (eol == std::string::npos)
+                           ? output.substr(pos)
+                           : output.substr(pos, eol - pos);
+    pos = (eol == std::string::npos) ? output.size() : eol + 1;
+
+    // Skip empty lines and comments
+    if (line.empty() || line[0] == '#') continue;
+
+    if (line.rfind("SUMMARY ", 0) == 0) {
+      // SUMMARY <passed> <total>
+      size_t sp1 = line.find(' ', 8);
+      if (sp1 == std::string::npos) continue;
+      size_t sp2 = line.find(' ', sp1 + 1);
+      try {
+        result.passed = std::stoi(line.substr(8, sp1 - 8));
+        if (sp2 != std::string::npos) {
+          result.total = std::stoi(line.substr(sp1 + 1, sp2 - sp1 - 1));
+        } else {
+          // Second number extends to end of line
+          result.total = std::stoi(line.substr(sp1 + 1));
+        }
+        has_summary = true;
+      } catch (const std::exception &) {
+        // Malformed summary line, ignore
+      }
+    } else if (line.rfind("PASS ", 0) == 0) {
+      pass_count++;
+    } else if (line.rfind("FAIL ", 0) == 0) {
+      fail_count++;
+    }
+    // All other lines are informational, ignored
+  }
+
+  if (has_summary) {
+    result.found = true;
+  } else if (pass_count > 0 || fail_count > 0) {
+    // No SUMMARY line, but we have individual results — derive counts
+    result.passed = pass_count;
+    result.total = pass_count + fail_count;
+    result.found = true;
+  }
+
+  return result;
+}
+
+//
+// Parse a JUnit XML file for test results.
+// Looks for <testsuite> elements and sums up tests/failures/errors attributes.
+// Returns a TestResult with found=true if at least one testsuite was parsed.
+//
+TestResult parse_junit_xml(const std::string &path) {
+  TestResult result;
+  std::ifstream f(path);
+  if (!f) return result;
+
+  std::string content((std::istreambuf_iterator<char>(f)),
+                      std::istreambuf_iterator<char>());
+  f.close();
+
+  int total_tests = 0;
+  int total_failures = 0;
+  int total_errors = 0;
+  bool found_any = false;
+
+  size_t pos = 0;
+  while ((pos = content.find("<testsuite", pos)) != std::string::npos) {
+    // Skip the plural <testsuites> container tag
+    if (pos + 10 < content.size() && content[pos + 10] == 's') {
+      pos += 10;
+      continue;
+    }
+    // Find the closing > of this tag
+    size_t tag_end = content.find('>', pos);
+    if (tag_end == std::string::npos) break;
+    std::string tag = content.substr(pos, tag_end - pos);
+
+    // Extract tests="N"
+    auto extract_attr = [&tag](const std::string &name) -> int {
+      std::string needle = name + "=\"";
+      size_t a = tag.find(needle);
+      if (a == std::string::npos) return 0;
+      a += needle.size();
+      size_t b = tag.find('"', a);
+      if (b == std::string::npos) return 0;
+      try { return std::stoi(tag.substr(a, b - a)); }
+      catch (...) { return 0; }
+    };
+
+    total_tests += extract_attr("tests");
+    total_failures += extract_attr("failures");
+    total_errors += extract_attr("errors");
+    found_any = true;
+
+    pos = tag_end + 1;
+  }
+
+  if (found_any) {
+    result.total = total_tests;
+    result.passed = total_tests - total_failures - total_errors;
+    if (result.passed < 0) result.passed = 0;
+    result.found = true;
+  }
+  return result;
+}
+
+//
+// Generate a GitHub-style SVG badge for unit test results.
+// Saved to <sandbox>/.hali/test_badge.svg
+//
+static void generate_test_badge(const std::string &sandbox, int passed, int total) {
+  if (total == 0) return;
+  std::string value_str;
+  std::string color;
+  if (passed == total) {
+    value_str = "all passed";
+    color = "#4c1";
+  } else {
+    value_str = std::to_string(total - passed) + " failed";
+    color = "#ae0000";
+  }
+  std::string label = "unit tests";
+
+  constexpr int label_w = 80;
+  constexpr int value_w = 80;
+  constexpr int total_w = label_w + value_w;
+  const int h = 20;
+  const int r = 3;
+
+  std::ostringstream svg;
+  svg << "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"" << total_w
+      << "\" height=\"" << h << "\" viewBox=\"0 0 " << total_w << " " << h
+      << "\" role=\"img\" aria-label=\"" << label << ": " << value_str << "\">\n";
+  svg << "  <title>" << label << ": " << value_str << "</title>\n";
+  svg << "  <rect width=\"" << label_w << "\" height=\"" << h
+      << "\" rx=\"" << r << "\" fill=\"#555\"/>\n";
+  svg << "  <rect x=\"" << label_w << "\" width=\"" << value_w
+      << "\" height=\"" << h << "\" rx=\"" << r << "\" fill=\"" << color << "\"/>\n";
+  svg << "  <rect x=\"" << label_w << "\" width=\"" << (value_w - r)
+      << "\" height=\"" << h << "\" fill=\"" << color << "\"/>\n";
+  svg << "  <text x=\"" << (label_w / 2) << "\" y=\"" << (h / 2 + 4)
+      << "\" font-family=\"monospace\" font-size=\"11\" fill=\"#fff\" "
+      << "text-anchor=\"middle\">" << label << "</text>\n";
+  svg << "  <text x=\"" << (label_w + value_w / 2) << "\" y=\"" << (h / 2 + 4)
+      << "\" font-family=\"monospace\" font-size=\"11\" fill=\"#fff\" "
+      << "text-anchor=\"middle\">" << value_str << "</text>\n";
+  svg << "</svg>\n";
+
+  std::string dir = sandbox + "/.hali";
+  fs::create_directories(dir);
+  std::string path = dir + "/test_badge.svg";
+  std::ofstream f(path);
+  if (f) {
+    f << svg.str();
+  }
+}
+
 static BuildResult build_cmake(const std::string &sandbox, const std::string &mode,
                                const std::function<void(const std::string &)> &status) {
   const int nproc = std::thread::hardware_concurrency();
@@ -89,6 +295,8 @@ static BuildResult build_cmake(const std::string &sandbox, const std::string &mo
     result += "==> Build complete.\n";
   }
 
+  TestResult test_res;
+
   if ((mode == "test" || mode == "all") && has_tests) {
     result += "==> Building unit tests...\n";
     auto out = run_command("make -C " + tests_build_dir + " -j" + std::to_string(nproc), status);
@@ -97,12 +305,31 @@ static BuildResult build_cmake(const std::string &sandbox, const std::string &mo
     }
     result += out;
     result += "==> Running unit tests...\n";
-    out = run_command("ctest --test-dir " + tests_build_dir + " --output-on-failure", status);
+    std::string junit_path = sandbox + "/.hali/results.xml";
+    fs::create_directories(sandbox + "/.hali");
+    out = run_command("ctest --test-dir " + tests_build_dir +
+                      " --output-on-failure --output-junit " + junit_path, status);
     if (out.find("Failed") != std::string::npos || out.find("failed") != std::string::npos) {
       ok = false;
     }
     result += out;
     result += "==> Tests complete.\n";
+
+    // Parse test results: JUnit XML → HTP → ctest text
+    test_res = parse_junit_xml(junit_path);
+    if (!test_res.found) {
+      test_res = parse_test_protocol(out);
+    }
+    if (!test_res.found) {
+      auto pr = parse_test_results(out);
+      test_res.passed = pr.first;
+      test_res.total = pr.second;
+      test_res.found = (pr.second > 0);
+    }
+    if (test_res.found) {
+      generate_test_badge(sandbox, test_res.passed, test_res.total);
+      result += "==> Badge: " + sandbox + "/.hali/test_badge.svg\n";
+    }
   }
 
   if (mode == "clean") {
@@ -114,7 +341,11 @@ static BuildResult build_cmake(const std::string &sandbox, const std::string &mo
     result += "==> Clean complete.\n";
   }
 
-  return {ok, result};
+  BuildResult br;
+  br.success_ = ok;
+  br.output_ = result;
+  br.test_result_ = test_res;
+  return br;
 }
 
 static BuildResult build_maven(const std::string &sandbox, const std::string &mode,
@@ -260,6 +491,19 @@ static BuildResult setup_cmake(const std::string &sandbox,
       ok = false;
     }
     result += out;
+
+    // Warn if enable_testing() is missing from the test CMakeLists.txt
+    {
+      std::ifstream f(sandbox + "/tests/CMakeLists.txt");
+      std::string content((std::istreambuf_iterator<char>(f)),
+                          std::istreambuf_iterator<char>());
+      f.close();
+      if (content.find("enable_testing") == std::string::npos &&
+          content.find("enable_testing()") == std::string::npos) {
+        result += "==> WARNING: tests/CMakeLists.txt does not call enable_testing().\n"
+                  "==> ctest may not discover tests. Add 'enable_testing()' to your CMakeLists.txt.\n";
+      }
+    }
   } else {
     result += "==> No tests/ directory found, skipping test configuration.\n";
   }
