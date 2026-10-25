@@ -215,11 +215,44 @@ TestResult parse_junit_xml(const std::string &path) {
     pos = tag_end + 1;
   }
 
+  // ctest reports the whole binary as one <testsuite tests="1">.
+  // Individual test results live in <system-out> as free-form text.
+  // Scan for "passed"/"failed" lines to get a finer-grained count.
+  int so_passed = 0, so_failed = 0;
+  size_t so_start = content.find("<system-out>");
+  if (so_start != std::string::npos) {
+    so_start += 12; // len("<system-out>")
+    size_t so_end = content.find("</system-out>", so_start);
+    if (so_end == std::string::npos) so_end = content.size();
+    std::string so = content.substr(so_start, so_end - so_start);
+    size_t line_pos = 0;
+    while (line_pos < so.size()) {
+      size_t eol = so.find('\n', line_pos);
+      std::string line = (eol == std::string::npos)
+                             ? so.substr(line_pos)
+                             : so.substr(line_pos, eol - line_pos);
+      line_pos = (eol == std::string::npos) ? so.size() : eol + 1;
+      // Match lines like "test_foo passed" or "test_foo failed"
+      if (line.size() > 6 && line.substr(line.size() - 6) == "passed") {
+        so_passed++;
+      } else if (line.size() > 6 && line.substr(line.size() - 6) == "failed") {
+        so_failed++;
+      }
+    }
+  }
+
   if (found_any) {
     result.total = total_tests;
     result.passed = total_tests - total_failures - total_errors;
     if (result.passed < 0) result.passed = 0;
     result.found = true;
+
+    // Prefer the finer-grained system-out count when it's higher
+    int so_total = so_passed + so_failed;
+    if (so_total > result.total) {
+      result.passed = so_passed;
+      result.total = so_total;
+    }
   }
   return result;
 }
@@ -233,7 +266,7 @@ static void generate_test_badge(const std::string &sandbox, int passed, int tota
   std::string value_str;
   std::string color;
   if (passed == total) {
-    value_str = "all passed";
+    value_str = std::to_string(passed) + " passed";
     color = "#4c1";
   } else {
     value_str = std::to_string(total - passed) + " failed";
