@@ -9,7 +9,10 @@
 #include "slash_commands.h"
 
 #include <algorithm>
+#include <chrono>
+#include <ctime>
 #include <filesystem>
+#include <fstream>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -287,7 +290,7 @@ static void slash_allow_remove(const std::string &rest, HaliConfig &cfg, Tui &tu
 // /session [path] – save the current session to a file
 //
 static void slash_session(const std::string &rest, HaliConfig &cfg, Tui &tui) {
-  std::string path = rest.empty() ? cfg.sandbox_ + "/SESSION.md" : rest;
+  std::string path = rest.empty() ? cfg.sandbox_ + "/.hali/SESSION.md" : rest;
   std::error_code ec;
   if (fs::exists(path, ec) && !ec) {
     if (!tui.confirm_dialog("Overwrite " + path + "?")) {
@@ -335,7 +338,7 @@ static std::vector<FalsePositive> parse_false_positives(const std::string &text)
 //
 static void slash_audit(const std::string &rest, HaliConfig &cfg, Tui &tui, Agent &agent) {
   std::string root = rest.empty() ? cfg.sandbox_ : rest;
-  std::string fp_path = cfg.sandbox_ + "/audit_feedback.json";
+  std::string fp_path = cfg.sandbox_ + "/.hali/audit_feedback.json";
 
   auto fps = load_false_positives(fp_path);
 
@@ -369,7 +372,7 @@ static void slash_audit(const std::string &rest, HaliConfig &cfg, Tui &tui, Agen
   tui.redraw_all();
 
   if (tui.confirm_dialog("Allow Hali to resolve these issues?")) {
-    std::string plan_path = cfg.sandbox_ + "/plans/audit_report.md";
+    std::string plan_path = cfg.sandbox_ + "/.hali/plans/audit_report.md";
     audit_write_report(r, plan_path);
     tui.append_line(ICON_SYS + "Report saved to " + plan_path);
 
@@ -479,6 +482,58 @@ static void slash_lint(const std::string &rest, HaliConfig &cfg, Tui &tui) {
   };
   auto result = build_run(sandbox, "lint", status);
   tui.append_line(ICON_TOOL + result.output_);
+  tui.redraw_all();
+}
+
+//
+// /note [text] – open a multiline text editor for extended notes/plans.
+// On submit: saves to plans/note_<timestamp>.md, then hands to the agent.
+//
+static void slash_note(const std::string &rest, HaliConfig &cfg, Agent &agent, Tui &tui) {
+  std::string text = tui.text_editor("Note / Plan", rest);
+  if (text.empty()) {
+    tui.append_line(ICON_SYS + "/note cancelled.");
+    tui.redraw_all();
+    return;
+  }
+
+  // Build a timestamped filename: note_YYYYMMDD_HHMMSS.md
+  auto now = std::chrono::system_clock::now();
+  auto tt = std::chrono::system_clock::to_time_t(now);
+  std::tm tm{};
+  localtime_r(&tt, &tm);
+  char ts[32];
+  std::strftime(ts, sizeof(ts), "%Y%m%d_%H%M%S", &tm);
+  std::string filename = std::string("note_") + ts + ".md";
+
+  // Ensure plans/ directory exists.
+  std::string plans_dir = cfg.sandbox_ + "/.hali/plans";
+  std::error_code ec;
+  fs::create_directories(plans_dir, ec);
+
+  // Write the note to the plans directory.
+  std::string path = plans_dir + "/" + filename;
+  {
+    std::ofstream ofs(path);
+    if (!ofs) {
+      tui.append_line(ICON_ERR + "Failed to write " + path);
+      tui.redraw_all();
+      return;
+    }
+    ofs << text;
+  }
+
+  tui.append_line(ICON_SYS + "Saved plan to " + path);
+  tui.redraw_all();
+
+  // Submit to the agent with a prompt referencing the saved file.
+  std::string prompt = "I have written a plan/note saved to " + filename +
+                       " in the plans/ directory. Please review it and let me know "
+                       "if you have any questions, suggestions, or if you are ready "
+                       "to proceed. Here is the content:\n\n" + text;
+  tui.append_line(ICON_SYS + "Submitting to agent…");
+  tui.redraw_all();
+  agent.run_turn(prompt);
   tui.redraw_all();
 }
 
@@ -615,6 +670,10 @@ void handle_slash(const std::string &input, HaliConfig &cfg, Agent &agent, Tui &
     slash_lint(rest, cfg, tui);
     return;
   }
+  if (verb == "/note") {
+    slash_note(rest, cfg, agent, tui);
+    return;
+  }
   if (verb == "/tool") {
     slash_tool(rest, agent, tui);
     return;
@@ -649,6 +708,7 @@ const std::vector<SlashCommand> &slash_commands() {
     {"/skill",    "[name] [kickoff]",  "load a skill into the conversation"},
     {"/lint",     "",                  "list source files and run clang-tidy"},
     {"/tool",     "[TOOL:NAME [args]]","invoke a tool (no args lists all tools)"},
+    {"/note",     "[text]",            "open a multiline text editor for notes"},
     {"/help",     "",                  "this message"},
   };
   return commands;

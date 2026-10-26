@@ -28,7 +28,7 @@
     "n_max": 3,
     "n_min": 1,
     "p_min": 0.0,
-    "pos_threshold": 0.4,
+    "pos_threshold": 0.35,
     "adaptive": true
   },
   "suffix": {
@@ -64,7 +64,7 @@
   ],
   "thinking": true,
   "web_port": -1,
-  "backup_path": "",
+  "enabled_backups": false,
   "knowledge_files": [],
   "mcp_filter": [],
   "val_write_size_warn": 4000

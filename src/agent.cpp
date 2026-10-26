@@ -291,7 +291,7 @@ bool Agent::rag_index(const std::string &path) const {
     index_one(path);
   }
 
-  std::string save_path = join_path(cfg_.sandbox_, "rag-index.bin");
+  std::string save_path = join_path(cfg_.sandbox_, ".hali/rag-index.bin");
   tui_.append_line(ICON_SYS + "saving index: " + save_path);
   tui_.redraw_all();
   return rag_.rag_db->save(save_path);
@@ -310,9 +310,9 @@ std::string Agent::restart() {
     reset_conversation(cfg_.build_system_prompt());
     tui_.append_line(ICON_ERR + "Session restarted");
     tui_.redraw_all();
-    return "continue the pending actions found SESSION.md";
+    return "continue the pending actions found .hali/SESSION.md";
   }
-  return "save work context to SESSION.md then try again";
+  return "save work context to .hali/SESSION.md then try again";
 }
 
 //

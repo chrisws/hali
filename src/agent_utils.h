@@ -86,7 +86,7 @@ std::string tool_replace(const std::string &sandbox, const std::string &file, co
 //
 // Shared constants
 //
-constexpr std::string SESSION_MD = "SESSION.md";
+inline constexpr const char *SESSION_MD = ".hali/SESSION.md";
 
 //
 // TOOL:RUN / backup / broadcast helpers

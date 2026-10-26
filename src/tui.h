@@ -437,6 +437,13 @@ class Tui final: TuiContext {
   int list_picker(const std::vector<std::string> &items,
                   const std::string &title_hint = "Select");
 
+  // ── multiline text editor popup ─────────────────────────────────
+  // Centered popup with a multiline text editing area.
+  //   Ctrl+Enter  submit → returns the text
+  //   Esc         cancel → returns empty string
+  std::string text_editor(const std::string &title,
+                          const std::string &initial_text = "");
+
   double get_tokens_per_sec() const { return tokens_per_sec_; }
   double get_kv_percent() const { return kv_percent_; }
 

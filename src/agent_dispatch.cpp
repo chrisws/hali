@@ -105,18 +105,6 @@ std::string Agent::handle_build(const std::string &a1, const std::string &a2) {
       tui_.append_lines(table.rows);
     }
 
-    // Test result badge integration
-    if (result.test_result_.found) {
-      if (result.test_result_.passed == result.test_result_.total) {
-        out += "\n==> All tests passed (" + std::to_string(result.test_result_.total) + ")";
-      } else {
-        int failed = result.test_result_.total - result.test_result_.passed;
-        out += "\n==> Tests failing: " + std::to_string(failed) + " of " + std::to_string(result.test_result_.total);
-      }
-    } else if (a1 == "test" || a1 == "all" || a1.empty()) {
-      out += "\n==> No structured test results detected. Consider using JUnit XML output for structured results.";
-    }
-
     return out;
   });
 }

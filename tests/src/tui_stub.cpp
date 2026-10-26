@@ -42,6 +42,10 @@ int Tui::list_picker(const std::vector<std::string> &items, const std::string &t
   return -1;
 }
 
+std::string Tui::text_editor(const std::string &title, const std::string &initial_text) {
+  return "";
+}
+
 namespace ui {
 void settings(Tui &tui, HaliConfig &cfg) {
   // no-op in tests

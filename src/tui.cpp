@@ -830,6 +830,261 @@ int Tui::list_picker(const std::vector<std::string> &items,
 }
 
 //
+// ─── Tui::text_editor ───────────────────────────────────────────────
+// Centered popup with a multiline text editing area.
+//   Ctrl+S      submit → returns the text
+//   Esc         cancel → returns empty string
+//   ↑↓←→       cursor movement
+//   Home/End   line start/end
+//   PgUp/PgDn  scroll
+//   Backspace/Del  delete characters
+//
+std::string Tui::text_editor(const std::string &title,
+                             const std::string &initial_text) {
+  static constexpr int PW = 70;
+  // Use up to 80% of terminal height, min 20, max 40 rows.
+  int PH = std::max(20, std::min(40, term_rows_ * 80 / 100));
+  int py = std::max(0, (term_rows_ - PH) / 2);
+  int px = std::max(0, (term_cols_ - PW) / 2);
+
+  ncplane_options opts{};
+  opts.y = py; opts.x = px;
+  opts.rows = static_cast<unsigned>(PH); opts.cols = static_cast<unsigned>(PW);
+  ncplane *editor = ncplane_create(stdpl_, &opts);
+  if (!editor) return "";
+
+  auto tc  = theme_->get_popup_color();
+  auto bg  = theme_->get_popup_background();
+  auto brd = theme_->get_popup_border();
+
+  auto ch = [&](uint32_t r, uint32_t g, uint32_t b) -> uint64_t {
+    return NCCHANNELS_INITIALIZER(r, g, b, bg.r, bg.g, bg.b);
+  };
+
+  // Split initial text into lines.
+  std::vector<std::string> lines;
+  if (initial_text.empty()) {
+    lines.push_back("");
+  } else {
+    std::istringstream iss(initial_text);
+    std::string line;
+    while (std::getline(iss, line)) {
+      lines.push_back(line);
+    }
+  }
+
+  int cur_row = 0;
+  int cur_col = 0;
+  int scroll  = 0;
+  int text_rows = PH - 4;  // rows available for text
+
+  auto draw_editor = [&]() {
+    ncplane_erase(editor);
+    draw_popup_box(editor, PH, PW);
+
+    // Title bar.
+    ncplane_set_channels(editor, ch(tc.r, tc.g, tc.b));
+    std::string title_str = " ✏️  " + title + " ";
+    if (static_cast<int>(title_str.size()) > PW - 4) title_str = title_str.substr(0, PW - 4);
+    ncplane_putstr_yx(editor, 0, 2, title_str.c_str());
+
+    // Hint bar (bottom interior row).
+    uint32_t dim_r = tc.r * 70 / 100;
+    uint32_t dim_g = tc.g * 70 / 100;
+    uint32_t dim_b = tc.b * 70 / 100;
+    ncplane_set_channels(editor, ch(dim_r, dim_g, dim_b));
+    std::string hint = "Ctrl+S submit  Esc cancel  ↑↓←→ move  PgUp/PgDn scroll";
+    if (static_cast<int>(hint.size()) > PW - 4) hint = hint.substr(0, PW - 4);
+    ncplane_putstr_yx(editor, PH - 2, 2, hint.c_str());
+
+    // Text area.
+    if (cur_row < scroll) scroll = cur_row;
+    if (cur_row >= scroll + text_rows) scroll = cur_row - text_rows + 1;
+
+    for (int i = 0; i < text_rows; ++i) {
+      int idx = scroll + i;
+      if (idx >= static_cast<int>(lines.size())) break;
+
+      bool is_cursor_line = (idx == cur_row);
+      uint64_t line_ch;
+      if (is_cursor_line) {
+        line_ch = NCCHANNELS_INITIALIZER(bg.r, bg.g, bg.b, brd.r, brd.g, brd.b);
+      } else {
+        line_ch = ch(tc.r, tc.g, tc.b);
+      }
+      ncplane_set_channels(editor, line_ch);
+
+      std::string display = lines[idx];
+      // Pad to full width.
+      while (static_cast<int>(display.size()) < PW - 2) display += ' ';
+      if (static_cast<int>(display.size()) > PW - 2) display = display.substr(0, PW - 2);
+      ncplane_putstr_yx(editor, 1 + i, 1, display.c_str());
+
+      // Draw cursor as a block on the cursor line.
+      if (is_cursor_line) {
+        int cx = 1 + cur_col;
+        if (cx < PW - 1) {
+          uint64_t cur_ch = NCCHANNELS_INITIALIZER(brd.r, brd.g, brd.b, tc.r, tc.g, tc.b);
+          ncplane_set_channels(editor, cur_ch);
+          ncplane_putchar_yx(editor, 1 + i, cx, ' ');
+        }
+      }
+    }
+    notcurses_render(nc_);
+  };
+
+  draw_editor();
+
+  std::string result;
+  bool submitted = false;
+
+  for (;;) {
+    InputEvent ev = get_event();
+
+    if (ev.is(Key::ESCAPE)) {
+      break;
+    }
+
+    if (ev.is(Key::S) && ev.is_ctrl()) {
+      submitted = true;
+      break;
+    }
+
+    if (ev.is(Key::ENTER) || ev.is(Key::NL) || ev.is(Key::CR)) {
+      // Insert newline: split current line at cursor.
+      std::string &cur = lines[cur_row];
+      std::string second = cur.substr(cur_col);
+      cur = cur.substr(0, cur_col);
+      lines.insert(lines.begin() + cur_row + 1, second);
+      cur_row++;
+      cur_col = 0;
+      draw_editor();
+      continue;
+    }
+
+    if (ev.is(Key::BACKSPACE)) {
+      if (cur_col > 0) {
+        lines[cur_row].erase(cur_col - 1, 1);
+        cur_col--;
+      } else if (cur_row > 0) {
+        cur_col = static_cast<int>(lines[cur_row - 1].size());
+        lines[cur_row] = lines[cur_row - 1] + lines[cur_row];
+        lines.erase(lines.begin() + cur_row - 1);
+        cur_row--;
+      }
+      draw_editor();
+      continue;
+    }
+
+    if (ev.is(Key::DEL)) {
+      if (cur_col < static_cast<int>(lines[cur_row].size())) {
+        lines[cur_row].erase(cur_col, 1);
+      } else if (cur_row + 1 < static_cast<int>(lines.size())) {
+        lines[cur_row] += lines[cur_row + 1];
+        lines.erase(lines.begin() + cur_row + 1);
+      }
+      draw_editor();
+      continue;
+    }
+
+    if (ev.is(Key::LEFT)) {
+      if (cur_col > 0) {
+        cur_col--;
+      } else if (cur_row > 0) {
+        cur_row--;
+        cur_col = static_cast<int>(lines[cur_row].size());
+      }
+      draw_editor();
+      continue;
+    }
+
+    if (ev.is(Key::RIGHT)) {
+      if (cur_col < static_cast<int>(lines[cur_row].size())) {
+        cur_col++;
+      } else if (cur_row + 1 < static_cast<int>(lines.size())) {
+        cur_row++;
+        cur_col = 0;
+      }
+      draw_editor();
+      continue;
+    }
+
+    if (ev.is(Key::UP)) {
+      if (cur_row > 0) {
+        cur_row--;
+        cur_col = std::min(cur_col, static_cast<int>(lines[cur_row].size()));
+      }
+      draw_editor();
+      continue;
+    }
+
+    if (ev.is(Key::DOWN)) {
+      if (cur_row + 1 < static_cast<int>(lines.size())) {
+        cur_row++;
+        cur_col = std::min(cur_col, static_cast<int>(lines[cur_row].size()));
+      }
+      draw_editor();
+      continue;
+    }
+
+    if (ev.is(Key::HOME)) {
+      cur_col = 0;
+      draw_editor();
+      continue;
+    }
+
+    if (ev.is(Key::END)) {
+      cur_col = static_cast<int>(lines[cur_row].size());
+      draw_editor();
+      continue;
+    }
+
+    if (ev.is(Key::PAGE_UP)) {
+      scroll = std::max(0, scroll - text_rows);
+      cur_row = std::max(0, cur_row - text_rows);
+      draw_editor();
+      continue;
+    }
+
+    if (ev.is(Key::PAGE_DOWN)) {
+      scroll = std::max(0, scroll + text_rows);
+      cur_row = std::min(static_cast<int>(lines.size()) - 1, cur_row + text_rows);
+      draw_editor();
+      continue;
+    }
+
+    // Printable characters.
+    if (ev.is_edit() && ev.is_ascii()) {
+      char c = static_cast<char>(ev.val());
+      lines[cur_row].insert(cur_col, 1, c);
+      cur_col++;
+      draw_editor();
+      continue;
+    }
+
+    // Space is printable too.
+    if (ev.is(Key::SPACE)) {
+      lines[cur_row].insert(cur_col, 1, ' ');
+      cur_col++;
+      draw_editor();
+      continue;
+    }
+  }
+
+  ncplane_destroy(editor);
+  redraw_all();
+
+  if (!submitted) return "";
+
+  // Join lines back into a single string.
+  for (size_t i = 0; i < lines.size(); ++i) {
+    result += lines[i];
+    if (i + 1 < lines.size()) result += "\n";
+  }
+  return result;
+}
+
+//
 // ─── Tui::confirm_dialog ─────────────────────────────────────────────
 // Centered popup dialog for y/n confirmation.
 //   y / Y / Enter  → true

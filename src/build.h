@@ -20,19 +20,10 @@ struct LintWarning {
   std::string description;
 };
 
-// Result of parsing a test run output using the Hali Test Protocol (HTP).
-// See parse_test_protocol() in build.cpp for the format specification.
-struct TestResult {
-  int passed = 0;
-  int total = 0;
-  bool found = false;  // true if a SUMMARY line was detected
-};
-
 struct BuildResult {
   bool success_;
   std::string output_;
   std::vector<LintWarning> lint_details_;
-  TestResult test_result_;
 };
 
 // mode: "setup" | "build" | "test" | "clean" | "lint" | "all"
@@ -42,25 +33,5 @@ struct BuildResult {
 BuildResult build_run(const std::string &sandbox, const std::string &mode,
                       const std::function<void(const std::string &)> &status,
                       const std::string &subdir = "");
-
-//
-// Parse test output using the Hali Test Protocol (HTP) v1.
-//
-// Recognised lines:
-//   PASS <test_name>
-//   FAIL <test_name> <message>
-//   SUMMARY <passed> <total>
-//
-// Lines starting with '#' are comments. All other lines are ignored.
-// If no SUMMARY line is found, counts are derived from PASS/FAIL lines.
-//
-TestResult parse_test_protocol(const std::string &output);
-
-//
-// Parse a JUnit XML file for test results.
-// Looks for <testsuite> elements and sums tests/failures/errors attributes.
-// Returns TestResult with found=true if at least one testsuite was parsed.
-//
-TestResult parse_junit_xml(const std::string &path);
 
 #endif
