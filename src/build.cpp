@@ -12,6 +12,7 @@
 #include <string>
 #include <cstddef>
 #include <functional>
+#include <set>
 #include <vector>
 #include <utility>
 
@@ -121,26 +122,93 @@ static void generate_test_badge(const std::string &sandbox, int passed, int tota
 }
 
 //
-// Read the individual test case count from .hali/test_count.txt.
-// Returns the count if the file exists and contains a positive integer,
-// otherwise returns -1.
+// Scan for test functions across common test directories and source
+// extensions.  Attempts to recognise test patterns in C/C++, Go,
+// Python, Rust, Java, and JS/TS.
+// Returns the total count of individual test functions found.
+// Returns -1 if no test directory could be located.
 //
-static int read_test_count(const std::string &sandbox) {
-  auto path = sandbox + "/.hali/test_count.txt";
-  if (!fs::exists(path)) return -1;
-  std::ifstream f(path);
-  int n = 0;
-  if (f >> n && n > 0) return n;
-  return -1;
+static int scan_test_count(const std::string &sandbox) {
+  // Try common test directory layouts, most specific first.
+  const char *candidates[] = {"tests/src", "tests", "test"};
+  std::string test_dir;
+  for (const auto &c : candidates) {
+    auto p = sandbox + "/" + c;
+    if (fs::exists(p) && fs::is_directory(p)) {
+      test_dir = p;
+      break;
+    }
+  }
+  if (test_dir.empty()) return -1;
+
+  // Source extensions we recognise.
+  const std::set<std::string> src_exts = {
+    ".c", ".cpp", ".cc", ".h", ".hpp",
+    ".go", ".py", ".rs", ".java", ".ts", ".js",
+  };
+
+  // Patterns that indicate a test function in various languages.
+  // Each entry: {substring to search for, minimum count weight}
+  // We use simple substring matching; good enough for counting.
+  const std::vector<std::string> test_patterns = {
+    // C / C++
+    "static void test_",
+    "void test_",
+    // Go
+    "func Test",
+    // Python
+    "def test_",
+    // Rust
+    "#[test]",
+    // Java
+    "@Test",
+    // JS / TS
+    "test(",
+    "it(",
+  };
+
+  int count = 0;
+  for (const auto &entry : fs::directory_iterator(test_dir)) {
+    if (!entry.is_regular_file()) continue;
+    auto ext = entry.path().extension().string();
+    if (src_exts.find(ext) == src_exts.end()) continue;
+
+    std::ifstream f(entry.path());
+    if (!f) continue;
+
+    int file_count = 0;
+    std::string line;
+    while (std::getline(f, line)) {
+      bool matched = false;
+      for (const auto &pat : test_patterns) {
+        if (line.find(pat) != std::string::npos) {
+          matched = true;
+          break;
+        }
+      }
+      // C++ TEST() macro: line starts with "TEST(" after trimming.
+      // Avoids matching RUN_TEST() call sites.
+      if (!matched) {
+        size_t start = line.find_first_not_of(" \t");
+        if (start != std::string::npos &&
+            line.compare(start, 5, "TEST(") == 0) {
+          matched = true;
+        }
+      }
+      if (matched) file_count++;
+    }
+    count += file_count;
+  }
+  return count;
 }
 
 static std::string make_test_badge(const std::string &sandbox, bool ok) {
-  int tc = read_test_count(sandbox);
+  int tc = scan_test_count(sandbox);
   if (tc > 0) {
     if (ok) {
       generate_test_badge(sandbox, tc, tc);
       return "==> " + std::to_string(tc) + "/" + std::to_string(tc) +
-             " tests passed (update .hali/test_count.txt if you added or removed tests)\n"
+             " tests passed\n"
              "==> Badge: " + sandbox + "/.hali/test_badge.svg\n";
     } else {
       generate_test_badge(sandbox, 0, tc);
@@ -148,7 +216,7 @@ static std::string make_test_badge(const std::string &sandbox, bool ok) {
              "==> Badge: " + sandbox + "/.hali/test_badge.svg\n";
     }
   }
-  return "==> Create .hali/test_count.txt with your individual test case count for a precise badge\n";
+  return "==> No test functions found in tests/src/\n";
 }
 
 static BuildResult build_cmake(const std::string &sandbox, const std::string &mode,

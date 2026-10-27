@@ -21,27 +21,26 @@
 // Format:
 //   PASS <test_name>
 //   FAIL <test_name> <message>
-//   SUMMARY <passed> <total>
 //
 // Lines starting with # are comments. All other lines are informational.
+// Counting and summary are handled by build.cpp.
 //
 
-static int g_passed = 0;
-static int g_total = 0;
+static int g_failures = 0;
 
 //
 // Run a single test function, emitting HTP result line.
 //
 static void run_htp_test(const std::string &name, const std::function<void()> &fn) {
-  g_total++;
   try {
     fn();
     std::cout << "PASS " << name << "\n";
-    g_passed++;
   } catch (const std::exception &e) {
     std::cout << "FAIL " << name << " " << e.what() << "\n";
+    g_failures++;
   } catch (...) {
     std::cout << "FAIL " << name << " unknown exception\n";
+    g_failures++;
   }
 }
 
@@ -102,7 +101,5 @@ int main() {
   run_htp_test("sysinfo", sysinfo_test);
   run_htp_test("git_tool", git_tool_test);
 
-  std::cout << "\nSUMMARY " << g_passed << " " << g_total << "\n";
-
-  return (g_passed == g_total) ? 0 : 1;
+  return g_failures ? 1 : 0;
 }

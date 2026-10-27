@@ -585,6 +585,7 @@ std::string tool_search(const std::string &sandbox, const std::string &pattern, 
     return file_category(a) < file_category(b);
   });
 
+  int total_count = 0;
   for (const auto &file : files) {
     if (flags.name) {
       std::string filename = fs::path(file).filename().string();
@@ -594,7 +595,9 @@ std::string tool_search(const std::string &sandbox, const std::string &pattern, 
     } else {
       std::string result = search_single_file(file, pattern, flags);
       if (!result.empty()) {
-        if (flags.files_only || flags.count) {
+        if (flags.count) {
+          total_count += std::stoi(result);
+        } else if (flags.files_only) {
           oss << result;
         } else {
           oss << file << ":\n" << result;
@@ -603,7 +606,12 @@ std::string tool_search(const std::string &sandbox, const std::string &pattern, 
     }
   }
 
-  std::string output = oss.str();
+  std::string output;
+  if (flags.count) {
+    output = std::to_string(total_count);
+  } else {
+    output = oss.str();
+  }
   if (output.size() > 4096) {
     output = output.substr(0, 4096) + "\n…(truncated)";
   }
