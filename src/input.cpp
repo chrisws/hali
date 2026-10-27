@@ -115,6 +115,11 @@ void Input::build_dispatch() {
     return true;
   };
 
+  dispatch_["C-Z"] = [this](const InputEvent &, TuiContext &, std::string &) -> bool {
+    log_write(LEVEL_DEBUG, "input", "Ctrl+Z key pressed (ignored)");
+    return true;
+  };
+
   dispatch_["C-LEFT"] = [this](const InputEvent &, TuiContext &tui, std::string &) -> bool {
     log_write(LEVEL_DEBUG, "input", "Ctrl+left pressed [%d]", cursor_pos_);
     cursor_pos_ = move_to_prev_word(cursor_pos_);

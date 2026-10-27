@@ -12,6 +12,8 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <csignal>
+#include <termios.h>
 #include <filesystem>
 #include <fstream>
 #include <format>
@@ -195,6 +197,12 @@ void Tui::init() {
     std::exit(1);
   }
   s_nc_ = nc_;
+  signal(SIGTSTP, SIG_IGN);  // inhibit Ctrl+Z suspend
+  struct termios tio;
+  if (tcgetattr(STDIN_FILENO, &tio) == 0) {
+    tio.c_iflag &= ~(IXON | IXOFF);  // inhibit Ctrl+S/Ctrl+Q flow control
+    tcsetattr(STDIN_FILENO, TCSANOW, &tio);
+  }
   stdpl_ = notcurses_stdplane(nc_);
   notcurses_term_dim_yx(nc_, reinterpret_cast<unsigned*>(&term_rows_), reinterpret_cast<unsigned*>(&term_cols_));
 

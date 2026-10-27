@@ -486,32 +486,32 @@ static void slash_lint(const std::string &rest, HaliConfig &cfg, Tui &tui) {
 }
 
 //
-// /note [text] – open a multiline text editor for extended notes/plans.
-// On submit: saves to plans/note_<timestamp>.md, then hands to the agent.
+// /plan [text] – open a multiline text editor for a multi-line plan.
+// On submit: saves to .hali/plans/plan_<timestamp>.md, then hands to the agent.
 //
-static void slash_note(const std::string &rest, HaliConfig &cfg, Agent &agent, Tui &tui) {
-  std::string text = tui.text_editor("Note / Plan", rest);
+static void slash_plan(const std::string &rest, HaliConfig &cfg, Agent &agent, Tui &tui) {
+  std::string text = tui.text_editor("Plan", rest);
   if (text.empty()) {
-    tui.append_line(ICON_SYS + "/note cancelled.");
+    tui.append_line(ICON_SYS + "/plan cancelled.");
     tui.redraw_all();
     return;
   }
 
-  // Build a timestamped filename: note_YYYYMMDD_HHMMSS.md
+  // Build a timestamped filename: plan_YYYYMMDD_HHMMSS.md
   auto now = std::chrono::system_clock::now();
   auto tt = std::chrono::system_clock::to_time_t(now);
   std::tm tm{};
   localtime_r(&tt, &tm);
   char ts[32];
   std::strftime(ts, sizeof(ts), "%Y%m%d_%H%M%S", &tm);
-  std::string filename = std::string("note_") + ts + ".md";
+  std::string filename = std::string("plan_") + ts + ".md";
 
   // Ensure plans/ directory exists.
   std::string plans_dir = cfg.sandbox_ + "/.hali/plans";
   std::error_code ec;
   fs::create_directories(plans_dir, ec);
 
-  // Write the note to the plans directory.
+  // Write the plan to the plans directory.
   std::string path = plans_dir + "/" + filename;
   {
     std::ofstream ofs(path);
@@ -527,8 +527,8 @@ static void slash_note(const std::string &rest, HaliConfig &cfg, Agent &agent, T
   tui.redraw_all();
 
   // Submit to the agent with a prompt referencing the saved file.
-  std::string prompt = "I have written a plan/note saved to " + filename +
-                       " in the plans/ directory. Please review it and let me know "
+  std::string prompt = "I have written a plan saved to " + filename +
+                       " in the .hali/plans/ directory. Please review it and let me know "
                        "if you have any questions, suggestions, or if you are ready "
                        "to proceed. Here is the content:\n\n" + text;
   tui.append_line(ICON_SYS + "Submitting to agent…");
@@ -670,8 +670,8 @@ void handle_slash(const std::string &input, HaliConfig &cfg, Agent &agent, Tui &
     slash_lint(rest, cfg, tui);
     return;
   }
-  if (verb == "/note") {
-    slash_note(rest, cfg, agent, tui);
+  if (verb == "/plan") {
+    slash_plan(rest, cfg, agent, tui);
     return;
   }
   if (verb == "/tool") {
@@ -708,7 +708,7 @@ const std::vector<SlashCommand> &slash_commands() {
     {"/skill",    "[name] [kickoff]",  "load a skill into the conversation"},
     {"/lint",     "",                  "list source files and run clang-tidy"},
     {"/tool",     "[TOOL:NAME [args]]","invoke a tool (no args lists all tools)"},
-    {"/note",     "[text]",            "open a multiline text editor for notes"},
+    {"/plan",     "[text]",            "open a multiline text editor for a plan"},
     {"/help",     "",                  "this message"},
   };
   return commands;
