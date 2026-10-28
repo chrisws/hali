@@ -847,13 +847,16 @@ int Tui::list_picker(const std::vector<std::string> &items,
 //   PgUp/PgDn  scroll
 //   Backspace/Del  delete characters
 //
+// Long lines are word-wrapped to fit the display width.
+//
 std::string Tui::text_editor(const std::string &title,
                              const std::string &initial_text) {
-  static constexpr int PW = 70;
-  // Use up to 80% of terminal height, min 20, max 40 rows.
-  int PH = std::max(20, std::min(40, term_rows_ * 80 / 100));
+  // Landscape: 80% terminal width, 50% terminal height.
+  int PW = std::max(60, std::min(120, term_cols_ * 80 / 100));
+  int PH = std::max(15, std::min(30, term_rows_ * 50 / 100));
   int py = std::max(0, (term_rows_ - PH) / 2);
   int px = std::max(0, (term_cols_ - PW) / 2);
+  int wrap_w = PW - 2;  // usable text width
 
   ncplane_options opts{};
   opts.y = py; opts.x = px;
@@ -869,7 +872,7 @@ std::string Tui::text_editor(const std::string &title,
     return NCCHANNELS_INITIALIZER(r, g, b, bg.r, bg.g, bg.b);
   };
 
-  // Split initial text into lines.
+  // Split initial text into logical lines.
   std::vector<std::string> lines;
   if (initial_text.empty()) {
     lines.push_back("");
@@ -881,10 +884,60 @@ std::string Tui::text_editor(const std::string &title,
     }
   }
 
-  int cur_row = 0;
-  int cur_col = 0;
-  int scroll  = 0;
-  int text_rows = PH - 4;  // rows available for text
+  int cur_lrow = 0;  // logical row
+  int cur_lcol = 0;  // logical column
+  int scroll   = 0;  // scroll in visual-row units
+  int text_rows = PH - 4;
+
+  // ── Word-wrap: logical lines → visual segments ──────────────────
+  struct VSeg { int lrow; int col; int len; };
+
+  auto wrap = [&]() -> std::vector<VSeg> {
+    std::vector<VSeg> vis;
+    for (int r = 0; r < static_cast<int>(lines.size()); ++r) {
+      const std::string &ln = lines[r];
+      int c = 0;
+      if (ln.empty()) {
+        vis.push_back({r, 0, 0});
+        continue;
+      }
+      while (c < static_cast<int>(ln.size())) {
+        int rem = static_cast<int>(ln.size()) - c;
+        if (rem <= wrap_w) {
+          vis.push_back({r, c, rem});
+          break;
+        }
+        // Find last space in [c, c+wrap_w)
+        int brk = -1;
+        for (int i = c + wrap_w - 1; i >= c; --i) {
+          if (ln[i] == ' ') { brk = i; break; }
+        }
+        if (brk > c) {
+          vis.push_back({r, c, brk - c});
+          c = brk + 1;  // skip the space
+        } else {
+          vis.push_back({r, c, wrap_w});
+          c += wrap_w;
+        }
+      }
+    }
+    return vis;
+  };
+
+  // Find the visual row index for a given (lrow, lcol).
+  auto find_vrow = [&](const std::vector<VSeg> &vis, int lrow, int lcol) -> int {
+    for (int i = 0; i < static_cast<int>(vis.size()); ++i) {
+      if (vis[i].lrow == lrow && lcol >= vis[i].col &&
+          lcol <= vis[i].col + vis[i].len) {
+        return i;
+      }
+    }
+    // Fallback: find the visual row that contains lrow
+    for (int i = 0; i < static_cast<int>(vis.size()); ++i) {
+      if (vis[i].lrow == lrow) return i;
+    }
+    return 0;
+  };
 
   auto draw_editor = [&]() {
     ncplane_erase(editor);
@@ -892,7 +945,7 @@ std::string Tui::text_editor(const std::string &title,
 
     // Title bar.
     ncplane_set_channels(editor, ch(tc.r, tc.g, tc.b));
-    std::string title_str = " ✏️  " + title + " ";
+    std::string title_str = " \u270f\ufe0f  " + title + " ";
     if (static_cast<int>(title_str.size()) > PW - 4) title_str = title_str.substr(0, PW - 4);
     ncplane_putstr_yx(editor, 0, 2, title_str.c_str());
 
@@ -901,37 +954,42 @@ std::string Tui::text_editor(const std::string &title,
     uint32_t dim_g = tc.g * 70 / 100;
     uint32_t dim_b = tc.b * 70 / 100;
     ncplane_set_channels(editor, ch(dim_r, dim_g, dim_b));
-    std::string hint = "Ctrl+S submit  Esc cancel  ↑↓←→ move  PgUp/PgDn scroll";
+    std::string hint = "Ctrl+S submit  Esc cancel  \u2191\u2193\u2190\u2192 move  PgUp/PgDn scroll";
     if (static_cast<int>(hint.size()) > PW - 4) hint = hint.substr(0, PW - 4);
     ncplane_putstr_yx(editor, PH - 2, 2, hint.c_str());
 
-    // Text area.
-    if (cur_row < scroll) scroll = cur_row;
-    if (cur_row >= scroll + text_rows) scroll = cur_row - text_rows + 1;
+    // Compute visual lines.
+    std::vector<VSeg> vis = wrap();
+    int cur_v = find_vrow(vis, cur_lrow, cur_lcol);
 
+    // Clamp scroll.
+    if (cur_v < scroll) scroll = cur_v;
+    if (cur_v >= scroll + text_rows) scroll = cur_v - text_rows + 1;
+    if (scroll < 0) scroll = 0;
+
+    // Draw text area.
     for (int i = 0; i < text_rows; ++i) {
-      int idx = scroll + i;
-      if (idx >= static_cast<int>(lines.size())) break;
+      int vi = scroll + i;
+      if (vi >= static_cast<int>(vis.size())) break;
 
-      bool is_cursor_line = (idx == cur_row);
+      bool is_cursor = (vi == cur_v);
       uint64_t line_ch;
-      if (is_cursor_line) {
+      if (is_cursor) {
         line_ch = NCCHANNELS_INITIALIZER(bg.r, bg.g, bg.b, brd.r, brd.g, brd.b);
       } else {
         line_ch = ch(tc.r, tc.g, tc.b);
       }
       ncplane_set_channels(editor, line_ch);
 
-      std::string display = lines[idx];
-      // Pad to full width.
-      while (static_cast<int>(display.size()) < PW - 2) display += ' ';
-      if (static_cast<int>(display.size()) > PW - 2) display = display.substr(0, PW - 2);
+      // Extract the text segment.
+      std::string display = lines[vis[vi].lrow].substr(vis[vi].col, vis[vi].len);
+      while (static_cast<int>(display.size()) < wrap_w) display += ' ';
       ncplane_putstr_yx(editor, 1 + i, 1, display.c_str());
 
-      // Draw cursor as a block on the cursor line.
-      if (is_cursor_line) {
-        int cx = 1 + cur_col;
-        if (cx < PW - 1) {
+      // Draw cursor block.
+      if (is_cursor) {
+        int cx = 1 + (cur_lcol - vis[vi].col);
+        if (cx >= 1 && cx < PW - 1) {
           uint64_t cur_ch = NCCHANNELS_INITIALIZER(brd.r, brd.g, brd.b, tc.r, tc.g, tc.b);
           ncplane_set_channels(editor, cur_ch);
           ncplane_putchar_yx(editor, 1 + i, cx, ' ');
@@ -943,7 +1001,6 @@ std::string Tui::text_editor(const std::string &title,
 
   draw_editor();
 
-  std::string result;
   bool submitted = false;
 
   for (;;) {
@@ -959,104 +1016,114 @@ std::string Tui::text_editor(const std::string &title,
     }
 
     if (ev.is(Key::ENTER) || ev.is(Key::NL) || ev.is(Key::CR)) {
-      // Insert newline: split current line at cursor.
-      std::string &cur = lines[cur_row];
-      std::string second = cur.substr(cur_col);
-      cur = cur.substr(0, cur_col);
-      lines.insert(lines.begin() + cur_row + 1, second);
-      cur_row++;
-      cur_col = 0;
+      std::string &cur = lines[cur_lrow];
+      std::string second = cur.substr(cur_lcol);
+      cur = cur.substr(0, cur_lcol);
+      lines.insert(lines.begin() + cur_lrow + 1, second);
+      cur_lrow++;
+      cur_lcol = 0;
       draw_editor();
       continue;
     }
 
     if (ev.is(Key::BACKSPACE)) {
-      if (cur_col > 0) {
-        lines[cur_row].erase(cur_col - 1, 1);
-        cur_col--;
-      } else if (cur_row > 0) {
-        cur_col = static_cast<int>(lines[cur_row - 1].size());
-        lines[cur_row] = lines[cur_row - 1] + lines[cur_row];
-        lines.erase(lines.begin() + cur_row - 1);
-        cur_row--;
+      if (cur_lcol > 0) {
+        lines[cur_lrow].erase(cur_lcol - 1, 1);
+        cur_lcol--;
+      } else if (cur_lrow > 0) {
+        cur_lcol = static_cast<int>(lines[cur_lrow - 1].size());
+        lines[cur_lrow] = lines[cur_lrow - 1] + lines[cur_lrow];
+        lines.erase(lines.begin() + cur_lrow - 1);
+        cur_lrow--;
       }
       draw_editor();
       continue;
     }
 
     if (ev.is(Key::DEL)) {
-      if (cur_col < static_cast<int>(lines[cur_row].size())) {
-        lines[cur_row].erase(cur_col, 1);
-      } else if (cur_row + 1 < static_cast<int>(lines.size())) {
-        lines[cur_row] += lines[cur_row + 1];
-        lines.erase(lines.begin() + cur_row + 1);
+      if (cur_lcol < static_cast<int>(lines[cur_lrow].size())) {
+        lines[cur_lrow].erase(cur_lcol, 1);
+      } else if (cur_lrow + 1 < static_cast<int>(lines.size())) {
+        lines[cur_lrow] += lines[cur_lrow + 1];
+        lines.erase(lines.begin() + cur_lrow + 1);
       }
       draw_editor();
       continue;
     }
 
     if (ev.is(Key::LEFT)) {
-      if (cur_col > 0) {
-        cur_col--;
-      } else if (cur_row > 0) {
-        cur_row--;
-        cur_col = static_cast<int>(lines[cur_row].size());
+      if (cur_lcol > 0) {
+        cur_lcol--;
+      } else if (cur_lrow > 0) {
+        cur_lrow--;
+        cur_lcol = static_cast<int>(lines[cur_lrow].size());
       }
       draw_editor();
       continue;
     }
 
     if (ev.is(Key::RIGHT)) {
-      if (cur_col < static_cast<int>(lines[cur_row].size())) {
-        cur_col++;
-      } else if (cur_row + 1 < static_cast<int>(lines.size())) {
-        cur_row++;
-        cur_col = 0;
+      if (cur_lcol < static_cast<int>(lines[cur_lrow].size())) {
+        cur_lcol++;
+      } else if (cur_lrow + 1 < static_cast<int>(lines.size())) {
+        cur_lrow++;
+        cur_lcol = 0;
       }
       draw_editor();
       continue;
     }
 
     if (ev.is(Key::UP)) {
-      if (cur_row > 0) {
-        cur_row--;
-        cur_col = std::min(cur_col, static_cast<int>(lines[cur_row].size()));
+      // Move up one visual row.
+      std::vector<VSeg> vis = wrap();
+      int cv = find_vrow(vis, cur_lrow, cur_lcol);
+      if (cv > 0) {
+        int target = cv - 1;
+        // Preserve display column.
+        int disp_col = cur_lcol - vis[cv].col;
+        int new_lcol = vis[target].col + std::min(disp_col, vis[target].len);
+        cur_lrow = vis[target].lrow;
+        cur_lcol = new_lcol;
       }
       draw_editor();
       continue;
     }
 
     if (ev.is(Key::DOWN)) {
-      if (cur_row + 1 < static_cast<int>(lines.size())) {
-        cur_row++;
-        cur_col = std::min(cur_col, static_cast<int>(lines[cur_row].size()));
+      // Move down one visual row.
+      std::vector<VSeg> vis = wrap();
+      int cv = find_vrow(vis, cur_lrow, cur_lcol);
+      if (cv + 1 < static_cast<int>(vis.size())) {
+        int target = cv + 1;
+        int disp_col = cur_lcol - vis[cv].col;
+        int new_lcol = vis[target].col + std::min(disp_col, vis[target].len);
+        cur_lrow = vis[target].lrow;
+        cur_lcol = new_lcol;
       }
       draw_editor();
       continue;
     }
 
     if (ev.is(Key::HOME)) {
-      cur_col = 0;
+      cur_lcol = 0;
       draw_editor();
       continue;
     }
 
     if (ev.is(Key::END)) {
-      cur_col = static_cast<int>(lines[cur_row].size());
+      cur_lcol = static_cast<int>(lines[cur_lrow].size());
       draw_editor();
       continue;
     }
 
     if (ev.is(Key::PAGE_UP)) {
       scroll = std::max(0, scroll - text_rows);
-      cur_row = std::max(0, cur_row - text_rows);
       draw_editor();
       continue;
     }
 
     if (ev.is(Key::PAGE_DOWN)) {
-      scroll = std::max(0, scroll + text_rows);
-      cur_row = std::min(static_cast<int>(lines.size()) - 1, cur_row + text_rows);
+      scroll = scroll + text_rows;
       draw_editor();
       continue;
     }
@@ -1064,16 +1131,16 @@ std::string Tui::text_editor(const std::string &title,
     // Printable characters.
     if (ev.is_edit() && ev.is_ascii()) {
       char c = static_cast<char>(ev.val());
-      lines[cur_row].insert(cur_col, 1, c);
-      cur_col++;
+      lines[cur_lrow].insert(cur_lcol, 1, c);
+      cur_lcol++;
       draw_editor();
       continue;
     }
 
     // Space is printable too.
     if (ev.is(Key::SPACE)) {
-      lines[cur_row].insert(cur_col, 1, ' ');
-      cur_col++;
+      lines[cur_lrow].insert(cur_lcol, 1, ' ');
+      cur_lcol++;
       draw_editor();
       continue;
     }
@@ -1085,6 +1152,7 @@ std::string Tui::text_editor(const std::string &title,
   if (!submitted) return "";
 
   // Join lines back into a single string.
+  std::string result;
   for (size_t i = 0; i < lines.size(); ++i) {
     result += lines[i];
     if (i + 1 < lines.size()) result += "\n";
