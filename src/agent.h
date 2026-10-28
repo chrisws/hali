@@ -121,6 +121,7 @@ struct Agent {
       const ValidateFn &validate,
       const ExecuteFn &execute);
   std::string handle_build(const std::string &a1, const std::string &a2);
+  std::string handle_tune(const std::string &a1, const std::string &a2);
   std::string handle_plan(const std::string &a1, const std::string &a2);
   std::string handle_choice(const std::string &a1, const std::string &a2);
   std::string rag_tool(const std::string &agent_query) const;

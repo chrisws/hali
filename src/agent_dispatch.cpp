@@ -109,6 +109,54 @@ std::string Agent::handle_build(const std::string &a1, const std::string &a2) {
   });
 }
 
+std::string Agent::handle_tune(const std::string &a1, const std::string &a2) {
+  tui_.show_tool("tune");
+  if (a1.empty()) return "ERROR: usage: TOOL:TUNE key=value [key=value ...]";
+  std::istringstream iss(a1);
+  std::string tok;
+  std::string summary;
+  int changed = 0;
+  while (std::getline(iss, tok, ' ')) {
+    auto eq = tok.find('=');
+    if (eq == std::string::npos || eq == 0) {
+      return "ERROR: invalid token '" + tok + "' — expected key=value";
+    }
+    std::string key = tok.substr(0, eq);
+    std::string val = tok.substr(eq + 1);
+    // Clamp values.
+    if (key == "temperature" || key == "top_p" || key == "min_p" ||
+        key == "penalty_repeat" || key == "penalty_freq" || key == "penalty_present") {
+      float f = 0;
+      try { f = std::stof(val); } catch (...) { return "ERROR: '" + val + "' is not a number"; }
+      float lo = 0.0f, hi = 2.0f;
+      if (key == "top_p" || key == "min_p") hi = 1.0f;
+      if (f < lo) f = lo;
+      if (f > hi) f = hi;
+      val = std::to_string(f);
+    } else if (key == "top_k" || key == "penalty_last_n") {
+      int i = 0;
+      try { i = std::stoi(val); } catch (...) { return "ERROR: '" + val + "' is not an integer"; }
+      if (key == "top_k") { if (i < 1) i = 1; if (i > 200) i = 200; }
+      if (key == "penalty_last_n") { if (i < 0) i = 0; if (i > 2048) i = 2048; }
+      val = std::to_string(i);
+    } else {
+      return "ERROR: unknown key '" + key +
+             "'. Valid: temperature, top_p, min_p, top_k, "
+             "penalty_repeat, penalty_freq, penalty_present, penalty_last_n";
+    }
+    bool needs_reparam = false;
+    std::string msg;
+    int rc = cfg_.set_value(key, val, needs_reparam, msg);
+    if (rc != 0) {
+      return "ERROR: failed to set " + key + (rc == 1 ? " (unknown key)" : " (parse error)");
+    }
+    summary += key + "=" + val + "  ";
+    changed++;
+  }
+  if (changed == 0) return "No changes made.";
+  return "Tuned " + std::to_string(changed) + " setting(s): " + summary;
+}
+
 std::string Agent::handle_plan(const std::string &a1, const std::string &a2) {
   const std::string cmd = utils::trim(a1 + " " + a2);
   if (cmd.empty()) {
@@ -211,6 +259,9 @@ ToolMap Agent::build_tool_dispatch() {
   tools["TOOL:RND"] = [this](const std::string &a1, const std::string &a2) -> std::string {
     tui_.show_tool("rnd");
     return std::to_string(static_cast<double>(rand()) / RAND_MAX);
+  };
+  tools["TOOL:TUNE"] = [this](const std::string &a1, const std::string &a2) -> std::string {
+    return handle_tune(a1, a2);
   };
   tools["TOOL:RAG"] = [this](const std::string &a1, const std::string &a2) -> std::string {
     tui_.show_tool("TOOL:RAG");

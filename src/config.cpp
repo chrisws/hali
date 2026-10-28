@@ -357,6 +357,7 @@ std::string HaliConfig::prompt_core() const {
     "  TOOL:DATE                  current date\n"
     "  TOOL:TIME                  current time\n"
     "  TOOL:RND                   random float 0..1\n"
+    "  TOOL:TUNE  <key=val ...>   adjust sampling settings (temperature, top_p, min_p, top_k, penalties)\n"
     "  TOOL:RAG    <query>        query the RAG index for additional context\n"
     "  TOOL:ASK    <query>        ask the user for clarification or additional context\n"
     "  TOOL:CHOICE <question>|<opt1>|<opt2>|...  multiple-choice popup (pipe-delimited)\n"
@@ -606,6 +607,10 @@ int HaliConfig::set_value(const std::string &key, const std::string &val,
       top_k_ = std::stoi(val); needs_reparam = true;
     } else if (key == "penalty_repeat") {
       penalty_repeat_ = std::stof(val); needs_reparam = true;
+    } else if (key == "penalty_freq") {
+      penalty_freq_ = std::stof(val); needs_reparam = true;
+    } else if (key == "penalty_present") {
+      penalty_present_ = std::stof(val); needs_reparam = true;
     } else if (key == "penalty_last_n") {
       penalty_last_n_ = std::stoi(val); needs_reparam = true;
     } else if (key == "rag_top_k") {
