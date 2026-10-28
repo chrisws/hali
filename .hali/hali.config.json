@@ -28,7 +28,7 @@
     "n_max": 3,
     "n_min": 1,
     "p_min": 0.0,
-    "pos_threshold": 0.35,
+    "pos_threshold": 0.4,
     "adaptive": true
   },
   "suffix": {
@@ -49,7 +49,7 @@
   "logging": {
     "level": "debug",
     "file": "text.log",
-    "filter": "text",
+    "filter": "tui",
     "erase": true
   },
   "permission_prompt": false,
@@ -65,7 +65,9 @@
   "thinking": true,
   "web_port": -1,
   "enabled_backups": false,
-  "knowledge_files": [],
+  "knowledge_files": [
+    "AGENTS.md"
+  ],
   "mcp_filter": [],
   "val_write_size_warn": 4000
 }

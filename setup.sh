@@ -162,9 +162,10 @@ else
   ok "model saved → ${MODEL_PATH}"
 fi
 
-# 6. create .hali.config.json
-step "creating .hali.config.json"
-CONFIG_FILE=".hali.config.json"
+# 6. create .hali/hali.config.json
+step "creating .hali/hali.config.json"
+mkdir -p .hali
+CONFIG_FILE=".hali/hali.config.json"
 cat > "${CONFIG_FILE}" <<JSON
 {
   "model": {

@@ -92,7 +92,7 @@ The script lives at `scripts/mtp_log_summary.py`
 
 ## Workflow
 
-1. **Reproduce** — run Hali with MTP enabled (`hali.config.json`) and capture a
+1. **Reproduce** — run Hali with MTP enabled (`.hali/hali.config.json`) and capture a
    clean MTP log using the env-vars (see "Capturing a clean MTP log" above):
    `HALI_LOG_FILTER=mtp HALI_LOG_FILE=/tmp/mtp.log ./hali`
 2. **Summarise** — run the log script to get acceptance rate, phase timings, and any errors.
@@ -122,7 +122,7 @@ The script lives at `scripts/mtp_log_summary.py`
 
 ## Configuration
 
-MTP is controlled via `hali.config.json`:
+MTP is controlled via `.hali/hali.config.json`:
 - `mtp_enabled` — master switch
 - `mtp_n_max` — max draft tokens per round (default 3)
 - `mtp_n_min` — min draft tokens (default 0)
