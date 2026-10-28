@@ -37,7 +37,7 @@ Most agentic shells assume a hosted API and treat context as free. Hali assumes 
   | `TOOL:WRITE`, `TOOL:APPEND`, `TOOL:PATCH`, `TOOL:MKDIR` | Modify files inside the sandbox                                                                                                                                                                                                                        |
   | `TOOL:REPLACE`                                          | Replace text in a file with `--all` and `--count` flags                                                                                                                                                                                                |
   | `TOOL:RUN`                                              | Run a program inside the sandbox, gated by an optional `run_allowed` allowlist and shell-metacharacter detection                                                                                                                                       |
-  | `TOOL:BUILD`                                            | Auto-detect and run project build systems (CMake, Gradle, Maven, Python) with modes: `setup`, `build`, `test`, `clean`                                                                                                                                 |
+  | `TOOL:BUILD`                                            | Auto-detect and run project build systems (CMake, Gradle, Maven, Python) with modes: `setup`, `build`, `test`, `clean`, `lint` (clang-tidy)                                                                                                                                 |
   | `TOOL:CURL`                                             | HTTP GET via libcurl, with HTML-to-text stripping and a 32 KB response size cap                                                                                                                                                                        |
   | `TOOL:RAG`                                              | Query the local RAG index for extra context                                                                                                                                                                                                            |
   | `TOOL:ASK`                                              | Ask the user directly, for interactive/agentic flows                                                                                                                                                                                                   |
@@ -53,6 +53,7 @@ Most agentic shells assume a hosted API and treat context as free. Hali assumes 
   | `TOOL:SYSINFO`                                          | System info: user, uid, hostname, OS, kernel, arch, cwd                                                                                                                                                        |
   | `TOOL:GIT`                                              | Run whitelisted git subcommands (`status`, `log`, `diff`, `add`, `commit`, `branch`, `show`) in the sandbox                                                                                                   |
   | `TOOL:HEX`                                              | xxd-style hex dump with optional offset and length, capped at 256 lines                                                                                                                                        |
+  | `TOOL:TUNE`                                             | Adjust sampling settings live: `temperature`, `top_p`, `min_p`, `top_k`, `penalty_repeat`, `penalty_freq`, `penalty_present`, `penalty_last_n` (values are clamped to valid ranges) |
   | `TOOL:DATE`, `TOOL:TIME`, `TOOL:RND`, `TOOL:INTROSPECT` | Small utility/introspection tools                                                                                                                                                                                                                      |
 
 - **Persistent run-allowlist** — user-approved `TOOL:RUN` program names are saved to `.hali/user-approved.txt` under the sandbox with timestamps and a 30-day TTL, so approvals survive across sessions without re-prompting. Revoke individual approvals with `/revoke <name>`.
@@ -60,7 +61,7 @@ Most agentic shells assume a hosted API and treat context as free. Hali assumes 
 - **Skills system** — load one or more markdown skill files into the static system-prompt prefix at session start with `--skill <name>` (no per-turn routing, so it doesn't disrupt the KV cache). `hali.md`, `persona.md`, and `AGENTS.md` are auto-discovered from the current directory if present. Skills can also be loaded mid-conversation with `/skill <name> [kickoff]`. The [`skills/`](skills/) folder ships a starter set covering debugging, TDD, code review, CMake/build troubleshooting, memory-safety review, dependency-free frontend work, SmallBASIC's raylib plugin, free JSON API sourcing, a local-info feed pattern, planning, spiking, code simplification, house style, skill import, and a few just-for-fun ones (chess, an ELIZA-style roleplay, generative interactive fiction, a self-scoring introspection game).
 - **Pure C++ RAG pipeline** — semantic chunker, binary `.db` index, deduplicating `RagSession`, with a folder picker for building indexes on the fly.
 - **Web development mode** — a local HTTP server with live-reload that watches the sandbox for HTML changes. The model can push messages to the browser and trigger reloads, enabling a tight edit-preview loop. Enabled with `-p, --web-port <port>`.
-- **Persistent settings** — configuration lives in `.hali/settings.json` under the sandbox, or point at a specific file with `-c`/`--config` (defaults to `hali.config.json`).
+- **Persistent settings** — configuration lives in `.hali/settings.json` under the sandbox, or point at a specific file with `-c`/`--config` (defaults to `.hali/hali.config.json`). Runtime data (input history, usage log, user-approved run list, plans, badges) is stored in the `.hali/` folder under the sandbox root.
 - **Test suite** — unit tests under `tests/` (file operations, string/Unicode utilities, SHA-1, MCP message formatting, the graph renderer), runnable via CTest.
 
 ## Sandbox Security
@@ -142,11 +143,12 @@ Inside the TUI, type a leading `/` to run a built-in command. Tab-completion is 
 | `/allow-remove [path]` | Remove read access to a directory                                                     |
 | `/revoke <name>`     | Remove an approved `TOOL:RUN` program from the allowlist                                |
 | `/audit [path]`      | Scan the codebase for issues that are hard for an LLM to handle                         |
+| `/lint`              | List source files and run clang-tidy lint checks                                        |
 | `/skill [name] [kickoff]` | Load a skill file into the conversation (optionally with a kickoff prompt)          |
 | `/help`              | Show this command list                                                                  |
 | `exit` / `quit`      | Leave Hali                                                                              |
 
-Settable keys via `/set`: `temperature`, `top_p`, `top_k`, `min_p`, `penalty_repeat`, `penalty_last_n`, `rag_top_k`, `n_gpu_layers`, `offload_kqv`, `run_allowed` (comma-separated list of allowed program basenames, or `none` to clear), `mtp_enabled`, `mtp_n_max`, `mtp_n_min`, `mtp_p_min`, `mtp_adaptive`, `mtp_pos_threshold`, `rope_freq_scale`, `rope_scaling_type`, `audio_enabled`, `audio_volume`, `audio_tool_tick`, `audio_user_prompt`, `val_write_validate`, `val_patch_validate`, `val_write_size_warn`, `log_erase`.
+Settable keys via `/set`: `temperature`, `top_p`, `top_k`, `min_p`, `penalty_repeat`, `penalty_last_n`, `rag_top_k`, `n_gpu_layers`, `offload_kqv`, `run_allowed` (comma-separated list of allowed program basenames, or `none` to clear), `mtp_enabled`, `mtp_n_max`, `mtp_n_min`, `mtp_p_min`, `mtp_adaptive`, `mtp_pos_threshold`, `rope_freq_scale`, `rope_scaling_type`, `audio_enabled`, `audio_volume`, `audio_tool_tick`, `audio_user_prompt`, `val_write_validate`, `val_patch_validate`, `val_write_size_warn`, `log_erase`, `disable_run`, `disable_save_on_exit`.
 
 ## Building
 
@@ -161,7 +163,7 @@ cd hali
 ./build/bin/hali
 ```
 
-`setup.sh` checks for required dependencies (cmake, g++, make, notcurses), initialises submodules, builds the project, and runs a `--help` smoke test. Pass `--test` to also build and run the unit test suite.
+`setup.sh` is a one-shot bootstrap: it checks for required dependencies (cmake, g++, make, notcurses), initialises submodules, builds the project, runs a `--help` smoke test, detects GPU VRAM (via a compiled CUDA probe or `nvidia-smi`), downloads an appropriate Qwen3 GGUF model from HuggingFace into `models/`, and generates a ready-to-use `.hali/hali.config.json` tuned to your hardware. Pass `--test` to also build and run the unit test suite.
 
 ### Manual build
 
@@ -235,7 +237,8 @@ A positional argument sets the sandbox root — the directory all file tools (`T
 hali/
 ├── CMakeLists.txt
 ├── mcp.json                # MCP server connection config
-├── hali.config.json        # example runtime settings
+├── .hali/                  # runtime data (config, history, plans, badges)
+│   └── hali.config.json    # example runtime settings
 ├── setup.sh                # one-shot setup: submodules, deps, build, smoke test
 ├── maintain.sh             # day-to-day build / test / clean runner
 ├── apps/                   # standalone HTML games + AI stub servers
@@ -249,6 +252,8 @@ hali/
 │       └── space.py
 ├── scripts/                # utility scripts
 │   └── mtp_log_summary.py  # MTP performance log summariser
+├── tools/                  # build-time utilities
+│   └── gpu_probe.c         # CUDA VRAM probe (compiled by setup.sh)
 ├── skills/                 # markdown skill files, loaded via --skill
 ├── src/
 │   ├── main.cpp            # entry point, CLI parsing, slash commands
