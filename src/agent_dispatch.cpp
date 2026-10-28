@@ -150,6 +150,9 @@ std::string Agent::handle_tune(const std::string &a1, const std::string &a2) {
     if (rc != 0) {
       return "ERROR: failed to set " + key + (rc == 1 ? " (unknown key)" : " (parse error)");
     }
+    if (needs_reparam && model_loaded_) {
+      apply_generation_params();
+    }
     summary += key + "=" + val + "  ";
     changed++;
   }

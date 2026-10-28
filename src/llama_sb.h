@@ -76,6 +76,7 @@ struct LlamaLoad {
   string model_path;
   int n_ctx;
   int n_batch;
+  int n_ubatch;
   int n_gpu_layers;
   int log_level;
   bool offload_kqv;

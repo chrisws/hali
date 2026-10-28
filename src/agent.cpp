@@ -85,6 +85,7 @@ bool Agent::setup_model() {
   load.model_path = cfg_.model_path_;
   load.n_ctx = cfg_.n_ctx_;
   load.n_batch = cfg_.n_batch_;
+  load.n_ubatch = cfg_.n_ubatch_;
   load.n_gpu_layers = cfg_.n_gpu_layers_;
   load.n_threads = cfg_.n_threads_;
   load.n_threads_batch = cfg_.n_threads_batch_;

@@ -113,6 +113,7 @@ void HaliConfig::load_settings() {
     kv_preset_ = to_kv_preset(kv_preset);
     model.get_int("n_ctx", n_ctx_);
     model.get_int("n_batch", n_batch_);
+    model.get_int("n_ubatch", n_ubatch_);
     model.get_int("n_gpu_layers", n_gpu_layers_);
     model.get_int("top_k", top_k_);
     model.get_int("penalty_last_n", penalty_last_n_);
@@ -511,6 +512,7 @@ std::string HaliConfig::introspect() const {
   model.set_str("kv_cache_preset", kv_preset_to_string());
   model.set_int("n_ctx", n_ctx_);
   model.set_int("n_batch", n_batch_);
+  model.set_int("n_ubatch", n_ubatch_);
   model.set_int("n_gpu_layers", n_gpu_layers_);
   model.set_int("n_threads", n_threads_);
   model.set_int("n_threads_batch", n_threads_batch_);
@@ -617,6 +619,9 @@ int HaliConfig::set_value(const std::string &key, const std::string &val,
       rag_top_k_ = std::stoi(val);
     } else if (key == "offload_kqv") {
       offload_kqv_ = (val == "true");
+    } else if (key == "n_ubatch") {
+      n_ubatch_ = std::stoi(val);
+      msg = "n_ubatch will take effect on next /model load.";
     } else if (key == "n_gpu_layers") {
       n_gpu_layers_ = std::stoi(val);
       msg = "n_gpu_layers will take effect on next /model load.";

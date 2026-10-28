@@ -230,7 +230,7 @@ bool Llama::load_model(const LlamaLoad &load) {
     llama_context_params cparams = llama_context_default_params();
     cparams.n_ctx   = load.n_ctx;
     cparams.n_batch = load.n_batch;
-    cparams.n_ubatch = load.n_batch;
+    cparams.n_ubatch = (load.n_ubatch > 0) ? load.n_ubatch : load.n_batch;
     cparams.no_perf = true;
     cparams.attention_type = LLAMA_ATTENTION_TYPE_UNSPECIFIED;
     cparams.flash_attn_type = LLAMA_FLASH_ATTN_TYPE_ENABLED;

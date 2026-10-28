@@ -67,6 +67,7 @@ struct HaliConfig {
   bool  thinking_       = true;
   int   log_level_      = GGML_LOG_LEVEL_CONT;
   int   n_batch_        = 512;
+  int   n_ubatch_       = 0;
   int   n_ctx_          = 65536;
   int   n_gpu_layers_   = 32;
   int   n_threads_      = 0;
