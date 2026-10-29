@@ -42,10 +42,10 @@ struct LlamaMemoryInfo {
   size_t  vram_total;     // bytes
   float   vram_percent;
 
-  // Model layers
-  int     n_layers_total; // total model layers
-  int     n_layers_gpu;   // layers offloaded to GPU
-  int     n_layers_cpu;   // layers on CPU
+  // Model layers (offloadable tensor slots: n_layer_all + 1)
+  int     n_layers_total; // total offloadable slots (transformer layers + output tensor)
+  int     n_layers_gpu;   // slots offloaded to GPU
+  int     n_layers_cpu;   // slots on CPU
   int     model_native_max_ctx;
 
   // Advice

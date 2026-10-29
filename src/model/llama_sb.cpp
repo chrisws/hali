@@ -503,8 +503,16 @@ LlamaMemoryInfo Llama::memory_info() const {
   info.kv_percent    = 100.0f * info.kv_used / info.kv_total;
 
   // Model layers
+  // n_layer() = effective layers (excludes MTP/nextn)
+  // n_layer_all = n_layer() + n_layer_nextn
+  // total offloadable = n_layer_all + 1 (the +1 covers the output/embedding tensor)
+  auto n_layer_eff   = llama_model_n_layer(_model);
+  auto n_layer_nextn = llama_model_n_layer_nextn(_model);
+  auto n_layer_all   = n_layer_eff + n_layer_nextn;
+  auto n_offloadable = n_layer_all + 1;
+
   auto n_gpu_layers = std::max(0, _n_gpu_layers);
-  info.n_layers_total = llama_model_n_layer(_model);
+  info.n_layers_total = n_offloadable;
   info.n_layers_gpu   = std::min(info.n_layers_total, n_gpu_layers);
   info.n_layers_cpu   = info.n_layers_total - info.n_layers_gpu;
 
