@@ -183,6 +183,13 @@ bool JsonMutValue::set_empty_obj(const std::string &key) {
   return yyjson_mut_obj_add(value_, yyjson_mut_strcpy(doc_, key.c_str()), yyjson_mut_obj(doc_));
 }
 
+JsonMutValue JsonMutValue::set_empty_arr(const std::string &key) {
+  if (!is_valid()) return JsonMutValue(nullptr, nullptr);
+  yyjson_mut_val *arr = yyjson_mut_arr(doc_);
+  yyjson_mut_obj_add(value_, yyjson_mut_strcpy(doc_, key.c_str()), arr);
+  return JsonMutValue(doc_, arr);
+}
+
 bool JsonMutValue::set_int(const std::string &key, int value) {
   if (!is_valid()) return false;
   return yyjson_mut_obj_add(value_, yyjson_mut_strcpy(doc_, key.c_str()), yyjson_mut_int(doc_, value));
@@ -227,6 +234,13 @@ bool JsonMutValue::set_arr(const std::string &key, const std::vector<std::string
     yyjson_mut_arr_add_strcpy(doc_, arr, s.c_str());
   }
   return yyjson_mut_obj_add(value_, yyjson_mut_strcpy(doc_, key.c_str()), arr);
+}
+
+JsonMutValue JsonMutValue::arr_append_obj() {
+  if (!is_valid() || !is_arr()) return JsonMutValue(nullptr, nullptr);
+  yyjson_mut_val *obj = yyjson_mut_obj(doc_);
+  yyjson_mut_arr_append(value_, obj);
+  return JsonMutValue(doc_, obj);
 }
 
 //

@@ -69,6 +69,7 @@ void think_parser_test();
 void planner_test();
 void sysinfo_test();
 void git_tool_test();
+void music_project_test();
 
 int main() {
   log_open_console();
@@ -100,6 +101,7 @@ int main() {
   run_htp_test("planner", planner_test);
   run_htp_test("sysinfo", sysinfo_test);
   run_htp_test("git_tool", git_tool_test);
+  run_htp_test("music_project", music_project_test);
 
   return g_failures ? 1 : 0;
 }

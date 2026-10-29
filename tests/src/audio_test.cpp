@@ -154,7 +154,7 @@ void audio_test() {
 
   // ── play_script: invalid note letter ───────────────────────────────
   {
-    auto r = audio::play_script("H4");
+    auto r = audio::play_script("X4");
     assert(!r.error.empty());
     assert(r.events.empty());
   }
@@ -280,8 +280,49 @@ void audio_test() {
 
   // ── play_script: chord with invalid note → error ───────────────────
   {
-    auto r = audio::play_script("[C4 H4]");
+    auto r = audio::play_script("[C4 X4]");
     assert(!r.error.empty());
+  }
+
+  // ── play_script: drum tokens ───────────────────────────────────────
+  {
+    auto r = audio::play_script("K S H O T");
+    assert(r.error.empty());
+    assert(r.events.size() == 5);
+    assert(freq_close(r.events[0][0].first, 60.0));    // kick
+    assert(freq_close(r.events[1][0].first, 200.0));   // snare
+    assert(freq_close(r.events[2][0].first, 8000.0));  // closed hi-hat
+    assert(freq_close(r.events[3][0].first, 7000.0));  // open hi-hat
+    assert(freq_close(r.events[4][0].first, 150.0));   // tom
+  }
+
+  // ── play_script: drum with explicit duration ───────────────────────
+  {
+    auto r = audio::play_script("K:0.25 S:0.5");
+    assert(r.error.empty());
+    assert(r.events.size() == 2);
+    assert(freq_close(r.events[0][0].first, 60.0));
+    assert(freq_close(r.events[0][0].second, 0.25));
+    assert(freq_close(r.events[1][0].first, 200.0));
+    assert(freq_close(r.events[1][0].second, 0.5));
+  }
+
+  // ── play_script: drums in chord ────────────────────────────────────
+  {
+    auto r = audio::play_script("[K C4]");
+    assert(r.error.empty());
+    assert(r.events.size() == 1);
+    assert(r.events[0].size() == 2);
+    assert(freq_close(r.events[0][0].first, 60.0));    // kick
+    assert(freq_close(r.events[0][1].first, 261.63));  // C4
+  }
+
+  // ── play_script: T alone is tom, T120 is tempo ─────────────────────
+  {
+    auto r = audio::play_script("T120 T");
+    assert(r.error.empty());
+    assert(r.events.size() == 1);
+    assert(freq_close(r.events[0][0].first, 150.0));   // tom
   }
 
   std::cout << "  audio_test: all assertions passed"

@@ -53,6 +53,24 @@ using NoteEvent = std::vector<std::pair<double, double>>;
  */
 void play_events(const std::vector<NoteEvent> &events);
 
+/**
+ * @brief A single track in a multi-track mix.
+ */
+struct TrackMix {
+  std::vector<NoteEvent> events;
+  float volume = 0.8f;   // 0.0..1.0
+  float pan = 0.0f;      // -1.0 (full left) .. +1.0 (full right)
+};
+
+/**
+ * @brief Mix and play multiple tracks simultaneously in stereo.
+ *        Each track's notes are rendered with per-track volume and pan
+ *        (equal-power panning). Tracks of different lengths: shorter
+ *        tracks tail off, longer tracks continue to their natural end.
+ * @param tracks  Vector of TrackMix, all starting at the same time.
+ */
+void play_mix(const std::vector<TrackMix> &tracks);
+
 /** @brief Returns true if an audio output device was found. */
 bool is_available();
 

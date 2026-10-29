@@ -116,6 +116,7 @@ add_executable(hali_tests
   src/audit_test.cpp
   src/sysinfo_test.cpp
   src/git_tool_test.cpp
+  src/music_project_test.cpp
   src/main.cpp
 )
 

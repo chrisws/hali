@@ -165,6 +165,7 @@ void HaliConfig::load_settings() {
     audio.get_float("volume", audio_volume_);
     audio.get_bool("tool_tick", audio_tool_tick_);
     audio.get_bool("user_prompt", audio_user_prompt_);
+    audio.get_bool("enable_multi_track", audio_multi_track_);
   }
 
   // ── mcp section (plan 12) ──────────────────────────────────────
@@ -264,7 +265,8 @@ std::string HaliConfig::prompt_audio() const {
   if (!audio_enabled_) {
     return "";
   }
-  return
+  std::string p;
+  p +=
     "## Additional Tools\n"
     "  TOOL:PLAY   <notes>         play a melody (space-separated note tokens)\n\n"
     "## TOOL:PLAY Rules\n"
@@ -278,6 +280,35 @@ std::string HaliConfig::prompt_audio() const {
     "- Example: TOOL:PLAY T120 V70 C4:0.3 D4:0.3 E4:0.3 P1 C5:0.5\n"
     "- Example: TOOL:PLAY [C4 E4 G4]:1.0 [F4 A4 C5]:1.0 plays two chords\n"
     "- When the user asks you to play a tune, try your best interpretation, then ask for feedback.\n\n";
+  if (audio_multi_track_) {
+    p +=
+      "## TOOL:MUSIC — Multi-Track Project\n"
+      "  TOOL:MUSIC <command> [args]\n\n"
+      "Commands:\n"
+      "  create <name>                    Create a new project\n"
+      "  load <name>                      Load a saved project\n"
+      "  list                             List all projects\n"
+      "  add <track_name> <script>        Add a track (script = note tokens)\n"
+      "  set <n> <volume|pan|script> <v>  Modify track n (1-indexed)\n"
+      "  remove <n>                       Remove track n\n"
+      "  tempo <bpm>                      Set global tempo\n"
+      "  play                             Play all tracks mixed\n"
+      "  show                             Display project layout\n"
+      "  save                             Save to disk\n"
+      "  clear                            Clear all tracks\n\n"
+      "Notes:\n"
+      "- Pitch notes: C4 D#5 E-3 (letter + accidental + octave)\n"
+      "- Drum tokens: K(kick) S(snare) H(hi-hat) O(open hat) T(tom)\n"
+      "- Duration: append :0.5 for explicit seconds\n"
+      "- Chords: [C4 E4 G4]\n"
+      "- Pan: -100 (left) to +100 (right), 0 = centre\n"
+      "- Volume: 0-100\n"
+      "- Example: TOOL:MUSIC add bass \"C2:0.5 E2:0.5 G2:0.5 C3:0.5\"\n"
+      "- Example: TOOL:MUSIC add drums \"K S K H K S K S\"\n"
+      "- Example: TOOL:MUSIC set 2 pan -25\n"
+      "- Example: TOOL:MUSIC play\n\n";
+  }
+  return p;
 }
 
 std::string HaliConfig::prompt_knowledge() const {
@@ -554,6 +585,7 @@ std::string HaliConfig::introspect() const {
   audio.set_float("volume", audio_volume_);
   audio.set_bool("tool_tick", audio_tool_tick_);
   audio.set_bool("user_prompt", audio_user_prompt_);
+  audio.set_bool("enable_multi_track", audio_multi_track_);
 
   // mcp
   auto mcp = root.get_child("mcp");

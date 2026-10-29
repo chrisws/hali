@@ -1,0 +1,74 @@
+{
+  "model": {
+    "path": "/home/chrisws/models/Swift-1.5-Qwen3.8-27B-GSQ-RCO-IQ3_S-mtp.gguf",
+    "kv_cache_preset": "balanced",
+    "n_ctx": 50000,
+    "n_batch": 512,
+    "n_ubatch": 0,
+    "n_gpu_layers": 999,
+    "n_threads": 16,
+    "n_threads_batch": 16,
+    "temperature": 0.2,
+    "top_p": 0.2,
+    "min_p": 0.0,
+    "top_k": 60,
+    "penalty_repeat": 1.0,
+    "penalty_freq": 0.0,
+    "penalty_present": 0.0,
+    "penalty_last_n": 256,
+    "offload_kqv": true,
+    "rope_scaling": "none",
+    "rope_freq_scale": 0.0
+  },
+  "rag": {
+    "embed_path": "",
+    "top_k": 5
+  },
+  "mtp": {
+    "enabled": true,
+    "n_max": 3,
+    "n_min": 1,
+    "p_min": 0.0,
+    "pos_threshold": 0.4,
+    "adaptive": true
+  },
+  "suffix": {
+    "enabled": true,
+    "ngram": 4,
+    "max_draft": 2
+  },
+  "audio": {
+    "enabled": true,
+    "volume": 0.5,
+    "tool_tick": false,
+    "user_prompt": false
+  },
+  "mcp": {
+    "host": "127.0.0.1",
+    "port": 64342
+  },
+  "logging": {
+    "level": "debug",
+    "file": "text.log",
+    "filter": "tui",
+    "erase": true
+  },
+  "permission_prompt": false,
+  "disable_run": false,
+  "disable_save_on_exit": false,
+  "validation": {
+    "disable_write_validate": true,
+    "disable_patch_validate": true
+  },
+  "extra_dirs": [
+    "/usr/local/include/notcurses"
+  ],
+  "thinking": true,
+  "web_port": -1,
+  "enabled_backups": false,
+  "knowledge_files": [
+    "AGENTS.md"
+  ],
+  "mcp_filter": [],
+  "val_write_size_warn": 4000
+}

@@ -99,10 +99,11 @@ struct HaliConfig {
   int   suffix_max_draft_ = 2;
 
   // Audio (plan 11)
-  bool  audio_enabled_    = false;
-  float audio_volume_     = 0.5f;
-  bool  audio_tool_tick_  = false;
+  bool  audio_enabled_     = false;
+  float audio_volume_      = 0.5f;
+  bool  audio_tool_tick_   = false;
   bool  audio_user_prompt_ = false;
+  bool  audio_multi_track_ = false;
 
   // Validation gates (disable validate calls for capable models)
   bool  disable_write_validate_ = false;

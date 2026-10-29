@@ -81,9 +81,10 @@ struct Sound {
   float amplitude;
   float increment;
   float phase;
+  float pan;  // -1.0 (full left) .. +1.0 (full right), 0 = centre
 
   Sound(double freq_hz, double duration_s, float volume, uint32_t delay = 0,
-        uint32_t fade_in = 0, uint32_t fade_out = 0)
+        uint32_t fade_in = 0, uint32_t fade_out = 0, float pan = 0.0f)
     : total_samples((uint32_t)(duration_s * SAMPLE_RATE)),
       sampled(0),
       delay_samples(delay),
@@ -91,7 +92,8 @@ struct Sound {
       fade_out_samples(fade_out),
       amplitude(volume),
       increment((float)(PI2 * freq_hz / SAMPLE_RATE)),
-      phase(0.0f) {
+      phase(0.0f),
+      pan(pan) {
     if (fade_in_samples == 0)
       fade_in_samples = std::min((int)total_samples / RAMP_SCALE, MAX_RAMP);
     if (fade_out_samples == 0)
@@ -146,11 +148,11 @@ static std::deque<Sound *> g_queue;
 
 static void add(double freq_hz, double duration_s, float volume,
                 uint32_t delay_samples = 0, uint32_t fade_in = 0,
-                uint32_t fade_out = 0) {
+                uint32_t fade_out = 0, float pan = 0.0f) {
   std::lock_guard<std::mutex> lock(g_lock);
   if (g_queue.size() >= MAX_QUEUE_SIZE) return;
   g_queue.push_back(new Sound(freq_hz, duration_s, volume * g_volume,
-                             delay_samples, fade_in, fade_out));
+                             delay_samples, fade_in, fade_out, pan));
 }
 
 static void clear_queue() {
@@ -183,15 +185,22 @@ static void data_callback(ma_device *device, void *output,
     }
   }
 
-  // Mix all active sounds together with soft-clip compression.
+  // Mix all active sounds into stereo with equal-power panning.
   // tanh() is a smooth soft-clipper: linear below ~0.5, gently
   // compresses above 1.0, avoids harsh clipping artifacts on chords.
   for (ma_uint32 i = 0; i < frame_count; i++) {
-    float sum = 0.0f;
+    float sum_l = 0.0f;
+    float sum_r = 0.0f;
     for (auto *s : active) {
-      sum += s->sample();
+      float mono = s->sample();
+      // Equal-power pan: pan=-1 → full left, pan=+1 → full right
+      float gain_l = cosf((s->pan + 1.0f) * M_PI / 4.0f);
+      float gain_r = sinf((s->pan + 1.0f) * M_PI / 4.0f);
+      sum_l += mono * gain_l;
+      sum_r += mono * gain_r;
     }
-    out[i] = tanhf(sum);
+    out[2 * i]     = tanhf(sum_l);
+    out[2 * i + 1] = tanhf(sum_r);
   }
 }
 
@@ -216,7 +225,7 @@ void init(int sample_rate, int channels) {
 
   ma_device_config config = ma_device_config_init(ma_device_type_playback);
   config.playback.format = ma_format_f32;
-  config.playback.channels = 1;
+  config.playback.channels = 2;
   config.sampleRate = SAMPLE_RATE;
   config.dataCallback = data_callback;
   config.pUserData = nullptr;
@@ -294,6 +303,26 @@ void play_melody(const std::vector<std::pair<double, double>> &notes) {
 
 void play_chord(const std::vector<std::pair<double, double>> &notes) {
   play_events({notes});
+}
+
+void play_mix(const std::vector<TrackMix> &tracks) {
+  if (!g_enabled) return;
+
+  for (const auto &track : tracks) {
+    uint32_t delay = 0;
+    for (size_t i = 0; i < track.events.size(); i++) {
+      const auto &event = track.events[i];
+      double max_dur = 0.0;
+      for (const auto &note : event) {
+        max_dur = std::max(max_dur, note.second);
+      }
+      for (const auto &note : event) {
+        add(note.first, note.second, track.volume, delay, 0, 0, track.pan);
+      }
+      delay += (uint32_t)(max_dur * SAMPLE_RATE);
+    }
+  }
+  ensure_started();
 }
 
 bool is_available() {
@@ -427,7 +456,7 @@ ScriptResult play_script(const std::string &notes_str) {
 
     // Control tokens (only valid outside chords)
     if (!in_chord) {
-      if (c == 'T' && tok.size() > 1) {
+      if (c == 'T' && tok.size() > 1 && isdigit((unsigned char)tok[1])) {
         tempo = std::stod(tok.substr(1));
         continue;
       }
@@ -444,6 +473,39 @@ ScriptResult play_script(const std::string &notes_str) {
         double dur = (60.0 / tempo) * beats;
         result.events.push_back({{0.0, dur}});
         if (close_chord) { in_chord = false; }
+        continue;
+      }
+    }
+
+    // Drum tokens: K(kick) S(snare) H(hi-hat) O(open hat) T(tom)
+    // These work both inside and outside chords.
+    // Format: single letter, optionally followed by :duration
+    {
+      double drum_freq = 0.0;
+      bool is_drum = false;
+      switch (c) {
+        case 'K': drum_freq = 60.0;   is_drum = true; break;  // kick
+        case 'S': drum_freq = 200.0;  is_drum = true; break;  // snare
+        case 'H': drum_freq = 8000.0; is_drum = true; break;  // closed hi-hat
+        case 'O': drum_freq = 7000.0; is_drum = true; break;  // open hi-hat
+        case 'T': drum_freq = 150.0;  is_drum = true; break;  // tom
+        default:  break;
+      }
+      if (is_drum) {
+        double drum_dur = default_duration();
+        size_t colon = tok.find(':');
+        if (colon != std::string::npos) {
+          drum_dur = std::stod(tok.substr(colon + 1));
+        }
+        if (in_chord) {
+          chord.emplace_back(drum_freq, drum_dur);
+        } else {
+          result.events.push_back({{drum_freq, drum_dur}});
+        }
+        if (close_chord) {
+          result.events.push_back(chord);
+          in_chord = false;
+        }
         continue;
       }
     }
@@ -541,18 +603,19 @@ bool save_wav(const std::vector<NoteEvent> &events, const std::string &path, int
 
   if (samples.empty()) return false;
 
-  // Build WAV file in memory
-  const int16_t *pcm = nullptr;
-  std::vector<int16_t> pcm_data(samples.size());
+  // Build stereo WAV: centre-panned (same signal on L and R)
+  std::vector<int16_t> pcm_data(samples.size() * 2);
   for (size_t i = 0; i < samples.size(); ++i) {
     float clamped = std::clamp(samples[i], -1.0f, 1.0f);
-    pcm_data[i] = static_cast<int16_t>(clamped * 32767.0f);
+    int16_t val = static_cast<int16_t>(clamped * 32767.0f);
+    pcm_data[i * 2]     = val;  // L
+    pcm_data[i * 2 + 1] = val;  // R
   }
 
   const uint32_t data_size = static_cast<uint32_t>(pcm_data.size() * sizeof(int16_t));
   const uint32_t file_size = 36 + data_size;
   const uint16_t audio_format = 1;   // PCM
-  const uint16_t channels = 1;
+  const uint16_t channels = 2;
   const uint32_t byte_rate = static_cast<uint32_t>(sample_rate * channels * 2);
   const uint16_t block_align = channels * 2;
   const uint16_t bits_per_sample = 16;

@@ -30,6 +30,7 @@
 #include "sysinfo.h"
 #include "git_tool.h"
 #include "curl.h"
+#include "music_project.h"
 
 namespace fs = std::filesystem;
 
@@ -244,6 +245,276 @@ std::string Agent::handle_choice(const std::string &a1, const std::string &a2) {
   return options[idx];
 }
 
+std::string Agent::handle_music(const std::string &a1, const std::string &a2) {
+  std::string full = a1;
+  if (!a2.empty()) {
+    full += " " + a2;
+  }
+  full = utils::trim(full);
+  if (full.empty()) {
+    return "ERROR: usage: TOOL:MUSIC <command> [args]";
+  }
+
+  const std::string proj_dir = cfg_.sandbox_ + "/.hali/projects";
+  auto space = full.find(' ');
+  const std::string cmd = (space == std::string::npos) ? full : full.substr(0, space);
+  const std::string arg  = (space == std::string::npos) ? "" : utils::trim(full.substr(space + 1));
+
+  if (cmd == "list") {
+    tui_.show_tool("music: list");
+    auto names = MusicProject::list(proj_dir);
+    if (names.empty()) {
+      return "No projects found in " + proj_dir;
+    }
+    std::string out;
+    for (const auto &n : names) {
+      out += n + "\n";
+    }
+    return out;
+  }
+
+  if (cmd == "create") {
+    if (arg.empty()) {
+      return "ERROR: usage: TOOL:MUSIC create <name>";
+    }
+    tui_.show_tool("music: create " + arg);
+    MusicProject proj;
+    proj.name = arg;
+    if (!proj.save(proj_dir)) {
+      return "ERROR: failed to save project \"" + arg + "\"";
+    }
+    return "OK: created project \"" + arg + "\"";
+  }
+
+  if (cmd == "load") {
+    if (arg.empty()) {
+      return "ERROR: usage: TOOL:MUSIC load <name>";
+    }
+    tui_.show_tool("music: load " + arg);
+    std::string path = proj_dir + "/" + arg + ".json";
+    if (!fs::exists(path)) {
+      return "ERROR: project \"" + arg + "\" not found";
+    }
+    MusicProject proj = MusicProject::load(path);
+    if (proj.name.empty()) {
+      return "ERROR: failed to load project \"" + arg + "\"";
+    }
+    // Store loaded project in a temp file for subsequent commands
+    // For now, just confirm load
+    return "OK: loaded project \"" + proj.name + "\" (" +
+           std::to_string(proj.tracks.size()) + " tracks, tempo " +
+           std::to_string(proj.tempo) + " BPM)";
+  }
+
+  if (cmd == "add") {
+    // Format: add <track_name> <script>
+    // arg = "<track_name> <script>"
+    auto sp = arg.find(' ');
+    if (sp == std::string::npos) {
+      return "ERROR: usage: TOOL:MUSIC add <track_name> <script>";
+    }
+    std::string track_name = arg.substr(0, sp);
+    std::string script = utils::trim(arg.substr(sp + 1));
+    if (script.empty()) {
+      return "ERROR: empty script";
+    }
+    tui_.show_tool("music: add " + track_name);
+    // Validate script
+    auto parsed = audio::play_script(script);
+    if (!parsed.error.empty()) {
+      return "ERROR: invalid script: " + parsed.error;
+    }
+    // For now, we need a current project. Use a "current" project file.
+    std::string cur_path = proj_dir + "/_current.json";
+    MusicProject proj;
+    if (fs::exists(cur_path)) {
+      proj = MusicProject::load(cur_path);
+    }
+    MusicTrack track;
+    track.name = track_name;
+    track.script = script;
+    proj.tracks.push_back(track);
+    if (!proj.save(proj_dir)) {
+      return "ERROR: failed to save project";
+    }
+    // Also save as _current for subsequent commands
+    MusicProject cur = proj;
+    cur.name = "_current";
+    cur.save(proj_dir);
+    return "OK: added track \"" + track_name + "\" (" +
+           std::to_string(proj.tracks.size()) + " tracks total)";
+  }
+
+  if (cmd == "set") {
+    // Format: set <n> <volume|pan|script> <value>
+    std::istringstream iss(arg);
+    std::string idx_str, field, value;
+    if (!(iss >> idx_str >> field >> value)) {
+      return "ERROR: usage: TOOL:MUSIC set <n> <volume|pan|script> <value>";
+    }
+    int idx = 0;
+    try { idx = std::stoi(idx_str); } catch (...) { return "ERROR: invalid index: " + idx_str; }
+    if (idx < 1) { return "ERROR: track index must be >= 1"; }
+    tui_.show_tool("music: set " + idx_str + " " + field);
+    std::string cur_path = proj_dir + "/_current.json";
+    if (!fs::exists(cur_path)) {
+      return "ERROR: no active project. Use TOOL:MUSIC create <name> first.";
+    }
+    MusicProject proj = MusicProject::load(cur_path);
+    if (idx > static_cast<int>(proj.tracks.size())) {
+      return "ERROR: track " + idx_str + " out of range (1-" +
+             std::to_string(proj.tracks.size()) + ")";
+    }
+    auto &track = proj.tracks[idx - 1];
+    if (field == "volume") {
+      int v = 0;
+      try { v = std::stoi(value); } catch (...) { return "ERROR: invalid volume: " + value; }
+      if (v < 0) v = 0;
+      if (v > 100) v = 100;
+      track.volume = v;
+    } else if (field == "pan") {
+      int p = 0;
+      try { p = std::stoi(value); } catch (...) { return "ERROR: invalid pan: " + value; }
+      if (p < -100) p = -100;
+      if (p > 100) p = 100;
+      track.pan = p;
+    } else if (field == "script") {
+      auto parsed = audio::play_script(value);
+      if (!parsed.error.empty()) {
+        return "ERROR: invalid script: " + parsed.error;
+      }
+      track.script = value;
+    } else {
+      return "ERROR: unknown field \"" + field + "\" (use: volume, pan, script)";
+    }
+    proj.save(proj_dir);
+    MusicProject cur = proj;
+    cur.name = "_current";
+    cur.save(proj_dir);
+    return "OK: set track " + idx_str + " " + field + " = " + value;
+  }
+
+  if (cmd == "remove") {
+    int idx = 0;
+    try { idx = std::stoi(arg); } catch (...) { return "ERROR: invalid index: " + arg; }
+    if (idx < 1) { return "ERROR: track index must be >= 1"; }
+    tui_.show_tool("music: remove " + arg);
+    std::string cur_path = proj_dir + "/_current.json";
+    if (!fs::exists(cur_path)) {
+      return "ERROR: no active project";
+    }
+    MusicProject proj = MusicProject::load(cur_path);
+    if (idx > static_cast<int>(proj.tracks.size())) {
+      return "ERROR: track " + arg + " out of range";
+    }
+    proj.tracks.erase(proj.tracks.begin() + (idx - 1));
+    proj.save(proj_dir);
+    MusicProject cur = proj;
+    cur.name = "_current";
+    cur.save(proj_dir);
+    return "OK: removed track " + arg + " (" +
+           std::to_string(proj.tracks.size()) + " remaining)";
+  }
+
+  if (cmd == "tempo") {
+    int bpm = 0;
+    try { bpm = std::stoi(arg); } catch (...) { return "ERROR: invalid BPM: " + arg; }
+    if (bpm < 20 || bpm > 300) { return "ERROR: BPM must be 20-300"; }
+    tui_.show_tool("music: tempo " + arg);
+    std::string cur_path = proj_dir + "/_current.json";
+    if (!fs::exists(cur_path)) {
+      return "ERROR: no active project";
+    }
+    MusicProject proj = MusicProject::load(cur_path);
+    proj.tempo = bpm;
+    proj.save(proj_dir);
+    MusicProject cur = proj;
+    cur.name = "_current";
+    cur.save(proj_dir);
+    return "OK: tempo set to " + arg + " BPM";
+  }
+
+  if (cmd == "play") {
+    tui_.show_tool("music: play");
+    std::string cur_path = proj_dir + "/_current.json";
+    if (!fs::exists(cur_path)) {
+      return "ERROR: no active project to play";
+    }
+    MusicProject proj = MusicProject::load(cur_path);
+    if (proj.tracks.empty()) {
+      return "ERROR: no tracks in project";
+    }
+    std::vector<audio::TrackMix> mixes;
+    for (const auto &track : proj.tracks) {
+      auto parsed = audio::play_script(track.script);
+      if (!parsed.error.empty()) {
+        return "ERROR: track \"" + track.name + "\": " + parsed.error;
+      }
+      audio::TrackMix mix;
+      mix.events = parsed.events;
+      mix.volume = static_cast<float>(track.volume) / 100.0f;
+      mix.pan = static_cast<float>(track.pan) / 100.0f;
+      mixes.push_back(mix);
+    }
+    audio::play_mix(mixes);
+    return "OK: played " + std::to_string(mixes.size()) + " tracks";
+  }
+
+  if (cmd == "show") {
+    tui_.show_tool("music: show");
+    std::string cur_path = proj_dir + "/_current.json";
+    if (!fs::exists(cur_path)) {
+      return "No active project. Use TOOL:MUSIC create <name> first.";
+    }
+    MusicProject proj = MusicProject::load(cur_path);
+    std::string out = "Project: " + proj.name + "\n";
+    out += "Tempo: " + std::to_string(proj.tempo) + " BPM\n";
+    out += "Tracks: " + std::to_string(proj.tracks.size()) + "\n\n";
+    for (size_t i = 0; i < proj.tracks.size(); i++) {
+      const auto &t = proj.tracks[i];
+      out += "  " + std::to_string(i + 1) + ". " + t.name +
+             "  [vol=" + std::to_string(t.volume) +
+             " pan=" + std::to_string(t.pan) + "]\n";
+      out += "     " + t.script + "\n";
+    }
+    return out;
+  }
+
+  if (cmd == "save") {
+    tui_.show_tool("music: save");
+    std::string cur_path = proj_dir + "/_current.json";
+    if (!fs::exists(cur_path)) {
+      return "ERROR: no active project to save";
+    }
+    MusicProject proj = MusicProject::load(cur_path);
+    if (proj.name == "_current" || proj.name.empty()) {
+      return "ERROR: project has no name. Use TOOL:MUSIC create <name> first.";
+    }
+    if (!proj.save(proj_dir)) {
+      return "ERROR: failed to save project";
+    }
+    return "OK: saved project \"" + proj.name + "\" to " + proj_dir;
+  }
+
+  if (cmd == "clear") {
+    tui_.show_tool("music: clear");
+    std::string cur_path = proj_dir + "/_current.json";
+    if (!fs::exists(cur_path)) {
+      return "No active project.";
+    }
+    MusicProject proj = MusicProject::load(cur_path);
+    proj.tracks.clear();
+    proj.save(proj_dir);
+    MusicProject cur = proj;
+    cur.name = "_current";
+    cur.save(proj_dir);
+    return "OK: cleared all tracks";
+  }
+
+  return "ERROR: unknown music command: " + cmd +
+         " (use: create, load, list, add, set, remove, tempo, play, show, save, clear)";
+}
+
 ToolMap Agent::build_tool_dispatch() {
   ToolMap tools;
 
@@ -453,6 +724,11 @@ ToolMap Agent::build_tool_dispatch() {
     return "OK: played " + std::to_string(total) + " notes in "
            + std::to_string(result.events.size()) + " events";
   };
+  if (cfg_.audio_multi_track_) {
+    tools["TOOL:MUSIC"] = [this](const std::string &a1, const std::string &a2) -> std::string {
+      return handle_music(a1, a2);
+    };
+  }
   tools["TOOL:PLAN"] = [this](const std::string &a1, const std::string &a2) -> std::string {
     return handle_plan(a1, a2);
   };
