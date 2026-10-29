@@ -14,7 +14,7 @@
 
 #include "usage_log.h"
 #include "logging.h"
-#include "json.h"
+#include "util/json.h"
 
 void UsageLog::record_turn(const TurnMetrics &m) {
   turns.push_back(m);

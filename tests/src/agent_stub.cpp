@@ -48,3 +48,11 @@ bool Agent::rag_load_index(const std::string &path) const {
 void Agent::apply_generation_params() const {
   // no-op in tests
 }
+
+std::string Agent::rag_tool(const std::string &query) const {
+  return "";
+}
+
+std::string Agent::restart() {
+  return "";
+}

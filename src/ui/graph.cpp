@@ -15,7 +15,7 @@
 #include <optional>
 #include "graph.h"
 #include <format>
-#include "json.h"
+#include "util/json.h"
 
 constexpr std::string g_horz_bar = "─";
 constexpr std::string g_vert_bar = "│";

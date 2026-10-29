@@ -15,7 +15,7 @@
 #include <exception>
 
 #include "config.h"
-#include "json.h"
+#include "util/json.h"
 #include "gpu_info.h"
 
 static const std::vector<std::string> ALLOWED_TOOLS = {};
@@ -95,9 +95,9 @@ void HaliConfig::load_settings() {
   std::ifstream f(path);
   if (!f) return;                  // no file → use defaults
   std::ostringstream oss; oss << f.rdbuf();
-  std::string json = oss.str();
+  std::string json_str = oss.str();
 
-  auto doc = json::parse(json);
+  auto doc = json::parse(json_str);
   if (!doc.is_valid()) {
     return;
   }

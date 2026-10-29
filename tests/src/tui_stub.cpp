@@ -18,6 +18,18 @@ void Tui::append_line(const std::string &line) {
   // no-op in tests
 }
 
+void Tui::append_token(const std::string &token) {
+  // no-op in tests
+}
+
+void Tui::append_lines(const std::vector<std::string> &lines) {
+  // no-op in tests
+}
+
+void Tui::set_thinking(bool) {
+  // no-op in tests
+}
+
 void Tui::redraw_all() {
   // no-op in tests
 }

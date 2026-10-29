@@ -21,7 +21,7 @@
 #include "mcp_client.h"
 #include "mcp_format.h"
 #include "curl.h"
-#include "json.h"
+#include "util/json.h"
 #include "logging.h"
 #include "string_utils.h"
 #include "agent_utils.h"

@@ -10,7 +10,7 @@
 #define MCP_FORMAT_H
 
 #include <string>
-#include "json.h"
+#include "util/json.h"
 
 std::string formatSpec(const json::JsonValue &root);
 

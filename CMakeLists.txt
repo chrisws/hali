@@ -191,42 +191,20 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/gen_skills.cmake)
 # -----------------------------
 # hali executable
 # -----------------------------
+file(GLOB HALI_CORE_SOURCES  ${CMAKE_CURRENT_SOURCE_DIR}/src/core/*.cpp)
+file(GLOB HALI_MODEL_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/src/model/*.cpp)
+file(GLOB HALI_UI_SOURCES    ${CMAKE_CURRENT_SOURCE_DIR}/src/ui/*.cpp)
+file(GLOB HALI_TOOLS_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/src/tools/*.cpp)
+file(GLOB HALI_UTIL_SOURCES  ${CMAKE_CURRENT_SOURCE_DIR}/src/util/*.cpp)
+
 add_executable(hali
-  src/string_utils.cpp
-  yyjson/src/yyjson.c
-  src/config.cpp
-  src/planner.cpp
-  src/gpu_info.cpp
-  src/sha1.cpp
-  src/mcp_format.cpp
-  src/mcp_client.cpp
-  src/json.cpp
-  src/input.cpp
-  src/slash_commands.cpp
-  src/llama_sb_rag.cpp
-  src/llama_sb.cpp
-  src/llama_sb_mtp.cpp
-  src/llama_sb_suffix.cpp
-  src/file.cpp
-  src/agent.cpp
-  src/agent_dispatch.cpp
-  src/agent_utils.cpp
-  src/shell_util.cpp
-  src/sysinfo.cpp
-  src/git_tool.cpp
-  src/audit.cpp
-  src/security_audit.cpp
-  src/usage_log.cpp
-  src/build.cpp
-  src/audio.cpp
-  src/audio_impl.cpp
-  src/tui.cpp
-  src/ui_text.cpp
-  src/graph.cpp
-  src/curl.cpp
-  src/webview.cpp
-  src/logging.cpp
   src/main.cpp
+  yyjson/src/yyjson.c
+  ${HALI_CORE_SOURCES}
+  ${HALI_MODEL_SOURCES}
+  ${HALI_UI_SOURCES}
+  ${HALI_TOOLS_SOURCES}
+  ${HALI_UTIL_SOURCES}
 )
 
 target_include_directories(hali PRIVATE
@@ -235,6 +213,11 @@ target_include_directories(hali PRIVATE
   ${LLAMA_DIR}/src
   ${LLAMA_DIR}/common
   ${CMAKE_CURRENT_SOURCE_DIR}/src
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/core
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/model
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/ui
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/tools
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/util
   ${CMAKE_CURRENT_SOURCE_DIR}/yyjson/src
   ${CMAKE_CURRENT_SOURCE_DIR}/libs
   ${CMAKE_BINARY_DIR}
