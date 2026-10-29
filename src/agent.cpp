@@ -110,6 +110,8 @@ bool Agent::setup_model() {
   }
 
   LlamaMemoryInfo mem = llama_->memory_info();
+  cached_mem_info_ = mem;
+  last_mem_update_ = std::chrono::steady_clock::now();
   tui_.dismiss_modal_popup();
   tui_.setup_model(model_name, mem, cfg_.thinking_);
 

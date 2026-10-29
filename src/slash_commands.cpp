@@ -36,6 +36,90 @@ namespace fs = std::filesystem;
 //
 
 //
+// ── Sampling profiles ────────────────────────────────────────────────────
+//
+struct SamplingProfile {
+  const char *name;
+  float temp;
+  float top_p;
+  int   top_k;
+  float min_p;
+  float pen_repeat;
+  float pen_freq;
+  float pen_present;
+  int   pen_last_n;
+};
+
+static const SamplingProfile PROFILES[] = {
+  { "General",     0.60f, 0.95f, 20, 0.00f, 1.00f, 0.00f, 0.00f, 256 },
+  { "Programming", 0.20f, 0.90f, 10, 0.05f, 1.10f, 0.30f, 0.00f, 256 },
+  { "Creative",    0.90f, 0.98f, 40, 0.00f, 0.90f, 0.00f, 0.00f, 128 },
+  { "Concise",     0.30f, 0.85f, 10, 0.10f, 1.20f, 0.50f, 0.10f, 256 },
+};
+
+static void apply_profile(HaliConfig &cfg, const SamplingProfile &p) {
+  cfg.temperature_     = p.temp;
+  cfg.top_p_           = p.top_p;
+  cfg.top_k_           = p.top_k;
+  cfg.min_p_           = p.min_p;
+  cfg.penalty_repeat_  = p.pen_repeat;
+  cfg.penalty_freq_    = p.pen_freq;
+  cfg.penalty_present_ = p.pen_present;
+  cfg.penalty_last_n_  = p.pen_last_n;
+}
+
+//
+// Smart defaults: inspect VRAM + layers after model load and auto-tune.
+// Changes that require a reload are saved but noted as "next load".
+//
+static void apply_smart_defaults(HaliConfig &cfg, const LlamaMemoryInfo &mem, Tui &tui) {
+  std::string changes;
+
+  // If VRAM has headroom and layers are on CPU, push all layers to GPU.
+  if (mem.n_layers_cpu > 0 && mem.vram_percent < 75.0f) {
+    cfg.n_gpu_layers_ = mem.n_layers_total;
+    changes += "n_gpu_layers → " + std::to_string(mem.n_layers_total) + " (VRAM headroom)";
+  }
+
+  // If VRAM is under pressure, tighten settings.
+  if (mem.vram_percent > 90.0f) {
+    if (cfg.kv_preset_ != KVCachePreset::Compact) {
+      cfg.kv_preset_ = KVCachePreset::Compact;
+      changes += std::string(changes.empty() ? "" : "; ") + "kv_preset → compact (VRAM pressure)";
+    }
+    if (cfg.n_ctx_ > 32768) {
+      cfg.n_ctx_ = 32768;
+      changes += std::string(changes.empty() ? "" : "; ") + "n_ctx → 32768 (VRAM pressure)";
+    }
+  }
+
+  if (!changes.empty()) {
+    tui.append_line(ICON_SYS + "Smart defaults: " + changes);
+    tui.append_line(ICON_SYS + "  (n_gpu_layers / n_ctx / kv_preset take effect on next /model load)");
+  }
+}
+
+//
+// Prompt the user to pick a sampling profile after model load.
+//
+static void prompt_profile(HaliConfig &cfg, Agent &agent, Tui &tui) {
+  std::vector<std::string> names;
+  for (const auto &p : PROFILES) {
+    names.emplace_back(p.name);
+  }
+  int idx = tui.list_picker(names, "Sampling Profile");
+  if (idx < 0) {
+    return;  // user cancelled – keep current settings
+  }
+  apply_profile(cfg, PROFILES[idx]);
+  if (agent.model_loaded()) {
+    agent.apply_generation_params();
+  }
+  cfg.save_settings();
+  tui.append_line(ICON_SYS + "Profile applied: " + PROFILES[idx].name);
+}
+
+//
 // /model – pick or set the inference model
 //
 static void slash_model(const std::string &rest, HaliConfig &cfg, Agent &agent, Tui &tui) {
@@ -52,6 +136,10 @@ static void slash_model(const std::string &rest, HaliConfig &cfg, Agent &agent, 
   }
   cfg.model_path_ = path;
   if (agent.setup_model()) {
+    // Apply smart defaults based on VRAM / layer info.
+    apply_smart_defaults(cfg, agent.last_mem_info(), tui);
+    // Prompt for a sampling profile.
+    prompt_profile(cfg, agent, tui);
     std::string sysp = cfg.build_system_prompt();
     agent.reset_conversation(sysp);
     cfg.save_settings();

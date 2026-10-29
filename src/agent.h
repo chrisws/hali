@@ -103,6 +103,7 @@ struct Agent {
   std::string memory_info_text() const;
   void apply_generation_params() const;
   bool model_loaded() const { return model_loaded_; }
+  const LlamaMemoryInfo &last_mem_info() const { return cached_mem_info_; }
   void save_mtp_best_settings();
   void dump_usage_log(const std::string &path) const;
   void generate_badge(const std::string &sandbox);
