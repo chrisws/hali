@@ -63,7 +63,7 @@ and assess whether it is a genuine injection attempt or benign content
 
 ### 5. Check .hali/ Directory Integrity
 - `TOOL:LIST .hali` — verify only expected files are present
-- `TOOL:READ .hali/hali.config.json` — confirm no unexpected `extra_dirs`
+- `TOOL:READ .hali/config.json` — confirm no unexpected `extra_dirs`
   or `disable_run: false` combined with suspicious content
 - Verify `security_audit.json` does not already exist (if it does, the
   hash will be validated by Hali automatically)

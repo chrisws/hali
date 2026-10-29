@@ -1,10 +1,10 @@
 {
   "model": {
     "path": "/home/chrisws/models/Swift-1.5-Qwen3.8-27B-GSQ-RCO-IQ3_S-mtp.gguf",
-    "kv_cache_preset": "f16",
+    "kv_cache_preset": "balanced",
     "n_ctx": 50000,
     "n_batch": 512,
-    "n_gpu_layers": 64,
+    "n_gpu_layers": 999,
     "n_threads": 16,
     "n_threads_batch": 16,
     "temperature": 0.2,

@@ -918,11 +918,11 @@ static void test_tool_search_name() {
 
   // Create test files
   {
-    ofstream out(sandbox + "/hali.config.json");
+    ofstream out(sandbox + "/config.json");
     out << "{\"model\": \"test\"}\n";
   }
   {
-    ofstream out(sandbox + "/hali.config-mtp.json");
+    ofstream out(sandbox + "/config-mtp.json");
     out << "{\"model\": \"test\", \"temp\": 0}\n";
   }
   {
@@ -939,9 +939,9 @@ static void test_tool_search_name() {
   }
 
   // --name with glob pattern matching filenames
-  string result = tool_search(sandbox, "hali.config*", ".", "--name");
-  assert(result.find("hali.config.json") != string::npos);
-  assert(result.find("hali.config-mtp.json") != string::npos);
+  string result = tool_search(sandbox, "config*", ".", "--name");
+  assert(result.find("config.json") != string::npos);
+  assert(result.find("config-mtp.json") != string::npos);
   assert(result.find("other.txt") == string::npos);
 
   // --name --recursive with glob for .cpp files
