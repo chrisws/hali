@@ -517,7 +517,7 @@ bool Agent::run_turn(const std::string &user_message) {
       if (er.clear_buffer) {
         buffer = "";
       } else {
-        if (!er.thought.empty()) {
+        if (!utils::is_blank(er.thought)) {
           tui_.append_token(ICON_THINK + er.thought);
         }
         buffer = '\n' + buffer.substr(er.pos + er.tag_len);
