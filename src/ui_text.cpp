@@ -13,6 +13,7 @@
 #include "ui_text.h"
 #include "icon.h"
 #include "slash_commands.h"
+#include "security_audit.h"
 
 namespace ui {
 
@@ -222,6 +223,12 @@ void welcome(Tui &tui, const std::string &sandbox) {
   tui.append_line("[logo_3]      ▀▄█░█▓▄   ▀▄█░█▓▄      ▀▄█ ░█▓▄    ▓▓▓      ");
   tui.append_line("[logo_5]  ─────────── agentic LLM shell v1.0 ──────────────");
   tui.append_line(ICON_SYS + " Sandbox : " + sandbox);
+  if (!sec_audit::is_audited(sandbox)) {
+    tui.append_line("[warn]  ⚠ Sandbox has NOT been security audited.");
+    tui.append_line("[warn]    Untrusted files may contain prompt-injection attacks.");
+    tui.append_line("[warn]    Run /skill security-audit to perform an audit,");
+    tui.append_line("[warn]    then /security-audit to mark the sandbox as safe.");
+  }
   tui.append_line(ICON_SYS + " /help for commands, exit to quit");
   tui.append_line("");
   tui.redraw_all();

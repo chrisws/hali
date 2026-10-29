@@ -215,6 +215,7 @@ add_executable(hali
   src/sysinfo.cpp
   src/git_tool.cpp
   src/audit.cpp
+  src/security_audit.cpp
   src/usage_log.cpp
   src/build.cpp
   src/audio.cpp

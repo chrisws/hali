@@ -28,6 +28,7 @@
 #include "audit.h"
 #include "build.h"
 #include "skills_generated.h"
+#include "security_audit.h"
 
 namespace fs = std::filesystem;
 
@@ -493,6 +494,35 @@ static void slash_audit(const std::string &rest, HaliConfig &cfg, Tui &tui, Agen
 }
 
 //
+// /security-audit – mark the sandbox as security-audited
+//
+static void slash_security_audit(HaliConfig &cfg, Tui &tui) {
+  if (sec_audit::is_audited(cfg.sandbox_)) {
+    tui.append_line(ICON_SYS + "Sandbox is already marked as security-audited.");
+    tui.append_line(ICON_SYS + sec_audit::status_message(cfg.sandbox_));
+    tui.redraw_all();
+    return;
+  }
+
+  if (!tui.confirm_dialog("Mark this sandbox as security-audited?\n\n"
+                          "This should only be done after running the\n"
+                          "security-audit skill and verifying no\n"
+                          "prompt-injection or malicious content exists.")) {
+    tui.append_line(ICON_SYS + "Cancelled.");
+    tui.redraw_all();
+    return;
+  }
+
+  if (sec_audit::mark_audited(cfg.sandbox_)) {
+    tui.append_line(ICON_SYS + "Sandbox marked as security-audited.");
+    tui.append_line(ICON_SYS + sec_audit::status_message(cfg.sandbox_));
+  } else {
+    tui.append_line(ICON_ERR + "Failed to write audit marker.");
+  }
+  tui.redraw_all();
+}
+
+//
 // /skill [name] [kickoff] – load a skill into the conversation
 //
 static void slash_skill(const std::string &rest_in, HaliConfig &cfg,
@@ -750,6 +780,10 @@ void handle_slash(const std::string &input, HaliConfig &cfg, Agent &agent, Tui &
     slash_audit(rest, cfg, tui, agent);
     return;
   }
+  if (verb == "/security-audit") {
+    slash_security_audit(cfg, tui);
+    return;
+  }
   if (verb == "/skill") {
     slash_skill(rest, cfg, agent, tui);
     return;
@@ -793,6 +827,7 @@ const std::vector<SlashCommand> &slash_commands() {
     {"/allow-remove", "[path]",        "remove an allowed directory"},
     {"/revoke",       "<name>",        "remove an approved RUN command"},
     {"/audit",    "[path]",            "scan codebase for model-hostility issues"},
+    {"/security-audit", "",            "mark sandbox as security-audited"},
     {"/skill",    "[name] [kickoff]",  "load a skill into the conversation"},
     {"/lint",     "",                  "list source files and run clang-tidy"},
     {"/tool",     "[TOOL:NAME [args]]","invoke a tool (no args lists all tools)"},

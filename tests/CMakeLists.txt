@@ -34,6 +34,7 @@ add_executable(hali_tests
   ../src/slash_commands.cpp
   ../src/planner.cpp
   ../src/audit.cpp
+  ../src/security_audit.cpp
   ../src/sysinfo.cpp
   ../src/git_tool.cpp
   src/gpu_info_stub.cpp
