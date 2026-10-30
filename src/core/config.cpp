@@ -402,7 +402,8 @@ std::string HaliConfig::prompt_core() const {
     "  TOOL:INTROSPECT            show current model settings\n"
     "  TOOL:CURL   <url>          HTTP GET, returns response body (max 32 KB)\n"
     "  TOOL:PERMISSION            ask user for explicit permission\n"
-    "  TOOL:RESTART               restart after writing current task context to `.hali/SESSION.md`\n\n"
+    "  TOOL:RESTART               restart after writing current task context to `.hali/SESSION.md`\n"
+    "  TOOL:GUI    <help|html|input|clear>  display HTML, check input, or clear browser\n\n"
 
     "## Tool Decision Rules\n"
     "Use tools ONLY if:\n"
@@ -702,4 +703,20 @@ int HaliConfig::set_value(const std::string &key, const std::string &val,
     return 2;
   }
   return 0;
+}
+
+std::string HaliConfig::gui_help() {
+  return
+    "TOOL:GUI <html_fragment>   Display HTML in the browser at /ai\n"
+    "TOOL:GUI input             Check for user input from the browser\n"
+    "TOOL:GUI clear             Clear the browser display\n"
+    "TOOL:GUI help              Show this help\n\n"
+    "Rules:\n"
+    "- Content is an HTML fragment (not a full page) rendered inside a container.\n"
+    "- Can include inline <style> and <script> tags.\n"
+    "- Each call REPLACES the previous content.\n"
+    "- For user interactions, use window._ws_sendMessage(json) in your HTML to send data back.\n"
+    "- Check for user input with TOOL:GUI input (returns 'no input' if none pending).\n"
+    "- Use TOOL:GUI clear to reset the display to the waiting state.\n"
+    "- The browser page is at http://localhost:9080/ai\n";
 }

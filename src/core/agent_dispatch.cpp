@@ -31,6 +31,7 @@
 #include "git_tool.h"
 #include "curl.h"
 #include "music_project.h"
+#include "webview.h"
 
 namespace fs = std::filesystem;
 
@@ -515,6 +516,43 @@ std::string Agent::handle_music(const std::string &a1, const std::string &a2) {
          " (use: create, load, list, add, set, remove, tempo, play, show, save, clear)";
 }
 
+std::string Agent::handle_gui(const std::string &a1, const std::string &a2) {
+  std::string full = a1;
+  if (!a2.empty()) { full += " " + a2; }
+  full = utils::trim(full);
+  if (full.empty()) {
+    return "ERROR: usage: TOOL:GUI <html> | input | clear | help";
+  }
+  if (full == "help") {
+    return HaliConfig::gui_help();
+  }
+  if (full == "input") {
+    tui_.show_tool("gui: input");
+    if (webview::has_message()) {
+      return webview::get_message();
+    }
+    return "no input";
+  }
+  if (full == "clear") {
+    tui_.show_tool("gui: clear");
+    webview::broadcast_message("clear");
+    return "OK: cleared";
+  }
+  tui_.show_tool("gui: display");
+
+  // auto-save HTML to .hali/web/ for later inspection
+  std::string web_dir = cfg_.sandbox_ + "/.hali/web";
+  make_dir(web_dir);
+  char ts[32];
+  time_t now = time(nullptr);
+  strftime(ts, sizeof(ts), "%Y%m%d-%H%M%S", localtime(&now));
+  std::string save_path = web_dir + "/gui-" + ts + ".html";
+  tool_write(save_path, a2);
+
+  webview::broadcast_message(a2);
+  return "OK: displayed (saved to " + save_path + ")";
+}
+
 ToolMap Agent::build_tool_dispatch() {
   ToolMap tools;
 
@@ -734,6 +772,9 @@ ToolMap Agent::build_tool_dispatch() {
   };
   tools["TOOL:CHOICE"] = [this](const std::string &a1, const std::string &a2) -> std::string {
     return handle_choice(a1, a2);
+  };
+  tools["TOOL:GUI"] = [this](const std::string &a1, const std::string &a2) -> std::string {
+    return handle_gui(a1, a2);
   };
   return tools;
 }

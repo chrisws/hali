@@ -105,11 +105,41 @@ static std::string mime_type(const std::string &path) {
 }
 
 // ────────────────────────────────────────────────────────────────────────────
+// Embedded favicon (32×32 PNG — simple bird wing)
+// ────────────────────────────────────────────────────────────────────────────
+
+static const uint8_t FAVICON_PNG[] = {
+  0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A,
+  0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
+  0x00, 0x00, 0x00, 0x20, 0x00, 0x00, 0x00, 0x20,
+  0x08, 0x06, 0x00, 0x00, 0x00, 0x73, 0x7A, 0x7A,
+  0xF4, 0x00, 0x00, 0x00, 0x6C, 0x49, 0x44, 0x41,
+  0x54, 0x78, 0x9C, 0x63, 0x60, 0x18, 0x05, 0xA3,
+  0x60, 0x14, 0x8C, 0x82, 0xA1, 0x00, 0xEE, 0x6C,
+  0xE9, 0xF9, 0x4F, 0x2E, 0x1E, 0x30, 0x8B, 0x29,
+  0x76, 0x08, 0x4C, 0xE3, 0x96, 0x9E, 0x14, 0x14,
+  0x83, 0x28, 0xE1, 0x93, 0xE5, 0x73, 0x6A, 0x3A,
+  0x80, 0x68, 0x47, 0x8C, 0x3A, 0x60, 0xD4, 0x01,
+  0xA3, 0x0E, 0x40, 0x76, 0xC4, 0x80, 0x94, 0x03,
+  0xC8, 0x8E, 0xA0, 0x96, 0x03, 0x48, 0xB6, 0x1C,
+  0x5B, 0x68, 0xD0, 0x34, 0xC8, 0x71, 0x81, 0x05,
+  0x15, 0x01, 0x70, 0x43, 0x60, 0x86, 0x82, 0xC4,
+  0x90, 0x2D, 0xC1, 0x26, 0x86, 0xAE, 0x17, 0x9B,
+  0x79, 0x24, 0x3B, 0x80, 0x56, 0x62, 0x83, 0xDB,
+  0x01, 0xA3, 0x60, 0x14, 0x8C, 0x02, 0x5A, 0x03,
+  0x00, 0x71, 0xB2, 0x70, 0xE7, 0x87, 0x92, 0x67,
+  0x46, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E,
+  0x44, 0xAE, 0x42, 0x60
+};
+static constexpr size_t FAVICON_PNG_SIZE = sizeof(FAVICON_PNG);
+
+// ────────────────────────────────────────────────────────────────────────────
 // Reload client snippet — injected into every .html response.
 // ────────────────────────────────────────────────────────────────────────────
 
 static const std::string RELOAD_SNIPPET =
-  "\n<script>\n"
+  "\n<link rel=\"icon\" href=\"/favicon.ico\">\n"
+  "<script>\n"
   "document.addEventListener('DOMContentLoaded', () => {\n"
   "  console.log('[hali] DOMContentLoaded — creating WebSocket');\n"
   "  const proto = location.protocol === 'https:' ? 'wss://' : 'ws://';\n"
@@ -464,6 +494,13 @@ struct WebServer {
     send_http_response(fd, 200, "OK", mime_type(rel_path), content);
   }
 
+  // Serve the embedded favicon PNG.
+  void serve_favicon(int fd) const {
+    std::string body(reinterpret_cast<const char *>(FAVICON_PNG), FAVICON_PNG_SIZE);
+    send_http_response(fd, 200, "OK", "image/x-icon", body);
+    ::close(fd);
+  }
+
   // Handle a WebSocket upgrade request and pump the bidirectional channel.
   void handle_ws_upgrade(int fd, const Request &req) {
     std::string key = req.header("sec-websocket-key");
@@ -547,7 +584,74 @@ struct WebServer {
     ::close(fd);
   }
 
-  // Per-connection handler: WebSocket upgrade or static file.
+  // Serve the built-in /ai shell page.  This page is generated in-memory
+  // (not from the filesystem) and includes the WebSocket client setup
+  // inline so it works without the RELOAD_SNIPPET injection path.
+  void serve_ai_page(int fd) const {
+    std::string page =
+      "<!DOCTYPE html>\n"
+      "<html>\n"
+      "<head>\n"
+      "<title>Hali</title>\n"
+      "<link rel=\"icon\" href=\"/favicon.ico\">\n"
+      "<style>\n"
+      "  body { margin:0; background:#1a1a2e; color:#eee; font-family:monospace; }\n"
+      "  #container { width:100vw; height:100vh; display:flex; align-items:center;\n"
+      "               justify-content:center; overflow:auto; }\n"
+      "  .waiting { opacity:0.5; animation: pulse 2s infinite; }\n"
+      "  @keyframes pulse { 50% { opacity:0.2; } }\n"
+      "</style>\n"
+      "</head>\n"
+      "<body>\n"
+      "<div id=\"container\"><span class=\"waiting\">&#x23F3; Hali is ready &mdash; ask me to display something</span></div>\n"
+      "<script>\n"
+      "(function() {\n"
+      "  function handleMessage(e) {\n"
+      "    if (typeof e.data !== 'string') { return; }\n"
+      "    if (e.data === 'reload') { location.reload(); return; }\n"
+      "    if (e.data === 'clear') {\n"
+      "      var el = document.getElementById('container');\n"
+      "      if (el) { el.innerHTML = '<span class=\"waiting\">&#x23F3; Hali is ready</span>'; }\n"
+      "      return;\n"
+      "    }\n"
+      "    if (e.data.charAt(0) === '<') {\n"
+      "      var c = document.getElementById('container');\n"
+      "      if (!c) { return; }\n"
+      "      c.innerHTML = '';\n"
+      "      var f = document.createElement('iframe');\n"
+      "      f.style.width = '100vw';\n"
+      "      f.style.height = '100vh';\n"
+      "      f.style.border = 'none';\n"
+      "      f.srcdoc = e.data;\n"
+      "      c.appendChild(f);\n"
+      "      return;\n"
+      "    }\n"
+      "    try { eval(e.data); } catch (err) { console.error('[hali] eval error:', err); }\n"
+      "  }\n"
+      "  window._ws_onMessage = handleMessage;\n"
+      "  window._ws_sendMessage = function(msg) {\n"
+      "    if (window._ws && window._ws.readyState === 1) { window._ws.send(msg); }\n"
+      "  };\n"
+      "  document.addEventListener('DOMContentLoaded', function() {\n"
+      "    var proto = location.protocol === 'https:' ? 'wss://' : 'ws://';\n"
+      "    var ws = new WebSocket(proto + location.host + '/__hali_ws__');\n"
+      "    window._ws = ws;\n"
+      "    ws.onmessage = function(e) { handleMessage(e); };\n"
+      "    ws.onopen = function() {\n"
+      "      if (typeof window._ws_onOpen === 'function') { window._ws_onOpen(); }\n"
+      "    };\n"
+      "    ws.onclose = function(e) { console.log('ws closed', e); };\n"
+      "    ws.onerror = function(e) { console.error('ws error', e); };\n"
+      "  });\n"
+      "})();\n"
+      "</script>\n"
+      "</body>\n"
+      "</html>\n";
+    send_http_response(fd, 200, "OK", "text/html; charset=utf-8", page);
+    ::close(fd);
+  }
+
+  // Per-connection handler: WebSocket upgrade, /ai shell, or static file.
   void handle_client(int fd) {
     log_write(LEVEL_INFO, "webview", "handle request entered");
 
@@ -562,6 +666,10 @@ struct WebServer {
     // ── Dispatch ────────────────────────────────────────────────────
     if (req.path == std::string(WS_PATH)) {
       handle_ws_upgrade(fd, req);
+    } else if (req.path == "/ai") {
+      serve_ai_page(fd);
+    } else if (req.path == "/favicon.ico") {
+      serve_favicon(fd);
     } else {
       handle_static_file(fd, req);
     }

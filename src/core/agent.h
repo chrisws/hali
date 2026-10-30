@@ -127,6 +127,7 @@ struct Agent {
   std::string handle_plan(const std::string &a1, const std::string &a2);
   std::string handle_choice(const std::string &a1, const std::string &a2);
   std::string handle_music(const std::string &a1, const std::string &a2);
+  std::string handle_gui(const std::string &a1, const std::string &a2);
   std::string rag_tool(const std::string &agent_query) const;
   std::string restart();
   double elapsed_seconds() const;

@@ -119,6 +119,7 @@ add_executable(hali_tests
   src/music_project_test.cpp
   src/rag_test.cpp
   src/knowledge_test.cpp
+  src/gui_test.cpp
   src/main.cpp
 )
 

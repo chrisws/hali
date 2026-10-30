@@ -132,6 +132,8 @@ struct HaliConfig {
   std::string mcp_context_;
   std::vector<std::string> mcp_filter_;
 
+  static std::string gui_help();
+
 private:
   static std::string prompt_file_ops();
   static std::string prompt_interaction();
