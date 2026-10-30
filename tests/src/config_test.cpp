@@ -369,6 +369,38 @@ static void test_system_prompt_extra_dirs() {
   cout << "test_system_prompt_extra_dirs passed" << endl;
 }
 
+static void test_introspect_knowledge_files_filter() {
+  HaliConfig cfg;
+
+  // Simulate what main.cpp does: auto-included + user files
+  cfg.knowledge_files_.push_back("AGENTS.md");
+  cfg.knowledge_files_.push_back("hali.md");
+  cfg.knowledge_files_.push_back("persona.md");
+  cfg.knowledge_files_.push_back("my_notes.md");
+  cfg.knowledge_files_.push_back("project_guide.md");
+
+  string json = cfg.introspect();
+
+  // Auto-included files must NOT appear in the serialized config
+  assert(json.find("AGENTS.md") == string::npos);
+  assert(json.find("hali.md") == string::npos);
+  assert(json.find("persona.md") == string::npos);
+
+  // User-specified files MUST appear
+  assert(json.find("my_notes.md") != string::npos);
+  assert(json.find("project_guide.md") != string::npos);
+
+  // Verify the array has exactly 2 entries
+  auto doc = json::parse(json);
+  assert(doc.is_valid());
+  auto root = doc.get_root();
+  vector<json::JsonValue> kfs;
+  assert(root.get_array("knowledge_files", kfs));
+  assert(kfs.size() == 2);
+
+  cout << "test_introspect_knowledge_files_filter passed" << endl;
+}
+
 void config_test() {
   cout << "=== Config Tests (plan 12) ===\n\n";
   test_set_value_float();
@@ -386,5 +418,6 @@ void config_test() {
   test_validation_defaults();
   test_validation_load();
   test_system_prompt_extra_dirs();
+  test_introspect_knowledge_files_filter();
   cout << "\nAll config tests passed!\n" << endl;
 }

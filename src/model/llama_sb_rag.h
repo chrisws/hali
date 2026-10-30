@@ -9,7 +9,9 @@
 #ifndef LLAMA_SB_RAG_H
 #define LLAMA_SB_RAG_H
 
+#include <map>
 #include <string>
+#include <vector>
 
 struct RagChunk {
   std::string        text;
@@ -47,6 +49,12 @@ struct RagDB {
 };
 
 //
+// split prose text into chunks of ~800 chars (paragraph-aware)
+// returns the chunk strings, no metadata
+//
+std::vector<std::string> prose_chunk_split(const std::string &text);
+
+//
 // per-session deduplication + token budget
 //
 struct RagSession {
@@ -80,5 +88,26 @@ struct RagSession {
   }
 };
 
+/*
+ * Multi-DB container: holds named RagDB instances so the
+ * agent can search across multiple knowledge sources.
+ */
+struct RagLibrary {
+  std::map<std::string, RagDB> dbs;
+
+  bool add(const std::string &name, RagDB db);
+  bool remove(const std::string &name);
+  RagDB *get(const std::string &name);
+  const RagDB *get(const std::string &name) const;
+  std::vector<std::string> names() const;
+  int  size()         const { return (int)dbs.size(); }
+  bool empty()        const { return dbs.empty(); }
+  int  total_chunks() const;
+
+  /* load all .rag files from a directory; returns count loaded */
+  int  load_dir(const std::string &dir);
+  /* save all DBs to a directory; returns true on success */
+  bool save_dir(const std::string &dir) const;
+};
 
 #endif

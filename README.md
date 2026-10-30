@@ -150,6 +150,59 @@ Inside the TUI, type a leading `/` to run a built-in command. Tab-completion is 
 
 Settable keys via `/set`: `temperature`, `top_p`, `top_k`, `min_p`, `penalty_repeat`, `penalty_last_n`, `rag_top_k`, `n_gpu_layers`, `offload_kqv`, `run_allowed` (comma-separated list of allowed program basenames, or `none` to clear), `mtp_enabled`, `mtp_n_max`, `mtp_n_min`, `mtp_p_min`, `mtp_adaptive`, `mtp_pos_threshold`, `rope_freq_scale`, `rope_scaling_type`, `audio_enabled`, `audio_volume`, `audio_tool_tick`, `audio_user_prompt`, `val_write_validate`, `val_patch_validate`, `val_write_size_warn`, `log_erase`, `disable_run`, `disable_save_on_exit`.
 
+## Knowledge Base (ZIM)
+
+Hali can build offline knowledge bases from [ZIM archives](https://www.kiwix.org/) (Wikipedia, DevDocs, Stack Exchange, etc.) and query them via RAG. The workflow is: **list → download → index → query**.
+
+### Prerequisites
+
+- An **embedding model** loaded (`/embed` or `-e` at startup) — required for indexing and retrieval.
+- **kiwix-tools** (`zimdump`) installed for ZIM text extraction: `sudo apt install kiwix-tools`.
+- Network access for downloading ZIM files (one-time; files are cached locally).
+
+### The `/index` command
+
+All subcommands that accept a source name will show an **interactive picker** (TUI multi-choice popup) when no name is given. Press **Esc** to cancel.
+
+| Subcommand | Description |
+|---|---|
+| `/index` | Picker: select a source to download+index, or "status" |
+| `/index status` | Show status: available sources, loaded sources, disk usage |
+| `/index <id>` | Download ZIM, build RAG index, and load (one step) |
+| `/index load [id]` | Load a `.rag` index into the session (picker if no id) |
+| `/index unload [id]` | Remove a loaded index from the session (picker if no id) |
+| `/index remove [id]` | Delete the `.rag` and `.zim` files for a source (picker if no id) |
+
+### Workflow
+
+```
+# 1. Pick a source from the interactive list
+/index
+
+# 2. (or target a specific source directly)
+/index devdocs_en_python
+
+# 3. Query it — the model uses TOOL:RAG automatically
+```
+
+### Storage
+
+Files are stored under the sandbox's `.hali/` directory:
+
+| Path | Contents |
+|---|---|
+| `.hali/rag/<id>.rag` | Binary RAG index (embeddings + chunks) |
+| `.hali/zim/<id>.zim` | Downloaded ZIM archive |
+| `share/kiwix-meta.json` | Meta-index of available sources (shipped with Hali) |
+
+### Auto-load
+
+At startup, after the embedding model is loaded, Hali automatically scans `.hali/rag/` and loads any `.rag` files found. This means previously indexed sources are available immediately without manual `/index load`.
+
+### Integration with RAG
+
+Indexed sources are merged into the same `RagLibrary` used by `TOOL:RAG`. When the model calls `TOOL:RAG`, it searches across all loaded sources (project code + knowledge base) and returns the most relevant chunks. The model's system prompt is informed of available knowledge sources so it knows when to query them.
+
 ## Building
 
 Hali vendors llama.cpp as a submodule and links everything statically.

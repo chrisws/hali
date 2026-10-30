@@ -121,6 +121,9 @@ struct HaliConfig {
   std::vector<std::string> run_allowed_;
   std::vector<std::string> knowledge_files_;
 
+  // Files auto-discovered at startup; excluded from config.json persistence.
+  static const std::vector<std::string> AUTO_KNOWLEDGE_FILES;
+
   // Extra directories allowed for read-only access (READ, SEARCH, LIST, EXISTS)
   std::vector<std::string> extra_dirs_;
   RunAllowed user_run_allowed_;

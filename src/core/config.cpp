@@ -13,12 +13,17 @@
 #include <system_error>
 #include <ios>
 #include <exception>
+#include <algorithm>
 
 #include "config.h"
 #include "util/json.h"
 #include "gpu_info.h"
 
 static const std::vector<std::string> ALLOWED_TOOLS = {};
+
+const std::vector<std::string> HaliConfig::AUTO_KNOWLEDGE_FILES = {
+  "hali.md", "persona.md", "AGENTS.md"
+};
 
 static KVCachePreset to_kv_preset(const std::string &str) {
   if (str == "f16") {
@@ -615,7 +620,17 @@ std::string HaliConfig::introspect() const {
   root.set_bool("thinking", thinking_);
   root.set_int("web_port", web_port_);
   root.set_bool("enabled_backups", enabled_backups_);
-  root.set_arr("knowledge_files", knowledge_files_);
+
+  // Filter out auto-included knowledge files so they are not persisted
+  // to config.json — they are re-discovered at startup.
+  std::vector<std::string> user_kf;
+  for (const auto &kf : knowledge_files_) {
+    if (std::find(AUTO_KNOWLEDGE_FILES.begin(), AUTO_KNOWLEDGE_FILES.end(), kf)
+        == AUTO_KNOWLEDGE_FILES.end()) {
+      user_kf.emplace_back(kf);
+    }
+  }
+  root.set_arr("knowledge_files", user_kf);
   root.set_arr("mcp_filter", mcp_filter_);
   root.set_int("val_write_size_warn", val_write_size_warn_);
 

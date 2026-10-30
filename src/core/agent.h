@@ -69,12 +69,11 @@ struct BroadcastState {
 //
 struct RagState {
   std::unique_ptr<Llama>      embed_llama;
-  std::unique_ptr<RagDB>      rag_db;
-  std::unique_ptr<RagSession> rag_session;
+  std::unique_ptr<RagLibrary> rag_lib;
   mutable std::string last_query;
   mutable std::string last_result;
 
-  bool active() const { return embed_llama && rag_db && rag_session; }
+  bool active() const { return embed_llama && rag_lib; }
   void reset_cache() const { last_query.clear(); last_result.clear(); }
 };
 
@@ -100,10 +99,12 @@ struct Agent {
   void notify(const std::string &msg);
   bool rag_index(const std::string &path) const;
   bool rag_load_index(const std::string &path) const;
+  int  rag_load_dir(const std::string &dir) const;
   std::string memory_info_text() const;
   void apply_generation_params() const;
   bool model_loaded() const { return model_loaded_; }
   const LlamaMemoryInfo &last_mem_info() const { return cached_mem_info_; }
+  Llama *embed_model() const { return rag_.embed_llama.get(); }
   void save_mtp_best_settings();
   void dump_usage_log(const std::string &path) const;
   void generate_badge(const std::string &sandbox);

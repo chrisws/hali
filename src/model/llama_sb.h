@@ -24,6 +24,7 @@ using namespace std;
 struct Llama;
 struct RagDB;
 struct RagSession;
+struct RagLibrary;
 
 enum class KVCachePreset {
   F16,       // ggml_type F16/F16, flash attn on - max quality, most VRAM
@@ -320,8 +321,16 @@ struct Llama {
   // retrieves rag query context information from the rag database
   std::string rag_retrieve(const RagDB &db, const std::string &query, int top_k, RagSession &session);
 
+  // retrieves from all DBs in a RagLibrary, sharing a token budget
+  std::string rag_retrieve_multi(RagLibrary &lib, const std::string &query,
+                                 int top_k, int ctx_size);
+
   // indexes the details from the given file
   bool rag_index(RagDB &db, const std::string &filepath);
+
+  // indexes prose text (from ZIM extraction or plain text)
+  bool rag_index_prose(RagDB &db, const std::string &text,
+                       const std::string &source);
 
   //  returns the embedding dimension for the loaded model
   int get_embed_dim() const { return _model != nullptr ? llama_model_n_embd(_model) : 0; }

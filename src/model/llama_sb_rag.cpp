@@ -245,6 +245,121 @@ static bool chunk_file(const fs::path &path, EmitChunk emit_chunk) {
   return true;
 }
 
+/* ── prose chunking ────────────────────────────────────────── */
+
+static constexpr size_t PROSE_TARGET  = 800;
+static constexpr size_t PROSE_MAX     = 1200;
+static constexpr size_t PROSE_MIN     = 80;
+
+//
+// split a long paragraph on sentence boundaries
+//
+static void split_long_paragraph(const std::string &para,
+                                  std::vector<std::string> &out) {
+  std::string buf;
+  for (size_t i = 0; i < para.size(); i++) {
+    buf += para[i];
+    if ((para[i] == '.' || para[i] == '!' || para[i] == '?') &&
+        buf.size() >= PROSE_TARGET) {
+      /* look ahead for whitespace to confirm sentence end */
+      size_t j = i + 1;
+      while (j < para.size() && para[j] == ' ') j++;
+      if (j >= para.size() ||
+          (para[j] >= 'A' && para[j] <= 'Z') ||
+          para[j] == '"' || para[j] == '\'') {
+        out.push_back(buf);
+        buf.clear();
+        i = j - 1; /* skip the space(s) */
+      }
+    }
+  }
+  if (buf.size() >= PROSE_MIN) {
+    out.push_back(buf);
+  }
+}
+
+/*
+ * Split prose text into chunks of ~PROSE_TARGET chars.
+ * Returns the chunk strings (no source/type metadata).
+ * This is the pure logic, testable without embeddings.
+ */
+std::vector<std::string> prose_chunk_split(const std::string &text) {
+  /* split on double-newline */
+  std::vector<std::string> paragraphs;
+  {
+    std::string para;
+    size_t i = 0;
+    while (i < text.size()) {
+      if (text[i] == '\n' && i + 1 < text.size() && text[i + 1] == '\n') {
+        if (!para.empty()) {
+          paragraphs.push_back(para);
+          para.clear();
+        }
+        i += 2;
+      } else {
+        para += text[i];
+        i++;
+      }
+    }
+    if (!para.empty()) {
+      paragraphs.push_back(para);
+    }
+  }
+
+  std::vector<std::string> chunks;
+  std::string buf;
+  for (const auto &p : paragraphs) {
+    /* trim leading/trailing whitespace from paragraph */
+    size_t s = 0, e = p.size();
+    while (s < e && (p[s] == ' ' || p[s] == '\t' || p[s] == '\n')) s++;
+    while (e > s && (p[e-1] == ' ' || p[e-1] == '\t' || p[e-1] == '\n')) e--;
+    std::string trimmed = p.substr(s, e - s);
+    if (trimmed.empty()) continue;
+
+    if (trimmed.size() > PROSE_MAX) {
+      /* flush current buffer first */
+      if (buf.size() >= PROSE_MIN) {
+        chunks.push_back(buf);
+        buf.clear();
+      }
+      /* split long paragraph on sentences */
+      std::vector<std::string> parts;
+      split_long_paragraph(trimmed, parts);
+      for (const auto &part : parts) {
+        if (buf.size() + part.size() > PROSE_TARGET && buf.size() >= PROSE_MIN) {
+          chunks.push_back(buf);
+          buf.clear();
+        }
+        buf += part + " ";
+      }
+    } else {
+      if (buf.size() + trimmed.size() > PROSE_TARGET && buf.size() >= PROSE_MIN) {
+        chunks.push_back(buf);
+        buf.clear();
+      }
+      buf += trimmed + " ";
+    }
+  }
+
+  /* flush remainder */
+  if (buf.size() >= PROSE_MIN) {
+    chunks.push_back(buf);
+  }
+
+  return chunks;
+}
+
+template<typename EmitChunk>
+static bool chunk_prose(const std::string &text,
+                        const std::string &source,
+                        EmitChunk emit) {
+  auto chunks = prose_chunk_split(text);
+  for (const auto &c : chunks) {
+    emit(source, "prose", c);
+  }
+  return true;
+}
+
 //
 // cosine similarity (vectors already L2-normalized)
 //
@@ -299,6 +414,34 @@ bool Llama::rag_index(RagDB &db, const std::string &filepath) {
 }
 
 //
+// index prose text
+//
+static constexpr const char *INSTRUCT_EMBED_PROSE =
+  "Instruct: Represent this reference text for knowledge retrieval\nQuery: ";
+
+bool Llama::rag_index_prose(RagDB &db, const std::string &text,
+                            const std::string &source) {
+  bool embed_fail = false;
+  auto emit_chunk = [&](const std::string &src, const std::string &type,
+                        const std::string &chunk_text) {
+    if (chunk_text.size() > PROSE_MIN) {
+      RagChunk chunk;
+      chunk.text = chunk_text;
+      chunk.source = src;
+      chunk.type = type;
+      if (!embed_text(INSTRUCT_EMBED_PROSE + chunk_text,
+                      chunk.embedding, db.embed_dim)) {
+        embed_fail = true;
+      } else {
+        db.chunks.push_back(std::move(chunk));
+      }
+    }
+  };
+
+  return !embed_fail && chunk_prose(text, source, emit_chunk);
+}
+
+//
 // retrieve with session
 //
 std::string Llama::rag_retrieve(const RagDB &db,
@@ -343,6 +486,38 @@ std::string Llama::rag_retrieve(const RagDB &db,
   }
 
   return rag_build_context(db, result_idx, result_scores);
+}
+
+std::string Llama::rag_retrieve_multi(RagLibrary &lib,
+                                      const std::string &query,
+                                      int top_k,
+                                      int ctx_size) {
+  if (lib.empty()) {
+    _last_error = "no input";
+    return {};
+  }
+
+  std::ostringstream out;
+  int cumulative_tokens = 0;
+
+  for (auto &kv : lib.dbs) {
+    const std::string &name = kv.first;
+    const RagDB &db = kv.second;
+    if (db.empty()) continue;
+
+    RagSession session;
+    session.init(db.size(), ctx_size);
+    session.tokens_used = cumulative_tokens;
+
+    std::string result = rag_retrieve(db, query, top_k, session);
+    if (!result.empty()) {
+      out << "// ── " << name << " ──\n"
+          << result;
+      cumulative_tokens = session.tokens_used;
+    }
+  }
+
+  return out.str();
 }
 
 bool RagDB::save(const std::string &path) const {
@@ -436,4 +611,80 @@ bool RagDB::load(const std::string &path) {
   }
 
   return true;
+}
+
+/* ── RagLibrary ────────────────────────────────────────────── */
+
+bool RagLibrary::add(const std::string &name, RagDB db) {
+  if (name.empty()) {
+    return false;
+  }
+  dbs[name] = std::move(db);
+  return true;
+}
+
+bool RagLibrary::remove(const std::string &name) {
+  return dbs.erase(name) > 0;
+}
+
+RagDB *RagLibrary::get(const std::string &name) {
+  auto it = dbs.find(name);
+  return (it != dbs.end()) ? &it->second : nullptr;
+}
+
+const RagDB *RagLibrary::get(const std::string &name) const {
+  auto it = dbs.find(name);
+  return (it != dbs.end()) ? &it->second : nullptr;
+}
+
+std::vector<std::string> RagLibrary::names() const {
+  std::vector<std::string> out;
+  out.reserve(dbs.size());
+  for (const auto &kv : dbs) {
+    out.push_back(kv.first);
+  }
+  return out;
+}
+
+int RagLibrary::total_chunks() const {
+  int total = 0;
+  for (const auto &kv : dbs) {
+    total += kv.second.size();
+  }
+  return total;
+}
+
+int RagLibrary::load_dir(const std::string &dir) {
+  int count = 0;
+  if (!fs::is_directory(dir)) {
+    return 0;
+  }
+  for (const auto &entry : fs::directory_iterator(dir)) {
+    if (!entry.is_regular_file()) continue;
+    if (entry.path().extension() != ".rag") continue;
+
+    std::string name = entry.path().stem().string();
+    RagDB db;
+    if (db.load(entry.path().string())) {
+      dbs[name] = std::move(db);
+      count++;
+    }
+  }
+  return count;
+}
+
+bool RagLibrary::save_dir(const std::string &dir) const {
+  if (!fs::is_directory(dir)) {
+    if (!fs::create_directories(dir)) {
+      return false;
+    }
+  }
+  bool ok = true;
+  for (const auto &kv : dbs) {
+    fs::path p = fs::path(dir) / (kv.first + ".rag");
+    if (!kv.second.save(p.string())) {
+      ok = false;
+    }
+  }
+  return ok;
 }

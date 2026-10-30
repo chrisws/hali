@@ -1,0 +1,356 @@
+{
+  "version": "1.0",
+  "description": "Hali knowledge index — curated ZIM archives for offline reference",
+  "sources": [
+    {
+      "id": "devdocs_en_python",
+      "title": "Python Documentation",
+      "description": "Complete Python language reference and tutorials",
+      "category": "computing",
+      "tier": "essential",
+      "url": "https://download.kiwix.org/zim/devdocs/devdocs_en_python_2026-08.zim",
+      "size_mb": 4,
+      "recommended": true
+    },
+    {
+      "id": "devdocs_en_javascript",
+      "title": "JavaScript Documentation",
+      "description": "MDN JavaScript reference and guides",
+      "category": "computing",
+      "tier": "essential",
+      "url": "https://download.kiwix.org/zim/devdocs/devdocs_en_javascript_2026-07.zim",
+      "size_mb": 3,
+      "recommended": true
+    },
+    {
+      "id": "devdocs_en_html",
+      "title": "HTML Documentation",
+      "description": "MDN HTML elements and attributes reference",
+      "category": "computing",
+      "tier": "essential",
+      "url": "https://download.kiwix.org/zim/devdocs/devdocs_en_html_2026-07.zim",
+      "size_mb": 2,
+      "recommended": true
+    },
+    {
+      "id": "devdocs_en_css",
+      "title": "CSS Documentation",
+      "description": "MDN CSS properties and selectors reference",
+      "category": "computing",
+      "tier": "essential",
+      "url": "https://download.kiwix.org/zim/devdocs/devdocs_en_css_2026-07.zim",
+      "size_mb": 5,
+      "recommended": true
+    },
+    {
+      "id": "devdocs_en_git",
+      "title": "Git Documentation",
+      "description": "Git version control reference",
+      "category": "computing",
+      "tier": "standard",
+      "url": "https://download.kiwix.org/zim/devdocs/devdocs_en_git_2026-07.zim",
+      "size_mb": 2,
+      "recommended": true
+    },
+    {
+      "id": "devdocs_en_node",
+      "title": "Node.js Documentation",
+      "description": "Node.js API reference and guides",
+      "category": "computing",
+      "tier": "standard",
+      "url": "https://download.kiwix.org/zim/devdocs/devdocs_en_node_2026-08.zim",
+      "size_mb": 1,
+      "recommended": false
+    },
+    {
+      "id": "devdocs_en_react",
+      "title": "React Documentation",
+      "description": "React library reference and tutorials",
+      "category": "computing",
+      "tier": "standard",
+      "url": "https://download.kiwix.org/zim/devdocs/devdocs_en_react_2026-02.zim",
+      "size_mb": 3,
+      "recommended": false
+    },
+    {
+      "id": "devdocs_en_docker",
+      "title": "Docker Documentation",
+      "description": "Docker container reference and guides",
+      "category": "computing",
+      "tier": "comprehensive",
+      "url": "https://download.kiwix.org/zim/devdocs/devdocs_en_docker_2026-07.zim",
+      "size_mb": 2,
+      "recommended": false
+    },
+    {
+      "id": "devdocs_en_bash",
+      "title": "Linux Documentation",
+      "description": "Linux command reference and system administration",
+      "category": "computing",
+      "tier": "comprehensive",
+      "url": "https://download.kiwix.org/zim/devdocs/devdocs_en_bash_2026-01.zim",
+      "size_mb": 1,
+      "recommended": true
+    },
+    {
+      "id": "freecodecamp_en_all",
+      "title": "freeCodeCamp",
+      "description": "Interactive programming tutorials - JavaScript, algorithms, and data structures",
+      "category": "computing",
+      "tier": "essential",
+      "url": "https://download.kiwix.org/zim/freecodecamp/freecodecamp_en_all_2026-08.zim",
+      "size_mb": 8,
+      "recommended": false
+    },
+    {
+      "id": "arduino.stackexchange.com_en_all",
+      "title": "Arduino Q&A",
+      "description": "Stack Exchange Q&A for Arduino microcontroller projects",
+      "category": "computing",
+      "tier": "standard",
+      "url": "https://download.kiwix.org/zim/stack_exchange/arduino.stackexchange.com_en_all_2026-02.zim",
+      "size_mb": 247,
+      "recommended": false
+    },
+    {
+      "id": "raspberrypi.stackexchange.com_en_all",
+      "title": "Raspberry Pi Q&A",
+      "description": "Stack Exchange Q&A for Raspberry Pi projects and troubleshooting",
+      "category": "computing",
+      "tier": "standard",
+      "url": "https://download.kiwix.org/zim/stack_exchange/raspberrypi.stackexchange.com_en_all_2026-02.zim",
+      "size_mb": 285,
+      "recommended": false
+    },
+    {
+      "id": "electronics.stackexchange.com_en_all",
+      "title": "Electronics Q&A",
+      "description": "Stack Exchange Q&A for circuit design, components, and electrical engineering",
+      "category": "computing",
+      "tier": "comprehensive",
+      "url": "https://download.kiwix.org/zim/stack_exchange/electronics.stackexchange.com_en_all_2026-02.zim",
+      "size_mb": 3800,
+      "recommended": false
+    },
+    {
+      "id": "zimgit-medicine_en",
+      "title": "Medical Library",
+      "description": "Field and emergency medicine books and guides",
+      "category": "medicine",
+      "tier": "essential",
+      "url": "https://download.kiwix.org/zim/other/zimgit-medicine_en_2024-08.zim",
+      "size_mb": 67,
+      "recommended": true
+    },
+    {
+      "id": "nhs.uk_en_medicines",
+      "title": "NHS Medicines A to Z",
+      "description": "How medicines work, dosages, side effects, and interactions",
+      "category": "medicine",
+      "tier": "essential",
+      "url": "https://download.kiwix.org/zim/zimit/nhs.uk_en_medicines_2025-12.zim",
+      "size_mb": 16,
+      "recommended": true
+    },
+    {
+      "id": "fas-military-medicine_en",
+      "title": "Military Medicine",
+      "description": "Tactical and field medicine manuals",
+      "category": "medicine",
+      "tier": "essential",
+      "url": "https://download.kiwix.org/zim/zimit/fas-military-medicine_en_2025-06.zim",
+      "size_mb": 78,
+      "recommended": false
+    },
+    {
+      "id": "wwwnc.cdc.gov_en_all",
+      "title": "CDC Health Information",
+      "description": "Disease prevention, travel health, and outbreak information",
+      "category": "medicine",
+      "tier": "essential",
+      "url": "https://download.kiwix.org/zim/zimit/wwwnc.cdc.gov_en_all_2024-11.zim",
+      "size_mb": 170,
+      "recommended": false
+    },
+    {
+      "id": "zimgit-water_en",
+      "title": "Water Treatment Library",
+      "description": "Collecting, filtering, and purifying drinking water",
+      "category": "survival",
+      "tier": "essential",
+      "url": "https://download.kiwix.org/zim/other/zimgit-water_en_2024-08.zim",
+      "size_mb": 20,
+      "recommended": true
+    },
+    {
+      "id": "zimgit-food-preparation_en",
+      "title": "Food for Preppers",
+      "description": "Recipes and techniques for preparing and preserving food",
+      "category": "survival",
+      "tier": "essential",
+      "url": "https://download.kiwix.org/zim/other/zimgit-food-preparation_en_2025-04.zim",
+      "size_mb": 97,
+      "recommended": false
+    },
+    {
+      "id": "zimgit-knots_en",
+      "title": "A Library of Knots",
+      "description": "Illustrated guides to knots, lashings, ladders, and sutures",
+      "category": "survival",
+      "tier": "essential",
+      "url": "https://download.kiwix.org/zim/other/zimgit-knots_en_2024-08.zim",
+      "size_mb": 27,
+      "recommended": false
+    },
+    {
+      "id": "www.ready.gov_en",
+      "title": "Ready.gov",
+      "description": "Official US disaster planning guidance",
+      "category": "survival",
+      "tier": "standard",
+      "url": "https://download.kiwix.org/zim/zimit/www.ready.gov_en_2024-12.zim",
+      "size_mb": 2429,
+      "recommended": false
+    },
+    {
+      "id": "outdoors.stackexchange.com_en_all",
+      "title": "The Great Outdoors Q&A",
+      "description": "Answered questions on hiking, camping, navigation, and wilderness skills",
+      "category": "survival",
+      "tier": "standard",
+      "url": "https://download.kiwix.org/zim/stack_exchange/outdoors.stackexchange.com_en_all_2026-02.zim",
+      "size_mb": 142,
+      "recommended": false
+    },
+    {
+      "id": "ham.stackexchange.com_en_all",
+      "title": "Amateur Radio Q&A",
+      "description": "Answered questions on radio equipment, antennas, licensing, and emergency communications",
+      "category": "survival",
+      "tier": "standard",
+      "url": "https://download.kiwix.org/zim/stack_exchange/ham.stackexchange.com_en_all_2026-02.zim",
+      "size_mb": 75,
+      "recommended": false
+    },
+    {
+      "id": "woodworking.stackexchange.com_en_all",
+      "title": "Woodworking Q&A",
+      "description": "Stack Exchange Q&A for carpentry, joinery, and woodcraft",
+      "category": "diy",
+      "tier": "essential",
+      "url": "https://download.kiwix.org/zim/stack_exchange/woodworking.stackexchange.com_en_all_2026-02.zim",
+      "size_mb": 99,
+      "recommended": false
+    },
+    {
+      "id": "mechanics.stackexchange.com_en_all",
+      "title": "Motor Vehicle Maintenance Q&A",
+      "description": "Stack Exchange Q&A for car and motorcycle repair",
+      "category": "diy",
+      "tier": "essential",
+      "url": "https://download.kiwix.org/zim/stack_exchange/mechanics.stackexchange.com_en_all_2026-02.zim",
+      "size_mb": 321,
+      "recommended": false
+    },
+    {
+      "id": "diy.stackexchange.com_en_all",
+      "title": "DIY & Home Improvement Q&A",
+      "description": "Stack Exchange Q&A for home repairs, electrical, plumbing, and construction",
+      "category": "diy",
+      "tier": "standard",
+      "url": "https://download.kiwix.org/zim/stack_exchange/diy.stackexchange.com_en_all_2026-02.zim",
+      "size_mb": 1900,
+      "recommended": false
+    },
+    {
+      "id": "ifixit_en_all",
+      "title": "iFixit Repair Guides",
+      "description": "Step-by-step repair guides for electronics, appliances, and vehicles",
+      "category": "diy",
+      "tier": "comprehensive",
+      "url": "https://download.kiwix.org/zim/ifixit/ifixit_en_all_2025-12.zim",
+      "size_mb": 3380,
+      "recommended": false
+    },
+    {
+      "id": "foss.cooking_en_all",
+      "title": "FOSS Cooking",
+      "description": "Quick and easy cooking guides and recipes",
+      "category": "agriculture",
+      "tier": "essential",
+      "url": "https://download.kiwix.org/zim/zimit/foss.cooking_en_all_2026-02.zim",
+      "size_mb": 24,
+      "recommended": false
+    },
+    {
+      "id": "gardening.stackexchange.com_en_all",
+      "title": "Gardening Q&A",
+      "description": "Stack Exchange Q&A for growing your own food, plant care, and landscaping",
+      "category": "agriculture",
+      "tier": "standard",
+      "url": "https://download.kiwix.org/zim/stack_exchange/gardening.stackexchange.com_en_all_2026-02.zim",
+      "size_mb": 923,
+      "recommended": false
+    },
+    {
+      "id": "cooking.stackexchange.com_en_all",
+      "title": "Cooking Q&A",
+      "description": "Stack Exchange Q&A for cooking techniques, food safety, and recipes",
+      "category": "agriculture",
+      "tier": "standard",
+      "url": "https://download.kiwix.org/zim/stack_exchange/cooking.stackexchange.com_en_all_2026-02.zim",
+      "size_mb": 236,
+      "recommended": false
+    },
+    {
+      "id": "wikibooks_en_all_nopic",
+      "title": "Wikibooks",
+      "description": "Open-content textbooks covering math, science, computing, and more",
+      "category": "education",
+      "tier": "essential",
+      "url": "https://download.kiwix.org/zim/wikibooks/wikibooks_en_all_nopic_2026-01.zim",
+      "size_mb": 3100,
+      "recommended": false
+    },
+    {
+      "id": "libretexts.org_en_math",
+      "title": "LibreTexts Mathematics",
+      "description": "Open-source math textbooks from algebra to calculus",
+      "category": "education",
+      "tier": "standard",
+      "url": "https://download.kiwix.org/zim/libretexts/libretexts.org_en_math_2026-01.zim",
+      "size_mb": 792,
+      "recommended": false
+    },
+    {
+      "id": "libretexts.org_en_phys",
+      "title": "LibreTexts Physics",
+      "description": "Physics courses and textbooks",
+      "category": "education",
+      "tier": "standard",
+      "url": "https://download.kiwix.org/zim/libretexts/libretexts.org_en_phys_2026-01.zim",
+      "size_mb": 534,
+      "recommended": false
+    },
+    {
+      "id": "libretexts.org_en_chem",
+      "title": "LibreTexts Chemistry",
+      "description": "Chemistry courses and textbooks",
+      "category": "education",
+      "tier": "standard",
+      "url": "https://download.kiwix.org/zim/libretexts/libretexts.org_en_chem_2025-01.zim",
+      "size_mb": 2180,
+      "recommended": false
+    },
+    {
+      "id": "libretexts.org_en_bio",
+      "title": "LibreTexts Biology",
+      "description": "Biology courses and textbooks",
+      "category": "education",
+      "tier": "standard",
+      "url": "https://download.kiwix.org/zim/libretexts/libretexts.org_en_bio_2025-01.zim",
+      "size_mb": 2240,
+      "recommended": false
+    }
+  ]
+}

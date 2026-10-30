@@ -131,8 +131,7 @@ bool Agent::setup_embed(const std::string &path) {
     return false;
   }
   tui_.dismiss_modal_popup();
-  rag_.rag_db      = std::make_unique<RagDB>();
-  rag_.rag_session = std::make_unique<RagSession>();
+  rag_.rag_lib = std::make_unique<RagLibrary>();
   tui_.append_line(ICON_SYS + "Embedding model ready.");
   tui_.redraw_all();
   return true;
@@ -236,7 +235,7 @@ std::string Agent::rag_tool(const std::string &agent_query) const {
   }
   std::string result;
   if (rag_.active()) {
-    result = rag_.embed_llama->rag_retrieve(*rag_.rag_db, agent_query, cfg_.rag_top_k_, *rag_.rag_session);
+    result = rag_.embed_llama->rag_retrieve_multi(*rag_.rag_lib, agent_query, cfg_.rag_top_k_, cfg_.n_ctx_);
     if (result.empty()) {
       result = std::string("RAG: no context found: ") + rag_.embed_llama->last_error();
     }
@@ -255,12 +254,27 @@ bool Agent::rag_load_index(const std::string &path) const {
     return false;
   }
 
-  if (!rag_.rag_db->load(path)) {
+  RagDB db;
+  if (!db.load(path)) {
     tui_.append_line(ICON_SYS + "failed to load");
     tui_.redraw_all();
+    return false;
   }
 
+  // Derive a name from the filename (strip extension)
+  fs::path p(path);
+  std::string name = p.stem().string();
+  rag_.rag_lib->add(name, std::move(db));
+  tui_.append_line(ICON_SYS + "loaded RAG index: " + name);
+  tui_.redraw_all();
   return true;
+}
+
+int Agent::rag_load_dir(const std::string &dir) const {
+  if (!rag_.active()) {
+    return 0;
+  }
+  return rag_.rag_lib->load_dir(dir);
 }
 
 bool Agent::rag_index(const std::string &path) const {
@@ -270,17 +284,17 @@ bool Agent::rag_index(const std::string &path) const {
     return false;
   }
 
+  RagDB db;
+  db.embed_dim = rag_.embed_llama->get_embed_dim();
+
   auto index_one = [&](const std::string &filepath) {
     tui_.append_line(ICON_SYS + "  indexing: " + filepath);
     tui_.redraw_all();
-    if (!rag_.embed_llama->rag_index(*rag_.rag_db, filepath)) {
+    if (!rag_.embed_llama->rag_index(db, filepath)) {
       tui_.append_line(ICON_ERR + "rag_load: " + rag_.embed_llama->last_error());
       tui_.redraw_all();
     }
   };
-
-  // must be set before indexing
-  rag_.rag_db->embed_dim = rag_.embed_llama->get_embed_dim();
 
   fs::path rp(path);
   std::error_code ec;
@@ -294,10 +308,17 @@ bool Agent::rag_index(const std::string &path) const {
     index_one(path);
   }
 
-  std::string save_path = join_path(cfg_.sandbox_, ".hali/rag-index.bin");
+  // Derive a name from the path
+  std::string name = rp.stem().string();
+  rag_.rag_lib->add(name, db);
+
+  // Save to .hali/rag/ directory
+  std::string save_dir = join_path(cfg_.sandbox_, ".hali/rag");
+  fs::create_directories(save_dir, ec);
+  std::string save_path = join_path(save_dir, name + ".rag");
   tui_.append_line(ICON_SYS + "saving index: " + save_path);
   tui_.redraw_all();
-  return rag_.rag_db->save(save_path);
+  return db.save(save_path);
 }
 
 std::string Agent::restart() {
@@ -419,7 +440,7 @@ bool Agent::run_turn(const std::string &user_message) {
 
   std::string effective_message = user_message;
   if (rag_.active()) {
-    std::string context = rag_.embed_llama->rag_retrieve(*rag_.rag_db, user_message, cfg_.rag_top_k_, *rag_.rag_session);
+    std::string context = rag_.embed_llama->rag_retrieve_multi(*rag_.rag_lib, user_message, cfg_.rag_top_k_, cfg_.n_ctx_);
     rag_.last_query = user_message;
     rag_.last_result = context;
     if (!context.empty()) {
