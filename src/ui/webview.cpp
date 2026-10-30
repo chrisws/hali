@@ -626,7 +626,7 @@ struct WebServer {
       "      c.appendChild(f);\n"
       "      return;\n"
       "    }\n"
-      "    try { eval(e.data); } catch (err) { console.error('[hali] eval error:', err); }\n"
+      "    console.warn('[hali] unhandled ws message type, ignoring:', e.data.substring(0, 80));\n"
       "  }\n"
       "  window._ws_onMessage = handleMessage;\n"
       "  window._ws_sendMessage = function(msg) {\n"
