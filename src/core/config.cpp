@@ -302,6 +302,7 @@ std::string HaliConfig::prompt_audio() const {
       "  play                             Play all tracks mixed\n"
       "  show                             Display project layout\n"
       "  save                             Save to disk\n"
+      "  export                           Export to stereo .wav file\n"
       "  clear                            Clear all tracks\n\n"
       "Notes:\n"
       "- Pitch notes: C4 D#5 E-3 (letter + accidental + octave)\n"

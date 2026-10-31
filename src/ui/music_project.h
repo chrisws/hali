@@ -38,6 +38,13 @@ struct MusicProject {
   bool save(const std::string &dir) const;
 
   /**
+   * @brief Save the project to an explicit file path.
+   * @param path  Full path to write the .json file to.
+   * @return true on success.
+   */
+  bool save_to(const std::string &path) const;
+
+  /**
    * @brief Load a project from a JSON file.
    * @param path  Full path to the .json file.
    * @return The loaded project (empty name on failure).

@@ -329,6 +329,10 @@ bool is_available() {
   return g_device_open;
 }
 
+void stop() {
+  clear_queue();
+}
+
 void set_enabled(bool on) {
   g_enabled = on;
 }
@@ -640,6 +644,111 @@ bool save_wav(const std::vector<NoteEvent> &events, const std::string &path, int
   f.write(reinterpret_cast<const char *>(&bits_per_sample), 2);
 
   // data chunk
+  f.write("data", 4);
+  f.write(reinterpret_cast<const char *>(&data_size), 4);
+  f.write(reinterpret_cast<const char *>(pcm_data.data()), data_size);
+
+  f.close();
+  return f.good();
+}
+
+bool save_mix_wav(const std::vector<TrackMix> &tracks, const std::string &path, int sample_rate) {
+  if (tracks.empty()) return false;
+
+  // Determine total duration in samples
+  uint32_t total_samples = 0;
+  for (const auto &track : tracks) {
+    uint32_t track_end = 0;
+    for (const auto &event : track.events) {
+      double max_dur = 0.0;
+      for (const auto &note : event) {
+        max_dur = std::max(max_dur, note.second);
+      }
+      track_end += (uint32_t)(max_dur * sample_rate);
+    }
+    total_samples = std::max(total_samples, track_end);
+  }
+
+  if (total_samples == 0) return false;
+
+  // Allocate stereo buffer
+  std::vector<float> buf_l(total_samples, 0.0f);
+  std::vector<float> buf_r(total_samples, 0.0f);
+
+  // Render each track
+  for (const auto &track : tracks) {
+    uint32_t offset = 0;
+    for (const auto &event : track.events) {
+      double max_dur = 0.0;
+      for (const auto &note : event) {
+        max_dur = std::max(max_dur, note.second);
+      }
+      uint32_t event_samples = (uint32_t)(max_dur * sample_rate);
+
+      // Equal-power pan gains
+      float gain_l = cosf((track.pan + 1.0f) * M_PI / 4.0f);
+      float gain_r = sinf((track.pan + 1.0f) * M_PI / 4.0f);
+
+      for (uint32_t i = 0; i < event_samples; i++) {
+        float t = (float)i / sample_rate;
+        float sum = 0.0f;
+        for (const auto &note : event) {
+          if (t < note.second && note.first > 0.0) {
+            double decay = std::exp(-3.0 * t / note.second);
+            sum += static_cast<float>(std::sin(2.0 * M_PI * note.first * t) * decay);
+          }
+        }
+        // Normalise by note count, apply track volume and pan
+        float val = (sum / static_cast<float>(event.size())) * track.volume;
+        uint32_t idx = offset + i;
+        if (idx < total_samples) {
+          buf_l[idx] += val * gain_l;
+          buf_r[idx] += val * gain_r;
+        }
+      }
+      offset += event_samples;
+    }
+  }
+
+  // Soft-clip with tanh
+  for (uint32_t i = 0; i < total_samples; i++) {
+    buf_l[i] = tanhf(buf_l[i]);
+    buf_r[i] = tanhf(buf_r[i]);
+  }
+
+  // Convert to 16-bit PCM
+  std::vector<int16_t> pcm_data(total_samples * 2);
+  for (uint32_t i = 0; i < total_samples; i++) {
+    pcm_data[i * 2]     = static_cast<int16_t>(buf_l[i] * 32767.0f);
+    pcm_data[i * 2 + 1] = static_cast<int16_t>(buf_r[i] * 32767.0f);
+  }
+
+  // Write WAV file
+  const uint32_t data_size = static_cast<uint32_t>(pcm_data.size() * sizeof(int16_t));
+  const uint32_t file_size = 36 + data_size;
+  const uint16_t audio_format = 1;
+  const uint16_t channels = 2;
+  const uint32_t byte_rate = static_cast<uint32_t>(sample_rate * channels * 2);
+  const uint16_t block_align = channels * 2;
+  const uint16_t bits_per_sample = 16;
+
+  std::ofstream f(path, std::ios::binary);
+  if (!f) return false;
+
+  f.write("RIFF", 4);
+  f.write(reinterpret_cast<const char *>(&file_size), 4);
+  f.write("WAVE", 4);
+
+  f.write("fmt ", 4);
+  uint32_t fmt_size = 16;
+  f.write(reinterpret_cast<const char *>(&fmt_size), 4);
+  f.write(reinterpret_cast<const char *>(&audio_format), 2);
+  f.write(reinterpret_cast<const char *>(&channels), 2);
+  f.write(reinterpret_cast<const char *>(&sample_rate), 4);
+  f.write(reinterpret_cast<const char *>(&byte_rate), 4);
+  f.write(reinterpret_cast<const char *>(&block_align), 2);
+  f.write(reinterpret_cast<const char *>(&bits_per_sample), 2);
+
   f.write("data", 4);
   f.write(reinterpret_cast<const char *>(&data_size), 4);
   f.write(reinterpret_cast<const char *>(pcm_data.data()), data_size);

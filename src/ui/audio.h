@@ -74,6 +74,9 @@ void play_mix(const std::vector<TrackMix> &tracks);
 /** @brief Returns true if an audio output device was found. */
 bool is_available();
 
+/** @brief Stop all currently playing audio immediately. */
+void stop();
+
 /** @brief Enable or disable all audio output. */
 void set_enabled(bool on);
 
@@ -114,6 +117,16 @@ void play_test();
  * @return true on success, false on failure.
  */
 bool save_wav(const std::vector<NoteEvent> &events, const std::string &path, int sample_rate = 44100);
+
+/**
+ * @brief Render a multi-track mix into a 16-bit stereo WAV file.
+ *        Each track is rendered with its volume and pan (equal-power).
+ * @param tracks  Vector of TrackMix to mix.
+ * @param path    Output file path.
+ * @param sample_rate  Sample rate in Hz (default 48000).
+ * @return true on success, false on failure.
+ */
+bool save_mix_wav(const std::vector<TrackMix> &tracks, const std::string &path, int sample_rate = 48000);
 
 /** @brief Play a short bright ascending "tick" (tool completion). */
 void play_tool_tick();

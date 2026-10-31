@@ -31,6 +31,19 @@ bool MusicProject::save(const std::string &dir) const {
   }
 
   std::string path = (dir_path / (name + ".json")).string();
+  return save_to(path);
+}
+
+//
+// MusicProject::save_to
+//
+bool MusicProject::save_to(const std::string &path) const {
+  fs::path path_obj(path);
+  std::error_code ec;
+  fs::create_directories(path_obj.parent_path(), ec);
+  if (ec) {
+    return false;
+  }
 
   auto doc = json::parse_mutable("");
   if (!doc.is_valid()) {
