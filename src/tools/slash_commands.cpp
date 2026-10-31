@@ -938,37 +938,41 @@ static void slash_task(const std::string &rest, HaliConfig &cfg, Agent &agent, T
       }
       tui.append_line(ICON_SYS + "Task: default (all tasks off)");
     } else if (name == "web") {
-      cfg.modes_.web = true;
-      cfg.web_enabled_ = true;
-      if (!webview::is_running()) {
-        if (webview::start(cfg.sandbox_, cfg.web_port_)) {
-          tui.append_line(ICON_SYS + "  web server started on port " + std::to_string(cfg.web_port_));
-        } else {
-          tui.append_line(ICON_ERR + "  failed to start web server on port " + std::to_string(cfg.web_port_));
+      bool new_state = !cfg.modes_.web;
+      cfg.modes_.web = new_state;
+      cfg.web_enabled_ = new_state;
+      if (new_state) {
+        if (!webview::is_running()) {
+          if (webview::start(cfg.sandbox_, cfg.web_port_)) {
+            tui.append_line(ICON_SYS + "  web server started on port " + std::to_string(cfg.web_port_));
+          } else {
+            tui.append_line(ICON_ERR + "  failed to start web server on port " + std::to_string(cfg.web_port_));
+          }
+        }
+      } else {
+        if (webview::is_running()) {
+          webview::stop();
         }
       }
       tui.append_line(ICON_SYS + "Task: web");
-      tui.append_line(ICON_SYS + "  web.enabled  → true");
-      tui.append_line(ICON_SYS + "  web.port     → " + std::to_string(cfg.web_port_));
-      tui.append_line(ICON_SYS + "  Browse:      http://localhost:" + std::to_string(cfg.web_port_) + "/ai");
+      tui.append_line(ICON_SYS + "  web.enabled  → " + (new_state ? "true" : "false"));
+      if (new_state) {
+        tui.append_line(ICON_SYS + "  web.port     → " + std::to_string(cfg.web_port_));
+        tui.append_line(ICON_SYS + "  Browse:      http://localhost:" + std::to_string(cfg.web_port_) + "/ai");
+      }
     } else if (name == "music") {
-      cfg.modes_.music = true;
-      cfg.audio_multi_track_ = true;
+      bool new_state = !cfg.modes_.music;
+      cfg.modes_.music = new_state;
+      cfg.audio_multi_track_ = new_state;
       tui.append_line(ICON_SYS + "Task: music");
-      tui.append_line(ICON_SYS + "  audio.enable_multi_track → true");
-    } else if (name == "audio") {
-      cfg.modes_.audio = true;
-      cfg.audio_tool_tick_ = true;
-      cfg.audio_user_prompt_ = true;
-      tui.append_line(ICON_SYS + "Task: audio");
-      tui.append_line(ICON_SYS + "  audio.tool_tick   → true");
-      tui.append_line(ICON_SYS + "  audio.user_prompt → true");
+      tui.append_line(ICON_SYS + "  audio.enable_multi_track → " + (new_state ? "true" : "false"));
     } else if (name == "knowledge") {
-      if (agent.embed_model() == nullptr) {
+      bool new_state = !cfg.modes_.knowledge;
+      if (new_state && agent.embed_model() == nullptr) {
         tui.append_line(ICON_ERR + "Knowledge mode requires an embedding model.");
         tui.append_line(ICON_ERR + "Load one first: /embed <path>");
       } else {
-        cfg.modes_.knowledge = true;
+        cfg.modes_.knowledge = new_state;
         tui.append_line(ICON_SYS + "Task: knowledge");
         tui.append_line(ICON_SYS + "  RAG active, top_k → " + std::to_string(cfg.rag_top_k_));
       }
@@ -977,6 +981,7 @@ static void slash_task(const std::string &rest, HaliConfig &cfg, Agent &agent, T
       tui.redraw_all();
       return;
     }
+    agent.reset_conversation(cfg.build_system_prompt());
     tui.set_mode_str(cfg.mode_string());
     tui.redraw_all();
   };
@@ -985,7 +990,7 @@ static void slash_task(const std::string &rest, HaliConfig &cfg, Agent &agent, T
     // Show current state + picker
     tui.append_line(ICON_SYS + "Active tasks: " + (cfg.mode_string().empty() ? "(none)" : cfg.mode_string()));
     tui.redraw_all();
-    std::vector<std::string> options = { "Audio", "Default", "Knowledge", "Music", "Web" };
+    std::vector<std::string> options = { "Default", "Knowledge", "Music", "Web" };
     int sel = tui.list_picker(options, "Select task");
     if (sel >= 0) {
       apply_mode(options[sel]);

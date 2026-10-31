@@ -660,7 +660,7 @@ std::string HaliConfig::mode_string() const {
   std::string s;
   if (modes_.web)       s += "\U0001F310";  // 🌐
   if (modes_.music)     s += "\U0001F3B5";  // 🎵
-  if (modes_.audio)     s += "\U0001F50A";  // 🔊
+  if (audio_enabled_)   s += "\U0001F50A";  // 🔊
   if (modes_.knowledge) s += "\U0001F4DA";  // 📚
   if (s.empty()) return "";
   return "[" + s + "]";
