@@ -27,6 +27,9 @@ Most agentic shells assume a hosted API and treat context as free. Hali assumes 
 - **Audio system** — polyphonic playback via a note-script parser (`TOOL:PLAY`). Supports sine tones, chords, tempo/volume/length control tokens, and optional UI sounds (tool-completion tick, user-prompt ding). Enable with `audio_enabled` in config or `/audio`.
 - **Planning tool** — `TOOL:PLAN` provides structured goal/step tracking (`set`, `add`, `advance`, `skip`) so the model can maintain a visible work plan across turns. Plans are referenced in `SESSION.md` for session handoff.
 - **Codebase audit** — `/audit` scans C/C++ source files for issues that make the codebase difficult for an LLM to handle (e.g. missing includes, implicit declarations, overly long functions). Results are scored 0–100, formatted as a table, and fed back to the model as a remediation prompt. Confirmed false positives are persisted to `audit_feedback.json` and filtered from future scans.
+- **Sampling profiles** — after model load, Hali prompts for a sampling profile (General, Programming, Creative, Concise) that sets temperature, top_p, top_k, min_p, and penalty parameters in one step. Smart defaults are also applied based on detected VRAM and GPU layer count.
+- **Task modes** — `/task` switches the agent's behavioral focus between `web`, `music`, `audio`, `knowledge`, or `default`. Each mode adjusts the system prompt, enables relevant tools, and can start/stop subsystems (e.g. the web server for `web` mode).
+- **Multi-track music** — `TOOL:MUSIC` manages a persistent multi-track project with per-track volume, pan, and note scripts. Supports pitch notes, drum tokens (kick/snare/hi-hat/open-hat/tom), chords, and global tempo. Projects can be saved, loaded, listed, and exported to stereo `.wav`.
 - **Command completions** — tab-completion for slash commands in the TUI input line.
 - **A full sandboxed tool suite** — every file operation is scoped to a sandbox root (the directory Hali is launched in, or an explicit path argument):
 
@@ -47,6 +50,7 @@ Most agentic shells assume a hosted API and treat context as free. Hali assumes 
   | `TOOL:PERMISSION`                                       | Explicit user confirmation before destructive or irreversible actions                                                                                                                                                                                  |
   | `TOOL:RESTART`                                          | Hand off to a fresh session, writing current task context to `SESSION.md` first                                                                                                                                                                        |
   | `TOOL:PLAY`                                             | Play a melody from a note-script (sine tones, chords, tempo/volume/length control)                                                                                                                             |
+  | `TOOL:MUSIC`                                            | Multi-track music project: `create`, `load`, `list`, `add <track> <script>`, `set <n> <vol\|pan\|script> <v>`, `remove <n>`, `tempo <bpm>`, `play`, `show`, `save`, `export`, `clear`. Supports pitch notes, drum tokens (K/S/H/O/T), chords, per-track volume/pan. |
   | `TOOL:PLAN`                                             | Structured goal/step planning: `set <goal>`, `add <step>`, `advance`, `skip <idx>`                                                                                                                             |
   | `TOOL:CHOICE`                                           | Multiple-choice popup: `TOOL:CHOICE "question" "opt1|opt2|opt3"`                                                                                                                                              |
   | `TOOL:STAT`                                             | File metadata: size, type, permissions, line/word/char count                                                                                                                                                   |
@@ -118,6 +122,10 @@ With `-n, --prompt-permission`, destructive tool calls (`TOOL:WRITE`, `TOOL:REPL
 
 `TOOL:GIT` only permits a fixed set of subcommands: `status`, `log`, `diff`, `add`, `commit`, `branch`, `show`. Arbitrary git commands (e.g. `push`, `reset --hard`, `config`) are rejected.
 
+### Security audit
+
+`/security-audit` marks the sandbox as security-audited by writing a marker file (`.hali/.sec_audit`) whose contents include a SHA-1 hash incorporating a **compile-time salt** that is not exposed to the model or user. This prevents the model from forging a valid audit marker. The marker is checked before certain sensitive operations and can be cleared with `clear_audited()` (e.g. after sandbox contents change).
+
 ### Log hygiene
 
 The `log_erase` config option (or `--log-erase`) truncates the log file at startup, preventing unbounded log growth across sessions.
@@ -135,6 +143,7 @@ Inside the TUI, type a leading `/` to run a built-in command. Tab-completion is 
 | `/clear`             | Reset the conversation (rebuilds the system prompt)                                     |
 | `/theme`             | Cycle through the Dark / Light / Navy themes (F12 also works)                           |
 | `/audio [test\|volume <v>]` | Enable/disable audio, play a test tone, or set volume                                |
+| `/task [name]`       | Direct agent behavior toward a mode: `web`, `music`, `audio`, `knowledge`, or `default` |
 | `/save [file]`       | Save the current chat transcript to a file                                              |
 | `/session [file]`    | Save a structured session snapshot (task, pending actions, errors, last output)          |
 | `/settings`          | Display the current runtime settings                                                    |
@@ -144,8 +153,12 @@ Inside the TUI, type a leading `/` to run a built-in command. Tab-completion is 
 | `/allow-remove [path]` | Remove read access to a directory                                                     |
 | `/revoke <name>`     | Remove an approved `TOOL:RUN` program from the allowlist                                |
 | `/audit [path]`      | Scan the codebase for issues that are hard for an LLM to handle                         |
+| `/security-audit`    | Mark the sandbox as security-audited (compile-time salt prevents model forgery)         |
 | `/lint`              | List source files and run clang-tidy lint checks                                        |
 | `/skill [name] [kickoff]` | Load a skill file into the conversation (optionally with a kickoff prompt)          |
+| `/tool [TOOL:NAME [args]]` | Invoke a tool directly (no args lists all available tools)                       |
+| `/plan [text]`       | Open a multiline text editor for a plan                                                 |
+| `/index [name\|status\|remove\|load\|unload]` | Manage knowledge sources (ZIM/Wikipedia)                        |
 | `/help`              | Show this command list                                                                  |
 | `exit` / `quit`      | Leave Hali                                                                              |
 
@@ -310,45 +323,55 @@ hali/
 │   └── gpu_probe.c         # CUDA VRAM probe (compiled by setup.sh)
 ├── skills/                 # markdown skill files, loaded via --skill
 ├── src/
-│   ├── main.cpp            # entry point, CLI parsing, slash commands
-│   ├── agent.cpp/.h        # agent loop, system prompt assembly, think parsing
-│   ├── agent_dispatch.cpp  # tool dispatch table (all TOOL:* handlers)
-│   ├── agent_utils.cpp/.h  # path helpers, tool arg parsing, SEARCH/REPLACE/TABLE, ThinkParser
-│   ├── tui.cpp/.h          # notcurses UI, input, rendering, themes, search, mouse
-│   ├── tui_context.h       # TUI context interface (events, rendering)
-│   ├── config.cpp/.h       # settings, persistence, help text, prompt assembly
-│   ├── llama_sb.cpp/.h     # llama.cpp wrapper
-│   ├── llama_sb_mtp.cpp    # MTP speculative decoding
-│   ├── llama_sb_suffix.cpp/.h # n-gram SuffixDrafter
-│   ├── llama_sb_rag.cpp/.h # RAG session, chunker, indexer
-│   ├── mcp_client.cpp/.h   # MCP protocol client
-│   ├── mcp_format.cpp/.h   # MCP message formatting
-│   ├── graph.cpp/.h        # TOOL:GRAPH ASCII chart/tree renderer
-│   ├── curl.cpp/.h         # TOOL:CURL via libcurl
-│   ├── file.cpp/.h         # sandboxed file tool implementations, path validation
-│   ├── build.cpp/.h        # TOOL:BUILD (CMake/Gradle/Maven/Python auto-detect)
-│   ├── json.cpp/.h         # yyjson wrapper
-│   ├── string_utils.cpp/.h # Unicode-aware string helpers
-│   ├── utf8.h              # UTF-8 utilities
-│   ├── sha1.cpp/.h         # SHA-1 hashing (RAG dedup)
-│   ├── webview.cpp/.h      # web development mode (HTTP server, live-reload)
-│   ├── ui_text.cpp/.h      # in-app help, settings display, welcome banner
-│   ├── input.cpp, input_event.h, input_history.h  # keyboard input handling
-│   ├── logging.cpp/.h      # log file handling
-│   ├── usage_log.cpp/.h    # per-turn metrics tracking, JSON export
-│   ├── gpu_info.cpp/.h     # VRAM detection, KV restart threshold
-│   ├── run_allowed.h       # persistent user-approved TOOL:RUN allowlist
-│   ├── patch.h             # patch delimiters (PATCH_BEGIN/BOUNDARY/END)
-│   ├── line_list.h         # line-list file I/O utility
-│   ├── icon.h              # TUI icon constants
-│   ├── audio.cpp/.h        # audio subsystem (init, tones, chords, scripts)
-│   ├── audio_impl.cpp      # audio backend implementation
-│   ├── planner.cpp/.h      # TOOL:PLAN structured goal/step tracking
-│   ├── audit.cpp/.h        # /audit codebase scanner, false-positive tracking
-│   ├── slash_commands.cpp/.h # slash command registry and completions
-│   ├── shell_util.cpp/.h   # shell command execution, metacharacter detection
-│   ├── sysinfo.cpp/.h      # TOOL:STAT, TOOL:SYSINFO, TOOL:HEX
-│   └── git_tool.cpp/.h     # TOOL:GIT whitelisted subcommands
+│   ├── main.cpp            # entry point, CLI parsing
+│   ├── core/               # agent loop, config, dispatch
+│   │   ├── agent.cpp/.h        # agent loop, system prompt assembly, think parsing
+│   │   ├── agent_dispatch.cpp  # tool dispatch table (all TOOL:* handlers)
+│   │   ├── agent_utils.cpp/.h  # path helpers, tool arg parsing, SEARCH/REPLACE/TABLE, ThinkParser
+│   │   ├── config.cpp/.h       # settings, persistence, help text, prompt assembly, modes
+│   │   ├── knowledge.cpp/.h    # KnowledgeManager: ZIM download, RAG index build/load
+│   │   ├── run_allowed.h       # persistent user-approved TOOL:RUN allowlist
+│   │   └── shell_util.cpp/.h   # shell command execution, metacharacter detection
+│   ├── model/              # llama.cpp integration
+│   │   ├── llama_sb.cpp/.h     # llama.cpp wrapper
+│   │   ├── llama_sb_mtp.cpp    # MTP speculative decoding
+│   │   ├── llama_sb_suffix.cpp/.h # n-gram SuffixDrafter
+│   │   └── llama_sb_rag.cpp/.h # RAG session, chunker, indexer
+│   ├── tools/              # tool implementations
+│   │   ├── audit.cpp/.h        # /audit codebase scanner, false-positive tracking
+│   │   ├── build.cpp/.h        # TOOL:BUILD (CMake/Gradle/Maven/Python auto-detect)
+│   │   ├── curl.cpp/.h         # TOOL:CURL via libcurl
+│   │   ├── file.cpp/.h         # sandboxed file tool implementations, path validation
+│   │   ├── git_tool.cpp/.h     # TOOL:GIT whitelisted subcommands
+│   │   ├── mcp_client.cpp/.h   # MCP protocol client
+│   │   ├── mcp_format.cpp/.h   # MCP message formatting
+│   │   ├── patch.h             # patch delimiters (PATCH_BEGIN/BOUNDARY/END)
+│   │   ├── planner.cpp/.h      # TOOL:PLAN structured goal/step tracking
+│   │   ├── security_audit.cpp/.h # sandbox security-audit marker (compile-time salt)
+│   │   ├── slash_commands.cpp/.h # slash command registry and completions
+│   │   ├── sysinfo.cpp/.h      # TOOL:STAT, TOOL:SYSINFO, TOOL:HEX
+│   │   └── usage_log.cpp/.h    # per-turn metrics tracking, JSON export
+│   ├── ui/                 # TUI, audio, web, rendering
+│   │   ├── audio.cpp/.h        # audio subsystem (init, tones, chords, scripts)
+│   │   ├── audio_impl.cpp      # audio backend implementation
+│   │   ├── gpu_info.cpp/.h     # VRAM detection, KV restart threshold
+│   │   ├── graph.cpp/.h        # TOOL:GRAPH ASCII chart/tree renderer
+│   │   ├── icon.h              # TUI icon constants
+│   │   ├── input.cpp/.h        # keyboard input handling
+│   │   ├── input_event.h       # input event types
+│   │   ├── input_history.h     # persistent input history
+│   │   ├── music_project.cpp/.h # TOOL:MUSIC multi-track project (save/load/list)
+│   │   ├── tui.cpp/.h          # notcurses UI, input, rendering, themes, search, mouse
+│   │   ├── tui_context.h       # TUI context interface (events, rendering)
+│   │   ├── ui_text.cpp/.h      # in-app help, settings display, welcome banner
+│   │   └── webview.cpp/.h      # web development mode (HTTP server, live-reload)
+│   └── util/               # shared utilities
+│       ├── json.cpp/.h         # yyjson wrapper
+│       ├── line_list.h         # line-list file I/O utility
+│       ├── logging.cpp/.h      # log file handling
+│       ├── sha1.cpp/.h         # SHA-1 hashing (RAG dedup)
+│       ├── string_utils.cpp/.h # Unicode-aware string helpers
+│       └── utf8.h              # UTF-8 utilities
 ├── tests/                  # unit tests, CTest-driven
 ├── yyjson/                 # vendored JSON library
 ├── llama.cpp/              # submodule
