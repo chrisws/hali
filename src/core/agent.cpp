@@ -38,7 +38,7 @@
 #include "webview.h"
 
 static void broadcast_message(const HaliConfig &cfg, Tui &tui, const std::string &message) {
-  if (cfg.web_port_ != -1 && !utils::is_blank(message)) {
+  if (cfg.web_enabled_ && !utils::is_blank(message)) {
     tui.show_tool("send to browser");
     webview::broadcast_message(message);
   }
@@ -186,7 +186,7 @@ LlamaMemoryInfo Agent::get_mem_info() {
 }
 
 void Agent::broadcast_throttled(const std::string &msg) {
-  if (cfg_.web_port_ == -1 || utils::is_blank(msg)) {
+  if (!cfg_.web_enabled_ || utils::is_blank(msg)) {
     return;
   }
   broadcast_.broadcast_buffer += msg;
@@ -198,6 +198,10 @@ void Agent::broadcast_throttled(const std::string &msg) {
 
 void Agent::flush_broadcast() {
   if (broadcast_.broadcast_buffer.empty()) {
+    return;
+  }
+  if (!cfg_.web_enabled_) {
+    broadcast_.broadcast_buffer.clear();
     return;
   }
   tui_.show_tool("send to browser");

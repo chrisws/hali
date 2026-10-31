@@ -304,20 +304,26 @@ static void test_log_erase_load() {
   cout << "test_log_erase_load passed" << endl;
 }
 
-static void test_validation_defaults() {
+static void test_controls_defaults() {
   HaliConfig cfg;
   assert(cfg.disable_write_validate_ == false);
   assert(cfg.disable_patch_validate_ == false);
-  cout << "test_validation_defaults passed" << endl;
+  assert(cfg.permission_prompt_ == false);
+  assert(cfg.disable_run_ == false);
+  assert(cfg.disable_save_on_exit_ == false);
+  assert(cfg.val_write_size_warn_ == 1000);
+  cout << "test_controls_defaults passed" << endl;
 }
 
-static void test_validation_load() {
-  const string path = "/tmp/hali_test_validation.json";
+static void test_controls_load() {
+  const string path = "/tmp/hali_test_controls.json";
   const string content =
     "{\n"
-    "  \"validation\": {\n"
+    "  \"controls\": {\n"
     "    \"disable_write_validate\": true,\n"
-    "    \"disable_patch_validate\": false\n"
+    "    \"disable_patch_validate\": false,\n"
+    "    \"permission_prompt\": true,\n"
+    "    \"val_write_size_warn\": 8000\n"
     "  }\n"
     "}\n";
   {
@@ -331,22 +337,29 @@ static void test_validation_load() {
 
   assert(cfg.disable_write_validate_ == true);
   assert(cfg.disable_patch_validate_ == false);
+  assert(cfg.permission_prompt_ == true);
+  assert(cfg.val_write_size_warn_ == 8000);
 
   string json = cfg.introspect();
   auto doc = json::parse(json);
   assert(doc.is_valid());
   auto root = doc.get_root();
-  auto validation = root.get_child("validation");
-  bool v1 = false, v2 = false;
-  assert(validation.get_bool("disable_write_validate", v1));
-  assert(validation.get_bool("disable_patch_validate", v2));
+  auto controls = root.get_child("controls");
+  bool v1 = false, v2 = false, pp = false;
+  int wsw = 0;
+  assert(controls.get_bool("disable_write_validate", v1));
+  assert(controls.get_bool("disable_patch_validate", v2));
+  assert(controls.get_bool("permission_prompt", pp));
+  assert(controls.get_int("val_write_size_warn", wsw));
   assert(v1 == true);
   assert(v2 == false);
+  assert(pp == true);
+  assert(wsw == 8000);
 
   std::error_code ec;
   std::filesystem::remove(path, ec);
 
-  cout << "test_validation_load passed" << endl;
+  cout << "test_controls_load passed" << endl;
 }
 
 static void test_system_prompt_extra_dirs() {
@@ -415,8 +428,8 @@ void config_test() {
   test_introspect_float_precision();
   test_log_erase_default();
   test_log_erase_load();
-  test_validation_defaults();
-  test_validation_load();
+  test_controls_defaults();
+  test_controls_load();
   test_system_prompt_extra_dirs();
   test_introspect_knowledge_files_filter();
   cout << "\nAll config tests passed!\n" << endl;

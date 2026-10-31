@@ -83,6 +83,7 @@ static void parse_args(int argc, char **argv, HaliConfig &cfg,
     } else if (a == "-n" || a == "--prompt-permission") {
       cfg.permission_prompt_ = true;
     } else if (a == "-p" || a == "--web-port") {
+      cfg.web_enabled_ = true;
       cfg.web_port_ = std::stoi(take_next(a.c_str()));
     } else if (a == "-b" || a == "--enabled-backups") {
       cfg.enabled_backups_ = true;
@@ -167,12 +168,13 @@ int main(int argc, char **argv) {
   // ── Init TUI ──────────────────────────────────────────────────────
   Tui tui;
   tui.init();
+  tui.set_mode_str(cfg.mode_string());
   // Load persisted input history so up-arrow works across sessions.
   tui.history_load(history_path(cfg.sandbox_));
   ui::welcome(tui, cfg.sandbox_);
 
   // ── Init WebDev ───────────────────────────────────────────────────
-  if (cfg.web_port_ != -1) {
+  if (cfg.web_enabled_) {
     if (webview::start(cfg.sandbox_, cfg.web_port_)) {
       tui.append_line(ICON_SYS + std::format("Web mode enabled on port: {}", cfg.web_port_));
     } else {
@@ -223,7 +225,7 @@ int main(int argc, char **argv) {
   // ── Main loop ─────────────────────────────────────────────────────
   log_write(LEVEL_INFO, "main", "hali starting");
   for (;;) {
-    if (cfg.web_port_ != -1) {
+    if (cfg.web_enabled_) {
       if (webview::has_message()) {
         std::string input = webview::get_message();
         tui.append_line("Web: " + input);
@@ -259,7 +261,7 @@ int main(int argc, char **argv) {
     }
   }
 
-  if (cfg.web_port_ != -1) {
+  if (cfg.web_enabled_) {
     webview::stop();
   }
 

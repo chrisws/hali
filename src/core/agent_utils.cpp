@@ -943,7 +943,7 @@ void backup_file(const HaliConfig &cfg, Tui &tui, const std::string &path) {
 // Broadcast reload to webview
 //
 void broadcast_reload(const HaliConfig &cfg, Tui &tui) {
-  if (cfg.web_port_ != -1) {
+  if (cfg.web_enabled_) {
     tui.show_tool("reload browser");
     webview::broadcast_reload();
   }

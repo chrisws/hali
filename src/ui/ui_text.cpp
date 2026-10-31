@@ -102,10 +102,14 @@ void settings(Tui &tui, HaliConfig &cfg) {
   tui.append_line(ICON_SYS + "  log_filter      : " + (cfg.log_filter_.empty() ? "(none)" : cfg.log_filter_));
   tui.append_line(ICON_SYS + "  log_erase       : " + bool_str(cfg.log_erase_));
 
-  tui.append_line(ICON_SYS + "── Validation ─────────────────────────────────");
+  tui.append_line(ICON_SYS + "── Controls ───────────────────────────────────");
+  tui.append_line(ICON_SYS + "  permission_prompt      : " + bool_str(cfg.permission_prompt_));
+  tui.append_line(ICON_SYS + "  disable_run            : " + bool_str(cfg.disable_run_));
+  tui.append_line(ICON_SYS + "  disable_save_on_exit   : " + bool_str(cfg.disable_save_on_exit_));
   tui.append_line(ICON_SYS + "  disable_write_validate : " + bool_str(cfg.disable_write_validate_));
   tui.append_line(ICON_SYS + "  disable_patch_validate : " + bool_str(cfg.disable_patch_validate_));
-  tui.append_line(ICON_SYS + "  write_size_warn          : " + std::to_string(cfg.val_write_size_warn_));
+  tui.append_line(ICON_SYS + "  write_size_warn        : " + std::to_string(cfg.val_write_size_warn_));
+  tui.append_line(ICON_SYS + "  backups                : " + (cfg.enabled_backups_ ? "enabled" : "disabled"));
 
   tui.append_line(ICON_SYS + "── MCP ────────────────────────────────────────");
   tui.append_line(ICON_SYS + "  mcp_host        : " + (cfg.mcp_host_.empty() ? "(none)" : cfg.mcp_host_));
@@ -119,7 +123,6 @@ void settings(Tui &tui, HaliConfig &cfg) {
 
   tui.append_line(ICON_SYS + "── Paths ──────────────────────────────────────");
   tui.append_line(ICON_SYS + "  sandbox         : " + cfg.sandbox_);
-  tui.append_line(ICON_SYS + "  backups         : " + (cfg.enabled_backups_ ? "enabled" : "disabled"));
   tui.append_line(ICON_SYS + "  config          : " + cfg.config_);
   tui.append_line(ICON_SYS + "  saved to        : " + cfg.settings_path());
 
@@ -161,8 +164,8 @@ void settings(Tui &tui, HaliConfig &cfg) {
 
   tui.append_line(ICON_SYS + "── Behavior ───────────────────────────────────");
   tui.append_line(ICON_SYS + "  thinking        : " + bool_str(cfg.thinking_));
-  tui.append_line(ICON_SYS + "  permission_prompt: " + bool_str(cfg.permission_prompt_));
-  tui.append_line(ICON_SYS + "  web_port        : " + std::to_string(cfg.web_port_));
+  tui.append_line(ICON_SYS + "  web.enabled     : " + bool_str(cfg.web_enabled_));
+  tui.append_line(ICON_SYS + "  web.port        : " + std::to_string(cfg.web_port_));
   tui.redraw_all();
 }
 

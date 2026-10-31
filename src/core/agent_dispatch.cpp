@@ -526,6 +526,9 @@ std::string Agent::handle_gui(const std::string &a1, const std::string &a2) {
   if (full == "help") {
     return HaliConfig::gui_help();
   }
+  if (!webview::is_running()) {
+    return "ERROR: web display is not active. Enable it with /task web";
+  }
   if (full == "input") {
     tui_.show_tool("gui: input");
     if (webview::has_message()) {

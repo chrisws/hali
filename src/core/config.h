@@ -75,7 +75,8 @@ struct HaliConfig {
   int   penalty_last_n_ = 256;
   int   rag_top_k_      = 5;
   int   top_k_          = 20;
-  int   web_port_       = -1;
+  bool  web_enabled_    = false;
+  int   web_port_       = 8080;
   int   mtp_n_max_      = 3;
   int   mtp_n_min_      = 0;
   float mtp_p_min_      = 0.0f;
@@ -132,7 +133,16 @@ struct HaliConfig {
   std::string mcp_context_;
   std::vector<std::string> mcp_filter_;
 
+  // Active modes (runtime-only, not persisted)
+  struct ModeState {
+    bool web       = false;
+    bool music     = false;
+    bool audio     = false;
+    bool knowledge = false;
+  } modes_;
+
   static std::string gui_help();
+  std::string mode_string() const;
 
 private:
   static std::string prompt_file_ops();
@@ -140,6 +150,7 @@ private:
   std::string prompt_identity() const;
   std::string prompt_core() const;
   std::string prompt_audio() const;
+  std::string prompt_web() const;
   std::string prompt_knowledge() const;
 };
 

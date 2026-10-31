@@ -395,6 +395,7 @@ class Tui final: TuiContext {
   void set_thinking(bool on);
   void update_usage(float tokens_sec, const LlamaMemoryInfo &mem);
   void set_tokens_per_sec(float tokens_per_sec) { tokens_per_sec_ = tokens_per_sec; }
+  void set_mode_str(const std::string &s) { mode_str_ = s; }
   void show_tool(const std::string &tool);
   int get_term_rows() const override { return term_rows_; }
   int get_term_cols() const { return term_cols_; }
@@ -496,6 +497,7 @@ class Tui final: TuiContext {
 
   // ── status bar values ─────────────────────────────────────────────
   std::string current_model_;
+  std::string mode_str_;
   float tokens_per_sec_;
   int kv_used_;
   int kv_total_;

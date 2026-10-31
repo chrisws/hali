@@ -4,6 +4,7 @@
     "kv_cache_preset": "balanced",
     "n_ctx": 50000,
     "n_batch": 512,
+    "n_ubatch": 0,
     "n_gpu_layers": 999,
     "n_threads": 16,
     "n_threads_batch": 16,
@@ -17,7 +18,8 @@
     "penalty_last_n": 256,
     "offload_kqv": true,
     "rope_scaling": "none",
-    "rope_freq_scale": 0.0
+    "rope_freq_scale": 0.0,
+    "thinking": true
   },
   "rag": {
     "embed_path": "",
@@ -40,11 +42,13 @@
     "enabled": true,
     "volume": 0.5,
     "tool_tick": false,
-    "user_prompt": false
+    "user_prompt": false,
+    "enable_multi_track": false
   },
   "mcp": {
     "host": "127.0.0.1",
-    "port": 64342
+    "port": 64342,
+    "filter": []
   },
   "logging": {
     "level": "debug",
@@ -52,22 +56,23 @@
     "filter": "tui",
     "erase": true
   },
-  "permission_prompt": false,
-  "disable_run": false,
-  "disable_save_on_exit": false,
-  "validation": {
+  "controls": {
+    "permission_prompt": false,
+    "disable_run": false,
+    "disable_save_on_exit": false,
     "disable_write_validate": true,
-    "disable_patch_validate": true
+    "disable_patch_validate": true,
+    "val_write_size_warn": 5000,
+    "enabled_backups": false
+  },
+  "web": {
+    "enabled": true,
+    "port": 8080
   },
   "extra_dirs": [
-    "/usr/local/include/notcurses"
+    "/usr/local/include/notcurses",
+    "/home/chrisws/github/project-nomad",
+    "/home/chrisws/github/fenster"
   ],
-  "thinking": true,
-  "web_port": -1,
-  "enabled_backups": false,
-  "knowledge_files": [
-    "AGENTS.md"
-  ],
-  "mcp_filter": [],
-  "val_write_size_warn": 4000
+  "knowledge_files": []
 }

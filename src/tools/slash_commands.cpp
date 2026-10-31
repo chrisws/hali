@@ -23,6 +23,7 @@
 #include "agent.h"
 #include "tui.h"
 #include "icon.h"
+#include "webview.h"
 #include "audio.h"
 #include "ui_text.h"
 #include "audit.h"
@@ -917,6 +918,84 @@ static void slash_index(const std::string &rest, HaliConfig &cfg, Agent &agent, 
 }
 
 //
+// /task — direct agent behavior toward a specific goal
+//
+static void slash_task(const std::string &rest, HaliConfig &cfg, Agent &agent, Tui &tui) {
+  auto apply_mode = [&](const std::string &name_in) {
+    std::string name = name_in;
+    std::ranges::transform(name.begin(), name.end(), name.begin(), ::tolower);
+    if (name == "default") {
+      cfg.modes_.web = false;
+      cfg.modes_.music = false;
+      cfg.modes_.audio = false;
+      cfg.modes_.knowledge = false;
+      cfg.web_enabled_ = false;
+      cfg.audio_multi_track_ = false;
+      cfg.audio_tool_tick_ = false;
+      cfg.audio_user_prompt_ = false;
+      if (webview::is_running()) {
+        webview::stop();
+      }
+      tui.append_line(ICON_SYS + "Task: default (all tasks off)");
+    } else if (name == "web") {
+      cfg.modes_.web = true;
+      cfg.web_enabled_ = true;
+      if (!webview::is_running()) {
+        if (webview::start(cfg.sandbox_, cfg.web_port_)) {
+          tui.append_line(ICON_SYS + "  web server started on port " + std::to_string(cfg.web_port_));
+        } else {
+          tui.append_line(ICON_ERR + "  failed to start web server on port " + std::to_string(cfg.web_port_));
+        }
+      }
+      tui.append_line(ICON_SYS + "Task: web");
+      tui.append_line(ICON_SYS + "  web.enabled  → true");
+      tui.append_line(ICON_SYS + "  web.port     → " + std::to_string(cfg.web_port_));
+      tui.append_line(ICON_SYS + "  Browse:      http://localhost:" + std::to_string(cfg.web_port_) + "/ai");
+    } else if (name == "music") {
+      cfg.modes_.music = true;
+      cfg.audio_multi_track_ = true;
+      tui.append_line(ICON_SYS + "Task: music");
+      tui.append_line(ICON_SYS + "  audio.enable_multi_track → true");
+    } else if (name == "audio") {
+      cfg.modes_.audio = true;
+      cfg.audio_tool_tick_ = true;
+      cfg.audio_user_prompt_ = true;
+      tui.append_line(ICON_SYS + "Task: audio");
+      tui.append_line(ICON_SYS + "  audio.tool_tick   → true");
+      tui.append_line(ICON_SYS + "  audio.user_prompt → true");
+    } else if (name == "knowledge") {
+      if (agent.embed_model() == nullptr) {
+        tui.append_line(ICON_ERR + "Knowledge mode requires an embedding model.");
+        tui.append_line(ICON_ERR + "Load one first: /embed <path>");
+      } else {
+        cfg.modes_.knowledge = true;
+        tui.append_line(ICON_SYS + "Task: knowledge");
+        tui.append_line(ICON_SYS + "  RAG active, top_k → " + std::to_string(cfg.rag_top_k_));
+      }
+    } else {
+      tui.append_line(ICON_ERR + "Unknown mode: " + name);
+      tui.redraw_all();
+      return;
+    }
+    tui.set_mode_str(cfg.mode_string());
+    tui.redraw_all();
+  };
+
+  if (rest.empty()) {
+    // Show current state + picker
+    tui.append_line(ICON_SYS + "Active tasks: " + (cfg.mode_string().empty() ? "(none)" : cfg.mode_string()));
+    tui.redraw_all();
+    std::vector<std::string> options = { "Audio", "Default", "Knowledge", "Music", "Web" };
+    int sel = tui.list_picker(options, "Select task");
+    if (sel >= 0) {
+      apply_mode(options[sel]);
+    }
+  } else {
+    apply_mode(rest);
+  }
+}
+
+//
 // Slash command dispatcher
 //
 void handle_slash(const std::string &input, HaliConfig &cfg, Agent &agent, Tui &tui) {
@@ -968,7 +1047,16 @@ void handle_slash(const std::string &input, HaliConfig &cfg, Agent &agent, Tui &
     slash_audio(rest, cfg, agent, tui);
     return;
   }
+  if (verb == "/task") {
+    slash_task(rest, cfg, agent, tui);
+    return;
+  }
   if (verb == "/save") {
+    if (rest.empty()) {
+      tui.append_line(ICON_SYS + "Usage: /save <file>");
+      tui.redraw_all();
+      return;
+    }
     tui.append_line(ICON_TOOL + tui.save_chat(rest));
     tui.redraw_all();
     return;
@@ -1048,6 +1136,7 @@ const std::vector<SlashCommand> &slash_commands() {
     {"/settings", "",                  "show current settings"},
     {"/theme",    "",                  "toggle the theme (F12)"},
     {"/audio",    "[test|volume <v>]", "enable/disable audio, test tone, set volume"},
+    {"/task",     "[name]",            "direct agent behavior (web, music, audio, knowledge)"},
     {"/set",      "<key> <value>",     "change a setting live"},
     {"/save",     "[file]",            "save chat transcript (plain text)"},
     {"/session",  "[file]",            "save structured session snapshot"},

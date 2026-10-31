@@ -135,6 +135,7 @@ void HaliConfig::load_settings() {
     model.get_str("rope_scaling", rope_str);
     rope_scaling_type_ = to_rope_type(rope_str);
     model.get_float("rope_freq_scale", rope_freq_scale_);
+    model.get_bool("thinking", thinking_);
   }
 
   // ── rag section ────────────────────────────────────────────────
@@ -178,6 +179,13 @@ void HaliConfig::load_settings() {
   if (mcp.is_object()) {
     mcp.get_str("host", mcp_host_);
     mcp.get_int("port", mcp_port_);
+    std::vector<json::JsonValue> mfs;
+    if (mcp.get_array("filter", mfs)) {
+      mcp_filter_.clear();
+      for (const auto &m : mfs) {
+        mcp_filter_.emplace_back(m.get_str());
+      }
+    }
   }
 
   // ── logging section (plan 12) ──────────────────────────────────
@@ -189,16 +197,16 @@ void HaliConfig::load_settings() {
     logging.get_bool("erase", log_erase_);
   }
 
-  // ── permission_prompt / disable_run / disable_save_on_exit ─────
-  root.get_bool("permission_prompt", permission_prompt_);
-  root.get_bool("disable_run", disable_run_);
-  root.get_bool("disable_save_on_exit", disable_save_on_exit_);
-
-  // ── validation section ─────────────────────────────────────────
-  auto validation = root.get_child("validation");
-  if (validation.is_object()) {
-    validation.get_bool("disable_write_validate", disable_write_validate_);
-    validation.get_bool("disable_patch_validate", disable_patch_validate_);
+  // ── controls section ───────────────────────────────────────────
+  auto controls = root.get_child("controls");
+  if (controls.is_object()) {
+    controls.get_bool("permission_prompt", permission_prompt_);
+    controls.get_bool("disable_run", disable_run_);
+    controls.get_bool("disable_save_on_exit", disable_save_on_exit_);
+    controls.get_bool("disable_write_validate", disable_write_validate_);
+    controls.get_bool("disable_patch_validate", disable_patch_validate_);
+    controls.get_int("val_write_size_warn", val_write_size_warn_);
+    controls.get_bool("enabled_backups", enabled_backups_);
   }
 
   // ── extra_dirs section ─────────────────────────────────────────
@@ -210,25 +218,19 @@ void HaliConfig::load_settings() {
     }
   }
 
-  // ── behavior / paths / access ──────────────────────────────────
-  root.get_bool("thinking", thinking_);
-  root.get_int("web_port", web_port_);
-  root.get_bool("enabled_backups", enabled_backups_);
-  root.get_int("val_write_size_warn", val_write_size_warn_);
+  // ── web section ────────────────────────────────────────────────
+  auto web = root.get_child("web");
+  if (web.is_object()) {
+    web.get_bool("enabled", web_enabled_);
+    web.get_int("port", web_port_);
+  }
 
+  // ──  paths / access ────────────────────────────────────────────
   std::vector<json::JsonValue> kfs;
   if (root.get_array("knowledge_files", kfs)) {
     knowledge_files_.clear();
     for (const auto &k : kfs) {
       knowledge_files_.emplace_back(k.get_str());
-    }
-  }
-
-  std::vector<json::JsonValue> mfs;
-  if (root.get_array("mcp_filter", mfs)) {
-    mcp_filter_.clear();
-    for (const auto &m : mfs) {
-      mcp_filter_.emplace_back(m.get_str());
     }
   }
 }
@@ -313,6 +315,20 @@ std::string HaliConfig::prompt_audio() const {
       "- Example: TOOL:MUSIC set 2 pan -25\n"
       "- Example: TOOL:MUSIC play\n\n";
   }
+  return p;
+}
+
+std::string HaliConfig::prompt_web() const {
+  if (!web_enabled_) {
+    return "";
+  }
+  std::string p;
+  p +=
+    "## GUI (Web Display) — ACTIVE\n"
+    "The web display is enabled. Browse to http://localhost:" +
+    std::to_string(web_port_) + "/ai to see rendered output.\n"
+    "Use TOOL:GUI to display HTML/SVG content in the browser.\n"
+    "The agent is notified of GUI state changes automatically.\n\n";
   return p;
 }
 
@@ -531,6 +547,7 @@ std::string HaliConfig::build_system_prompt() const {
   p += prompt_file_ops();
   p += prompt_interaction();
   p += prompt_audio();
+  p += prompt_web();
   p += prompt_knowledge();
   return p;
 }
@@ -564,6 +581,7 @@ std::string HaliConfig::introspect() const {
   model.set_bool("offload_kqv", offload_kqv_);
   model.set_str("rope_scaling", rope_type_to_string(rope_scaling_type_));
   model.set_float("rope_freq_scale", rope_freq_scale_);
+  model.set_bool("thinking", thinking_);
 
   // rag
   auto rag = root.get_child("rag");
@@ -597,6 +615,7 @@ std::string HaliConfig::introspect() const {
   auto mcp = root.get_child("mcp");
   mcp.set_str("host", mcp_host_);
   mcp.set_int("port", mcp_port_);
+  mcp.set_arr("filter", mcp_filter_);
 
   // logging
   auto logging = root.get_child("logging");
@@ -605,22 +624,23 @@ std::string HaliConfig::introspect() const {
   logging.set_str("filter", log_filter_);
   logging.set_bool("erase", log_erase_);
 
-  root.set_bool("permission_prompt", permission_prompt_);
-  root.set_bool("disable_run", disable_run_);
-  root.set_bool("disable_save_on_exit", disable_save_on_exit_);
+  // controls
+  auto controls = root.get_child("controls");
+  controls.set_bool("permission_prompt", permission_prompt_);
+  controls.set_bool("disable_run", disable_run_);
+  controls.set_bool("disable_save_on_exit", disable_save_on_exit_);
+  controls.set_bool("disable_write_validate", disable_write_validate_);
+  controls.set_bool("disable_patch_validate", disable_patch_validate_);
+  controls.set_int("val_write_size_warn", val_write_size_warn_);
+  controls.set_bool("enabled_backups", enabled_backups_);
 
-  // validation
-  auto validation = root.get_child("validation");
-  validation.set_bool("disable_write_validate", disable_write_validate_);
-  validation.set_bool("disable_patch_validate", disable_patch_validate_);
+  // web
+  auto web = root.get_child("web");
+  web.set_bool("enabled", web_enabled_);
+  web.set_int("port", web_port_);
 
   // extra_dirs
   root.set_arr("extra_dirs", extra_dirs_);
-
-  // behavior / paths / access
-  root.set_bool("thinking", thinking_);
-  root.set_int("web_port", web_port_);
-  root.set_bool("enabled_backups", enabled_backups_);
 
   // Filter out auto-included knowledge files so they are not persisted
   // to config.json — they are re-discovered at startup.
@@ -632,10 +652,18 @@ std::string HaliConfig::introspect() const {
     }
   }
   root.set_arr("knowledge_files", user_kf);
-  root.set_arr("mcp_filter", mcp_filter_);
-  root.set_int("val_write_size_warn", val_write_size_warn_);
 
   return doc.to_string(json::WriteFlag::Pretty);
+}
+
+std::string HaliConfig::mode_string() const {
+  std::string s;
+  if (modes_.web)       s += "\U0001F310";  // 🌐
+  if (modes_.music)     s += "\U0001F3B5";  // 🎵
+  if (modes_.audio)     s += "\U0001F50A";  // 🔊
+  if (modes_.knowledge) s += "\U0001F4DA";  // 📚
+  if (s.empty()) return "";
+  return "[" + s + "]";
 }
 
 //
