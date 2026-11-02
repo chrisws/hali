@@ -20,6 +20,7 @@ struct SlashCommand {
   const char *name;
   const char *usage;
   const char *description;
+  const char *group;
 };
 
 const std::vector<SlashCommand> &slash_commands();

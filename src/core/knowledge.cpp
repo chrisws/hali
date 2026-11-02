@@ -13,6 +13,9 @@
 #include <vector>
 #include <format>
 #include <algorithm>
+#include <unistd.h>
+#include <chrono>
+#include <ctime>
 
 #include "knowledge.h"
 #include "shell_util.h"
@@ -25,10 +28,16 @@ namespace fs = std::filesystem;
 KnowledgeManager::KnowledgeManager() = default;
 
 //
-// Parse the meta-index JSON
+// Load the index JSON from index_json_path_
 //
-bool KnowledgeManager::load_meta(const std::string &path) {
-  std::ifstream f(path);
+bool KnowledgeManager::load_index_json() {
+  indexed_.clear();
+
+  if (!fs::exists(index_json_path_)) {
+    return true;
+  }
+
+  std::ifstream f(index_json_path_);
   if (!f) {
     return false;
   }
@@ -44,31 +53,67 @@ bool KnowledgeManager::load_meta(const std::string &path) {
   auto root = doc.get_root();
   auto srcs = root.get_child("sources");
   if (!srcs.is_arr()) {
-    return false;
+    return true;
   }
 
   std::vector<json::JsonValue> src_arr;
   srcs.get_array(src_arr);
 
   for (const auto &r : src_arr) {
-    KnowledgeSource src;
+    IndexedSource src;
     r.get_str("id", src.id);
-    r.get_str("version", src.version);
     r.get_str("title", src.title);
-    r.get_str("description", src.description);
-    r.get_str("url", src.url);
-    r.get_str("category", src.category);
-    r.get_int("size_mb", src.size_mb);
+    r.get_str("zim_path", src.zim_path);
+    r.get_str("rag_path", src.rag_path);
+    r.get_int("chunks", src.chunks);
+    r.get_str("indexed_at", src.indexed_at);
     if (!src.id.empty()) {
-      sources_.push_back(std::move(src));
+      indexed_.push_back(std::move(src));
     }
   }
 
-  return !sources_.empty();
+  return true;
 }
 
-const KnowledgeSource *KnowledgeManager::find(const std::string &id) const {
-  for (const auto &s : sources_) {
+//
+// Save the index JSON to index_json_path_
+//
+bool KnowledgeManager::save_index_json() const {
+  // Build JSON manually to avoid mutable doc complexity
+  std::ostringstream out;
+  out << "{\n  \"version\": \"1.0\",\n  \"sources\": [";
+
+  for (size_t i = 0; i < indexed_.size(); i++) {
+    const auto &s = indexed_[i];
+    if (i > 0) out << ",";
+    out << "\n    {\n";
+    out << "      \"id\": \"" << s.id << "\",\n";
+    out << "      \"title\": \"" << s.title << "\",\n";
+    out << "      \"zim_path\": \"" << s.zim_path << "\",\n";
+    out << "      \"rag_path\": \"" << s.rag_path << "\",\n";
+    out << "      \"chunks\": " << s.chunks << ",\n";
+    out << "      \"indexed_at\": \"" << s.indexed_at << "\"\n";
+    out << "    }";
+  }
+
+  if (!indexed_.empty()) {
+    out << "\n  ";
+  }
+  out << "]\n}\n";
+
+  fs::create_directories(
+    fs::path(index_json_path_).parent_path());
+
+  std::ofstream f(index_json_path_);
+  if (!f) {
+    return false;
+  }
+  f << out.str();
+  return true;
+}
+
+const IndexedSource *KnowledgeManager::find(const std::string &id) const {
+  for (const auto &s : indexed_) {
     if (s.id == id) {
       return &s;
     }
@@ -76,64 +121,12 @@ const KnowledgeSource *KnowledgeManager::find(const std::string &id) const {
   return nullptr;
 }
 
-std::string KnowledgeManager::zim_path(const std::string &id) const {
-  return zim_dir_ + "/" + id + ".zim";
-}
-
 std::string KnowledgeManager::rag_path(const std::string &id) const {
   return rag_dir_ + "/" + id + ".rag";
 }
 
-bool KnowledgeManager::zim_exists(const std::string &id) const {
-  return fs::exists(zim_path(id));
-}
-
 bool KnowledgeManager::rag_exists(const std::string &id) const {
   return fs::exists(rag_path(id));
-}
-
-//
-// Download a ZIM file via curl
-//
-bool KnowledgeManager::download(const std::string &id,
-                                const ProgressFn &progress) {
-  const KnowledgeSource *src = find(id);
-  if (!src) {
-    return false;
-  }
-
-  // Ensure zim directory exists
-  fs::create_directories(zim_dir_);
-
-  const std::string dest = zim_path(id);
-  if (fs::exists(dest)) {
-    if (progress) {
-      progress("already downloaded: " + dest);
-    }
-    return true;
-  }
-
-  if (progress) {
-    progress(std::format("downloading {} MB: {}", src->size_mb, src->url));
-  }
-
-  // Use curl with -L (follow redirects), -o (output), -f (fail on error)
-  const std::string cmd = std::format(
-    "curl -L -f -o '{}' '{}'", dest, src->url);
-  const std::string result = run_shell_command(cmd);
-
-  if (!fs::exists(dest) || fs::file_size(dest) == 0) {
-    if (progress) {
-      progress("download failed: " + result);
-    }
-    return false;
-  }
-
-  if (progress) {
-    progress(std::format("downloaded {} ({} bytes)",
-                         dest, fs::file_size(dest)));
-  }
-  return true;
 }
 
 //
@@ -145,30 +138,36 @@ bool KnowledgeManager::zimdump_available() {
 }
 
 //
-// Extract text from ZIM and build RAG index
+// Index a .zim file from an arbitrary path
 //
-bool KnowledgeManager::build(const std::string &id, Llama &llama,
-                             const ProgressFn &progress) {
-  const KnowledgeSource *src = find(id);
-  if (!src) {
-    return false;
-  }
-
-  const std::string zim_file = zim_path(id);
-  if (!fs::exists(zim_file)) {
+bool KnowledgeManager::build_from_path(const std::string &zim_path,
+                                       Llama &llama,
+                                       const ProgressFn &progress) {
+  if (!fs::exists(zim_path)) {
     if (progress) {
-      progress("ZIM file not found: " + zim_file +
-               ". Run /index download " + id + " first.");
+      progress("ZIM file not found: " + zim_path);
     }
     return false;
   }
 
   if (!zimdump_available()) {
     if (progress) {
-      progress("ERROR: zimdump not found. Install kiwix-tools: "
-               "sudo apt install kiwix-tools");
+      progress("ERROR: zimdump not found. Build kiwix-tools: "
+               "cd zim-tools && meson setup build && meson compile -C build");
     }
     return false;
+  }
+
+  // Derive id from filename stem
+  fs::path zp(zim_path);
+  const std::string id = zp.stem().string();
+
+  // Check if already indexed
+  if (rag_exists(id)) {
+    if (progress) {
+      progress("already indexed: " + id);
+    }
+    return true;
   }
 
   // Create temp extraction directory
@@ -177,12 +176,12 @@ bool KnowledgeManager::build(const std::string &id, Llama &llama,
   fs::create_directories(extract_dir);
 
   if (progress) {
-    progress("extracting " + zim_file + " ...");
+    progress("extracting " + zim_path + " ...");
   }
 
   // Run zimdump to extract text articles
   const std::string cmd = std::format(
-    "zimdump --text '{}' '{}'", zim_file, extract_dir);
+    "zimdump --text '{}' '{}'", zim_path, extract_dir);
   const std::string result = run_shell_command(cmd);
 
   if (progress) {
@@ -262,6 +261,39 @@ bool KnowledgeManager::build(const std::string &id, Llama &llama,
     return false;
   }
 
+  // Update index
+  IndexedSource src;
+  src.id = id;
+  src.title = id;
+  src.zim_path = zim_path;
+  src.rag_path = rag_file;
+  src.chunks = total_chunks;
+
+  // Timestamp
+  auto now = std::chrono::system_clock::now();
+  auto t = std::chrono::system_clock::to_time_t(now);
+  std::tm tm_buf {};
+  localtime_r(&t, &tm_buf);
+  char ts[32];
+  std::strftime(ts, sizeof(ts), "%Y-%m-%dT%H:%M:%S", &tm_buf);
+  src.indexed_at = ts;
+
+  // Replace if already in list, else append
+  bool found = false;
+  for (auto &existing : indexed_) {
+    if (existing.id == id) {
+      existing = src;
+      found = true;
+      break;
+    }
+  }
+  if (!found) {
+    indexed_.push_back(std::move(src));
+  }
+
+  // Save index JSON
+  save_index_json();
+
   if (progress) {
     progress(std::format("built {} ({} chunks) -> {}",
                          id, total_chunks, rag_file));
@@ -294,19 +326,23 @@ bool KnowledgeManager::unload(const std::string &id) {
 }
 
 //
-// Remove .rag and .zim files
+// Remove .rag file and entry from index
 //
 bool KnowledgeManager::remove(const std::string &id) {
   bool ok = true;
   const std::string rag = rag_path(id);
-  const std::string zim = zim_path(id);
 
   if (fs::exists(rag)) {
     ok = fs::remove(rag) && ok;
   }
-  if (fs::exists(zim)) {
-    ok = fs::remove(zim) && ok;
-  }
+
+  // Remove from indexed list
+  indexed_.erase(
+    std::remove_if(indexed_.begin(), indexed_.end(),
+                   [&id](const IndexedSource &s) { return s.id == id; }),
+    indexed_.end());
+
+  save_index_json();
 
   // Also unload from library if loaded
   library_.remove(id);
@@ -319,30 +355,6 @@ bool KnowledgeManager::remove(const std::string &id) {
 //
 int KnowledgeManager::load_all() {
   return library_.load_dir(rag_dir_);
-}
-
-//
-// Format available sources for display
-//
-std::string KnowledgeManager::list_sources() const {
-  if (sources_.empty()) {
-    return "No sources in meta-index.";
-  }
-
-  std::ostringstream out;
-  std::string current_cat;
-  for (const auto &s : sources_) {
-    if (s.category != current_cat) {
-      current_cat = s.category;
-      out << "\n" << current_cat << ":\n";
-    }
-    const std::string status = rag_exists(s.id) ? " [indexed]" :
-                               zim_exists(s.id) ? " [downloaded]" : "";
-    out << "  " << s.id << "  "
-        << s.title << "  ("
-        << s.size_mb << " MB)" << status << "\n";
-  }
-  return out.str();
 }
 
 //
@@ -364,21 +376,45 @@ std::string KnowledgeManager::list_loaded() const {
 }
 
 //
-// Get display labels for all known sources (for picker)
+// Format indexed sources for display
 //
-std::vector<std::string> KnowledgeManager::source_labels() const {
+std::string KnowledgeManager::list_indexed() const {
+  if (indexed_.empty()) {
+    return "No sources indexed.";
+  }
+
+  std::ostringstream out;
+  for (const auto &s : indexed_) {
+    out << "  " << s.id << "  ("
+        << s.chunks << " chunks)  "
+        << s.zim_path << "\n";
+  }
+  return out.str();
+}
+
+//
+// Get display labels for all indexed sources (for picker)
+//
+std::vector<std::string> KnowledgeManager::indexed_labels() const {
   std::vector<std::string> labels;
-  labels.reserve(sources_.size());
-  for (const auto &s : sources_) {
-    std::string label = s.id + " \u2014 " + s.title;
-    if (rag_exists(s.id)) {
-      label += " [indexed]";
-    } else if (zim_exists(s.id)) {
-      label += " [downloaded]";
-    }
-    labels.push_back(label);
+  labels.reserve(indexed_.size());
+  for (const auto &s : indexed_) {
+    labels.push_back(s.id + " \u2014 " +
+                     std::to_string(s.chunks) + " chunks");
   }
   return labels;
+}
+
+//
+// Get ids for all indexed sources (parallel to indexed_labels)
+//
+std::vector<std::string> KnowledgeManager::indexed_ids() const {
+  std::vector<std::string> ids;
+  ids.reserve(indexed_.size());
+  for (const auto &s : indexed_) {
+    ids.push_back(s.id);
+  }
+  return ids;
 }
 
 //
@@ -393,18 +429,6 @@ std::vector<std::string> KnowledgeManager::loaded_labels() const {
     labels.push_back(name + " (" + std::to_string(db ? db->size() : 0) + " chunks)");
   }
   return labels;
-}
-
-//
-// Get ids for all known sources (parallel to source_labels)
-//
-std::vector<std::string> KnowledgeManager::source_ids() const {
-  std::vector<std::string> ids;
-  ids.reserve(sources_.size());
-  for (const auto &s : sources_) {
-    ids.push_back(s.id);
-  }
-  return ids;
 }
 
 //
@@ -425,7 +449,7 @@ std::vector<std::string> KnowledgeManager::loaded_ids() const {
 //
 std::string KnowledgeManager::status() const {
   std::ostringstream out;
-  out << "Sources in meta-index: " << sources_.size() << "\n";
+  out << "Indexed sources:       " << indexed_.size() << "\n";
   out << "Loaded in session:     " << library_.size() << "\n";
   out << "Total chunks:          " << library_.total_chunks() << "\n";
 
@@ -441,20 +465,6 @@ std::string KnowledgeManager::status() const {
     }
     out << "RAG files:             " << count
         << " (" << (total / 1024) << " KB)\n";
-  }
-
-  // Disk usage for zim dir
-  if (fs::is_directory(zim_dir_)) {
-    size_t total = 0;
-    int count = 0;
-    for (const auto &entry : fs::directory_iterator(zim_dir_)) {
-      if (entry.is_regular_file() && entry.path().extension() == ".zim") {
-        total += entry.file_size();
-        count++;
-      }
-    }
-    out << "ZIM files:             " << count
-        << " (" << (total / (1024 * 1024)) << " MB)\n";
   }
 
   out << "zimdump available:     "

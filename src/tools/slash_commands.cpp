@@ -28,6 +28,7 @@
 #include "ui_text.h"
 #include "audit.h"
 #include "build.h"
+
 #include "skills_generated.h"
 #include "security_audit.h"
 #include "knowledge.h"
@@ -705,10 +706,9 @@ static void slash_index(const std::string &rest, HaliConfig &cfg, Agent &agent, 
     std::string hali_dir = cfg.sandbox_ + "/.hali";
     std::error_code ec;
     fs::create_directories(hali_dir + "/rag", ec);
-    fs::create_directories(hali_dir + "/zim", ec);
     km.set_rag_dir(hali_dir + "/rag");
-    km.set_zim_dir(hali_dir + "/zim");
-    km.load_meta("share/kiwix-meta.json");
+    km.set_index_json_path(hali_dir + "/kiwix-index.json");
+    km.load_index_json();
     initialized = true;
   }
 
@@ -727,30 +727,73 @@ static void slash_index(const std::string &rest, HaliConfig &cfg, Agent &agent, 
   };
 
   if (sub.empty()) {
-    // Show picker with all sources + "status" option
-    auto labels = km.source_labels();
-    auto ids = km.source_ids();
+    // Show picker: indexed sources + "Pick a .zim file…" + "status"
+    auto labels = km.indexed_labels();
+    auto ids = km.indexed_ids();
+    labels.push_back("Pick a .zim file…");
     labels.push_back("status");
-    int idx = tui.list_picker(labels, "Select a knowledge source to index");
+    int idx = tui.list_picker(labels, "Knowledge index");
     if (idx < 0) {
       tui.redraw_all();
       return;
     }
     if (idx == (int)ids.size()) {
-      // "status" was selected
+      // "Pick a .zim file…"
+      std::string zim_path = tui.file_picker(cfg.sandbox_, "Select .zim file");
+      if (zim_path.empty()) {
+        tui.redraw_all();
+        return;
+      }
+      if (!agent.embed_model()) {
+        tui.append_line(ICON_ERR + "No embedding model loaded. Use /embed first.");
+        tui.redraw_all();
+        return;
+      }
+      tui.append_line(ICON_SYS + "Indexing " + zim_path + "…");
+      tui.redraw_all();
+      if (km.build_from_path(zim_path, *agent.embed_model(), progress)) {
+        // Load into session
+        fs::path zp(zim_path);
+        std::string id = zp.stem().string();
+        if (km.load(id)) {
+          tui.append_line(ICON_SYS + "Indexed and loaded: " + id);
+        } else {
+          tui.append_line(ICON_ERR + "Build succeeded but load failed: " + id);
+        }
+      } else {
+        tui.append_line(ICON_ERR + "Index build failed.");
+      }
+      tui.redraw_all();
+      return;
+    }
+    if (idx == (int)ids.size() + 1) {
+      // "status"
       tui.append_line(ICON_SYS + km.status());
+      tui.append_line(ICON_SYS + "");
+      tui.append_line(ICON_SYS + "Indexed:");
+      tui.append_line(km.list_indexed());
       tui.append_line(ICON_SYS + "");
       tui.append_line(ICON_SYS + "Loaded:");
       tui.append_line(km.list_loaded());
       tui.redraw_all();
       return;
     }
+    // An indexed source was selected — load it
     sub = ids[idx];
-    // Fall through to download + build + load below
+    if (km.load(sub)) {
+      tui.append_line(ICON_SYS + "Loaded: " + sub);
+    } else {
+      tui.append_line(ICON_ERR + "Failed to load: " + sub);
+    }
+    tui.redraw_all();
+    return;
   }
 
   if (sub == "status") {
     tui.append_line(ICON_SYS + km.status());
+    tui.append_line(ICON_SYS + "");
+    tui.append_line(ICON_SYS + "Indexed:");
+    tui.append_line(km.list_indexed());
     tui.append_line(ICON_SYS + "");
     tui.append_line(ICON_SYS + "Loaded:");
     tui.append_line(km.list_loaded());
@@ -760,19 +803,10 @@ static void slash_index(const std::string &rest, HaliConfig &cfg, Agent &agent, 
 
   if (sub == "remove") {
     if (arg.empty()) {
-      // Show picker with sources that have files
-      auto ids = km.source_ids();
-      std::vector<std::string> labels;
-      std::vector<std::string> valid_ids;
-      for (const auto &id : ids) {
-        if (km.rag_exists(id) || km.zim_exists(id)) {
-          const KnowledgeSource *s = km.find(id);
-          labels.push_back(id + (s ? " \u2014 " + s->title : ""));
-          valid_ids.push_back(id);
-        }
-      }
+      auto labels = km.indexed_labels();
+      auto ids = km.indexed_ids();
       if (labels.empty()) {
-        tui.append_line(ICON_SYS + "No sources with files to remove.");
+        tui.append_line(ICON_SYS + "No sources to remove.");
         tui.redraw_all();
         return;
       }
@@ -781,7 +815,7 @@ static void slash_index(const std::string &rest, HaliConfig &cfg, Agent &agent, 
         tui.redraw_all();
         return;
       }
-      arg = valid_ids[idx];
+      arg = ids[idx];
     }
     if (km.remove(arg)) {
       tui.append_line(ICON_SYS + "Removed: " + arg);
@@ -794,17 +828,8 @@ static void slash_index(const std::string &rest, HaliConfig &cfg, Agent &agent, 
 
   if (sub == "load") {
     if (arg.empty()) {
-      // Show picker with sources that have .rag files
-      auto ids = km.source_ids();
-      std::vector<std::string> labels;
-      std::vector<std::string> valid_ids;
-      for (const auto &id : ids) {
-        if (km.rag_exists(id)) {
-          const KnowledgeSource *s = km.find(id);
-          labels.push_back(id + (s ? " \u2014 " + s->title : ""));
-          valid_ids.push_back(id);
-        }
-      }
+      auto labels = km.indexed_labels();
+      auto ids = km.indexed_ids();
       if (labels.empty()) {
         tui.append_line(ICON_SYS + "No indexed sources available to load.");
         tui.redraw_all();
@@ -815,7 +840,7 @@ static void slash_index(const std::string &rest, HaliConfig &cfg, Agent &agent, 
         tui.redraw_all();
         return;
       }
-      arg = valid_ids[idx];
+      arg = ids[idx];
     }
     if (km.load(arg)) {
       tui.append_line(ICON_SYS + "Loaded: " + arg);
@@ -828,7 +853,6 @@ static void slash_index(const std::string &rest, HaliConfig &cfg, Agent &agent, 
 
   if (sub == "unload") {
     if (arg.empty()) {
-      // Show picker with currently loaded sources
       auto labels = km.loaded_labels();
       auto ids = km.loaded_ids();
       if (labels.empty()) {
@@ -852,68 +876,44 @@ static void slash_index(const std::string &rest, HaliConfig &cfg, Agent &agent, 
     return;
   }
 
-  // Default: download + build + load
-  const KnowledgeSource *src = km.find(sub);
-  if (!src) {
-    tui.append_line(ICON_ERR + "Unknown source: " + sub);
-    tui.append_line(ICON_SYS + "Type /index (no arg) to see available sources.");
+  // Default: treat as a .zim file path or an indexed source id
+  if (fs::exists(sub)) {
+    // It's a file path — index it
+    if (!agent.embed_model()) {
+      tui.append_line(ICON_ERR + "No embedding model loaded. Use /embed first.");
+      tui.redraw_all();
+      return;
+    }
+    tui.append_line(ICON_SYS + "Indexing " + sub + "…");
+    tui.redraw_all();
+    if (km.build_from_path(sub, *agent.embed_model(), progress)) {
+      fs::path zp(sub);
+      std::string id = zp.stem().string();
+      if (km.load(id)) {
+        tui.append_line(ICON_SYS + "Indexed and loaded: " + id);
+      } else {
+        tui.append_line(ICON_ERR + "Build succeeded but load failed: " + id);
+      }
+    } else {
+      tui.append_line(ICON_ERR + "Index build failed.");
+    }
     tui.redraw_all();
     return;
   }
 
-  // Check if already built
+  // Try loading an indexed source by id
   if (km.rag_exists(sub)) {
     if (km.load(sub)) {
-      tui.append_line(ICON_SYS + "Loaded existing index: " + sub);
-      tui.redraw_all();
-      return;
+      tui.append_line(ICON_SYS + "Loaded: " + sub);
+    } else {
+      tui.append_line(ICON_ERR + "Failed to load: " + sub);
     }
-    tui.append_line(ICON_ERR + "Failed to load existing index: " + sub);
     tui.redraw_all();
     return;
   }
 
-  // Check for embed model
-  if (!agent.embed_model()) {
-    tui.append_line(ICON_ERR + "No embedding model loaded. Use /embed first.");
-    tui.redraw_all();
-    return;
-  }
-
-  // Check zimdump availability
-  if (!KnowledgeManager::zimdump_available()) {
-    tui.append_line(ICON_ERR + "zimdump not found. Install kiwix-tools: sudo apt install kiwix-tools");
-    tui.redraw_all();
-    return;
-  }
-
-  // Download
-  if (!km.zim_exists(sub)) {
-    tui.append_line(ICON_SYS + "Downloading " + src->title + " (" +
-                     std::to_string(src->size_mb) + " MB)…");
-    tui.redraw_all();
-    if (!km.download(sub, progress)) {
-      tui.append_line(ICON_ERR + "Download failed: " + sub);
-      tui.redraw_all();
-      return;
-    }
-  }
-
-  // Build RAG index
-  tui.append_line(ICON_SYS + "Extracting and indexing " + src->title + "…");
-  tui.redraw_all();
-  if (!km.build(sub, *agent.embed_model(), progress)) {
-    tui.append_line(ICON_ERR + "Index build failed: " + sub);
-    tui.redraw_all();
-    return;
-  }
-
-  // Load into session
-  if (km.load(sub)) {
-    tui.append_line(ICON_SYS + "Indexed and loaded: " + src->title);
-  } else {
-    tui.append_line(ICON_ERR + "Build succeeded but load failed: " + sub);
-  }
+  tui.append_line(ICON_ERR + "Unknown source or file: " + sub);
+  tui.append_line(ICON_SYS + "Type /index (no arg) to see available sources.");
   tui.redraw_all();
 }
 
@@ -975,6 +975,9 @@ static void slash_task(const std::string &rest, HaliConfig &cfg, Agent &agent, T
         cfg.modes_.knowledge = new_state;
         tui.append_line(ICON_SYS + "Task: knowledge");
         tui.append_line(ICON_SYS + "  RAG active, top_k → " + std::to_string(cfg.rag_top_k_));
+        if (new_state) {
+          slash_index("", cfg, agent, tui);
+        }
       }
     } else {
       tui.append_line(ICON_ERR + "Unknown mode: " + name);
@@ -1133,30 +1136,30 @@ void handle_slash(const std::string &input, HaliConfig &cfg, Agent &agent, Tui &
 
 const std::vector<SlashCommand> &slash_commands() {
   static const std::vector<SlashCommand> commands = {
-    {"/model",    "[path]",            "load a GGUF model (picker if no path)"},
-    {"/embed",    "[path]",            "load an embedding model (picker if no path)"},
-    {"/rag",      "[path]",            "index file or directory (picker if no path)"},
-    {"/memory",   "",                  "KV / VRAM / layer stats"},
-    {"/clear",    "",                  "reset conversation"},
-    {"/settings", "",                  "show current settings"},
-    {"/theme",    "",                  "toggle the theme (F12)"},
-    {"/audio",    "[test|volume <v>]", "enable/disable audio, test tone, set volume"},
-    {"/task",     "[name]",            "direct agent behavior (web, music, audio, knowledge)"},
-    {"/set",      "<key> <value>",     "change a setting live"},
-    {"/save",     "[file]",            "save chat transcript (plain text)"},
-    {"/session",  "[file]",            "save structured session snapshot"},
-    {"/allow",        "[path]",        "allow read access to a directory"},
-    {"/allow-list",   "",              "list allowed directories"},
-    {"/allow-remove", "[path]",        "remove an allowed directory"},
-    {"/revoke",       "<name>",        "remove an approved RUN command"},
-    {"/audit",    "[path]",            "scan codebase for model-hostility issues"},
-    {"/security-audit", "",            "mark sandbox as security-audited"},
-    {"/skill",    "[name] [kickoff]",  "load a skill into the conversation"},
-    {"/lint",     "",                  "list source files and run clang-tidy"},
-    {"/tool",     "[TOOL:NAME [args]]","invoke a tool (no args lists all tools)"},
-    {"/plan",     "[text]",            "open a multiline text editor for a plan"},
-    {"/index",    "[name|status|remove|load|unload]", "manage knowledge sources (ZIM/Wikipedia)"},
-    {"/help",     "",                  "this message"},
+    {"/model",    "[path]",            "load a GGUF model (picker if no path)", "Model"},
+    {"/embed",    "[path]",            "load an embedding model (picker if no path)", "Model"},
+    {"/rag",      "[path]",            "index file or directory (picker if no path)", "Model"},
+    {"/memory",   "",                  "KV / VRAM / layer stats", "Model"},
+    {"/clear",    "",                  "reset conversation", "Session"},
+    {"/save",     "[file]",            "save chat transcript (plain text)", "Session"},
+    {"/session",  "[file]",            "save structured session snapshot", "Session"},
+    {"/set",      "<key> <value>",     "change a setting live", "Settings"},
+    {"/settings", "",                  "show current settings", "Settings"},
+    {"/theme",    "",                  "toggle the theme (F12)", "Settings"},
+    {"/allow",        "[path]",        "allow read access to a directory", "Access"},
+    {"/allow-list",   "",              "list allowed directories", "Access"},
+    {"/allow-remove", "[path]",        "remove an allowed directory", "Access"},
+    {"/revoke",       "<name>",        "remove an approved RUN command", "Access"},
+    {"/audit",    "[path]",            "scan codebase for model-hostility issues", "Audit"},
+    {"/lint",     "",                  "list source files and run clang-tidy", "Audit"},
+    {"/security-audit", "",            "mark sandbox as security-audited", "Audit"},
+    {"/skill",    "[name] [kickoff]",  "load a skill into the conversation", "Tools"},
+    {"/task",     "[name]",            "direct agent behavior (web, music, audio, knowledge)", "Tools"},
+    {"/tool",     "[TOOL:NAME [args]]","invoke a tool (no args lists all tools)", "Tools"},
+    {"/plan",     "[text]",            "open a multiline text editor for a plan", "Tools"},
+    {"/index",    "[name|status|remove|load|unload]", "manage knowledge sources (ZIM/Wikipedia)", "Knowledge"},
+    {"/audio",    "[test|volume <v>]", "enable/disable audio, test tone, set volume", "Audio"},
+    {"/help",     "",                  "this message", "Help"},
   };
   return commands;
 }

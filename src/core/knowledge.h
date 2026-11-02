@@ -17,16 +17,15 @@
 struct Llama;
 
 //
-// A single entry from the kiwix meta-index
+// A single entry in the .hali/kiwix-index.json tracking file
 //
-struct KnowledgeSource {
+struct IndexedSource {
   std::string id;
-  std::string version;
   std::string title;
-  std::string description;
-  std::string url;
-  int         size_mb = 0;
-  std::string category;
+  std::string zim_path;
+  std::string rag_path;
+  int         chunks = 0;
+  std::string indexed_at;
 };
 
 //
@@ -37,35 +36,38 @@ using ProgressFn = std::function<void(const std::string &)>;
 //
 // KnowledgeManager
 //
-// Owns the RagLibrary and the ZIM download/build pipeline.
-// Parses the bundled meta-index, downloads ZIM files, extracts text,
-// builds RAG indexes, and manages loading/unloading of .rag files.
+// Owns the RagLibrary and the ZIM indexing pipeline.
+// Indexes .zim files from arbitrary paths, builds RAG indexes,
+// maintains a .hali/kiwix-index.json tracking file, and manages
+// loading/unloading of .rag files.
 //
 struct KnowledgeManager {
   explicit KnowledgeManager();
   ~KnowledgeManager() = default;
 
   //
-  // Parse the meta-index JSON file. Returns true on success.
+  // Load the index JSON from index_json_path_. Returns true on success.
   //
-  bool load_meta(const std::string &path);
+  bool load_index_json();
 
   //
-  // Find a source by its unique id. Returns nullptr if not found.
+  // Save the index JSON to index_json_path_.
   //
-  const KnowledgeSource *find(const std::string &id) const;
+  bool save_index_json() const;
 
   //
-  // Download a ZIM file from the source's URL to zim_dir_/<id>.zim
+  // Find an indexed source by id. Returns nullptr if not found.
   //
-  bool download(const std::string &id, const ProgressFn &progress);
+  const IndexedSource *find(const std::string &id) const;
 
   //
-  // Extract text from a downloaded ZIM and build a RAG index.
-  // Requires the ZIM file to already exist in zim_dir_.
-  // Saves the result to rag_dir_/<id>.rag
+  // Index a .zim file from an arbitrary path.
+  // Extracts text with zimdump, embeds chunks, saves .rag file,
+  // and updates the index JSON.
   //
-  bool build(const std::string &id, Llama &llama, const ProgressFn &progress);
+  bool build_from_path(const std::string &zim_path,
+                       Llama &llama,
+                       const ProgressFn &progress);
 
   //
   // Load a built .rag file into the session library
@@ -78,7 +80,7 @@ struct KnowledgeManager {
   bool unload(const std::string &id);
 
   //
-  // Delete .rag and .zim files for a source
+  // Delete .rag file for a source and remove from index JSON
   //
   bool remove(const std::string &id);
 
@@ -89,20 +91,25 @@ struct KnowledgeManager {
   int load_all();
 
   //
-  // Format available sources as a display string
-  //
-  std::string list_sources() const;
-
-  //
   // Format loaded sources as a display string
   //
   std::string list_loaded() const;
 
   //
-  // Get display labels for all known sources (for picker)
-  // Returns "id — title" strings
+  // Format indexed sources as a display string
   //
-  std::vector<std::string> source_labels() const;
+  std::string list_indexed() const;
+
+  //
+  // Get display labels for all indexed sources (for picker)
+  // Returns "id — title (N chunks)" strings
+  //
+  std::vector<std::string> indexed_labels() const;
+
+  //
+  // Get ids for all indexed sources (parallel to indexed_labels)
+  //
+  std::vector<std::string> indexed_ids() const;
 
   //
   // Get display labels for currently loaded sources (for picker)
@@ -110,17 +117,12 @@ struct KnowledgeManager {
   std::vector<std::string> loaded_labels() const;
 
   //
-  // Get ids for all known sources (parallel to source_labels)
-  //
-  std::vector<std::string> source_ids() const;
-
-  //
   // Get ids for currently loaded sources (parallel to loaded_labels)
   //
   std::vector<std::string> loaded_ids() const;
 
   //
-  // Status summary: disk usage, loaded count, source count
+  // Status summary: disk usage, loaded count, indexed count
   //
   std::string status() const;
 
@@ -136,11 +138,6 @@ struct KnowledgeManager {
   static bool zimdump_available();
 
   //
-  // Check if a ZIM file exists for the given id
-  //
-  bool zim_exists(const std::string &id) const;
-
-  //
   // Check if a .rag file exists for the given id
   //
   bool rag_exists(const std::string &id) const;
@@ -148,20 +145,19 @@ struct KnowledgeManager {
   //
   // Paths
   //
-  std::string zim_path(const std::string &id) const;
   std::string rag_path(const std::string &id) const;
 
   //
   // Set directories (call before use)
   //
-  void set_rag_dir(const std::string &dir)  { rag_dir_ = dir; }
-  void set_zim_dir(const std::string &dir)  { zim_dir_ = dir; }
+  void set_rag_dir(const std::string &dir)       { rag_dir_ = dir; }
+  void set_index_json_path(const std::string &p) { index_json_path_ = p; }
 
 private:
-  std::vector<KnowledgeSource> sources_;
-  RagLibrary                   library_;
-  std::string                  rag_dir_ = ".hali/rag";
-  std::string                  zim_dir_ = ".hali/zim";
+  std::vector<IndexedSource> indexed_;
+  RagLibrary                 library_;
+  std::string                rag_dir_ = ".hali/rag";
+  std::string                index_json_path_ = ".hali/kiwix-index.json";
 };
 
 #endif
