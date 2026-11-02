@@ -12,6 +12,7 @@
 #include <functional>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 #include "input_history.h"
 #include "tui_context.h"
@@ -59,6 +60,8 @@ class Input {
   // ── slash command completion ──────────────────────────────────────
   std::string completion_suffix_;
   bool completion_active_ = false;
+  std::vector<std::string> completion_matches_;
+  int completion_index_ = 0;
   void update_completion();
   void accept_completion(TuiContext &tui);
   void dismiss_completion();

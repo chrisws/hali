@@ -6,9 +6,12 @@
 // Download the GNU Public License (GPL) from www.gnu.org
 //
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdio>
 #include <string>
+#include <unordered_map>
+#include <vector>
 
 #include "ui_text.h"
 #include "icon.h"
@@ -18,18 +21,65 @@
 namespace ui {
 
 void help(Tui &tui) {
-  tui.append_line(ICON_SYS + "Commands:");
+  // Collect commands into groups, preserving first-seen group order
+  std::vector<std::string> group_order;
+  std::unordered_map<std::string, std::vector<const SlashCommand *>> groups;
+  for (const auto &cmd : slash_commands()) {
+    if (groups.find(cmd.group) == groups.end()) {
+      group_order.push_back(cmd.group);
+    }
+    groups[cmd.group].push_back(&cmd);
+  }
+
+  // Sort each group alphabetically by command name
+  for (auto &pair : groups) {
+    std::sort(pair.second.begin(), pair.second.end(),
+              [](const SlashCommand *a, const SlashCommand *b) {
+                return std::string(a->name) < std::string(b->name);
+              });
+  }
+
+  // Compute the max width of name+usage for alignment
+  size_t max_w = 0;
   for (const auto &cmd : slash_commands()) {
     std::string line = cmd.name;
     if (cmd.usage[0] != '\0') {
       line += ' ';
       line += cmd.usage;
     }
-    while (line.size() < 26) { line += ' '; }
-    line += cmd.description;
-    tui.append_line(ICON_SYS + "  " + line);
+    if (line.size() > max_w) {
+      max_w = line.size();
+    }
   }
-  tui.append_line(ICON_SYS + "  exit / quit              exit Hali");
+  // Also account for "exit / quit"
+  if (std::string("exit / quit").size() > max_w) {
+    max_w = std::string("exit / quit").size();
+  }
+
+  auto format_line = [&](const std::string &name, const std::string &usage,
+                         const std::string &desc) -> std::string {
+    std::string line = name;
+    if (!usage.empty()) {
+      line += ' ';
+      line += usage;
+    }
+    while (line.size() < max_w) { line += ' '; }
+    line += desc;
+    return line;
+  };
+
+  tui.append_line(ICON_SYS + "Commands:");
+  for (const auto &gname : group_order) {
+    tui.append_line(ICON_SYS + "  " + gname);
+    for (const auto *cmd : groups[gname]) {
+      tui.append_line(ICON_SYS + "    " + format_line(cmd->name, cmd->usage, cmd->description));
+    }
+  }
+
+  // Exit/quit
+  tui.append_line(ICON_SYS + "    " + format_line("exit / quit", "", "exit Hali"));
+
+  tui.append_line(ICON_SYS + "");
   tui.append_line(ICON_SYS + "Settable keys (via /set):");
   tui.append_line(ICON_SYS + "  temperature  top_p  top_k  min_p  penalty_repeat");
   tui.append_line(ICON_SYS + "  penalty_last_n  rag_top_k  n_gpu_layers");

@@ -352,15 +352,19 @@ static void test_completion_no_slash() {
 }
 
 //
-// Test: update_completion with "/" alone → multiple matches → no completion
+// Test: update_completion with "/" alone → all commands match → first alphabetical
 //
 static void test_completion_slash_only() {
   Input in;
 
   in.input_buf_ = "/";
   in.update_completion();
-  assert(!in.completion_active_);
-  assert(in.completion_suffix_.empty());
+  assert(in.completion_active_);
+  assert(!in.completion_matches_.empty());
+  // First alphabetical command is /allow
+  assert(in.completion_matches_[0] == "/allow");
+  assert(in.completion_suffix_ == "allow");
+  assert(in.completion_index_ == 0);
 
   cout << "test_completion_slash_only passed" << endl;
 }
@@ -435,115 +439,140 @@ static void test_completion_single_match() {
 }
 
 //
-// Test: update_completion exact match → no suffix (nothing left to suggest)
+// Test: update_completion exact match → active with empty suffix
 //
 static void test_completion_exact_match() {
   Input in;
 
   in.input_buf_ = "/model";
   in.update_completion();
-  assert(!in.completion_active_);
+  assert(in.completion_active_);
   assert(in.completion_suffix_.empty());
+  assert(in.completion_matches_.size() == 1);
+  assert(in.completion_matches_[0] == "/model");
 
   in.input_buf_ = "/help";
   in.update_completion();
-  assert(!in.completion_active_);
+  assert(in.completion_active_);
+  assert(in.completion_suffix_.empty());
 
   in.input_buf_ = "/clear";
   in.update_completion();
-  assert(!in.completion_active_);
+  assert(in.completion_active_);
+  assert(in.completion_suffix_.empty());
 
   cout << "test_completion_exact_match passed" << endl;
 }
 
 //
-// Test: update_completion multiple matches → no completion
+// Test: update_completion multiple matches → first alphabetical match suffix
 //
 static void test_completion_multiple_matches() {
   Input in;
 
-  // /m → /model, /memory → no completion
+  // /m → /memory, /model (sorted) → suffix "emory"
   in.input_buf_ = "/m";
   in.update_completion();
-  assert(!in.completion_active_);
+  assert(in.completion_active_);
+  assert(in.completion_matches_.size() == 2);
+  assert(in.completion_matches_[0] == "/memory");
+  assert(in.completion_matches_[1] == "/model");
+  assert(in.completion_suffix_ == "emory");
 
-  // /s → /session, /set, /settings, /save → no completion
+  // /s → /save, /security-audit, /session, /set, /settings, /skill (sorted) → suffix "ave"
   in.input_buf_ = "/s";
   in.update_completion();
-  assert(!in.completion_active_);
+  assert(in.completion_active_);
+  assert(in.completion_matches_.size() == 6);
+  assert(in.completion_matches_[0] == "/save");
+  assert(in.completion_suffix_ == "ave");
 
-  // /se → /session, /set, /settings → no completion
+  // /se → /security-audit, /session, /set, /settings (sorted) → suffix "curity-audit"
   in.input_buf_ = "/se";
   in.update_completion();
-  assert(!in.completion_active_);
+  assert(in.completion_active_);
+  assert(in.completion_matches_.size() == 4);
+  assert(in.completion_matches_[0] == "/security-audit");
+  assert(in.completion_suffix_ == "curity-audit");
 
-  // /a → /audio, /allow, /audit → no completion
+  // /a → /allow, /allow-list, /allow-remove, /audio, /audit (sorted) → suffix "llow"
   in.input_buf_ = "/a";
   in.update_completion();
-  assert(!in.completion_active_);
+  assert(in.completion_active_);
+  assert(in.completion_matches_.size() == 5);
+  assert(in.completion_matches_[0] == "/allow");
+  assert(in.completion_suffix_ == "llow");
 
-  // /au → /audio, /audit → common prefix "/audi" → suffix "di"
+  // /au → /audio, /audit (sorted) → suffix "dio"
   in.input_buf_ = "/au";
   in.update_completion();
   assert(in.completion_active_);
-  assert(in.completion_suffix_ == "di");
+  assert(in.completion_matches_.size() == 2);
+  assert(in.completion_matches_[0] == "/audio");
+  assert(in.completion_suffix_ == "dio");
 
-  // /r → /rag, /revoke → no completion
+  // /r → /rag, /revoke (sorted) → suffix "ag"
   in.input_buf_ = "/r";
   in.update_completion();
-  assert(!in.completion_active_);
+  assert(in.completion_active_);
+  assert(in.completion_matches_.size() == 2);
+  assert(in.completion_matches_[0] == "/rag");
+  assert(in.completion_suffix_ == "ag");
 
   cout << "test_completion_multiple_matches passed" << endl;
 }
 
 //
-// Test: update_completion shows common prefix when multiple matches share it
+// Test: update_completion with overlapping prefixes → first match suffix
 //
 static void test_completion_common_prefix() {
   Input in;
 
-  // /al → matches /allow, /allow-list, /allow-remove
-  // common prefix is "/allow" → suffix "low"
+  // /al → matches /allow, /allow-list, /allow-remove → first: /allow → suffix "low"
   in.input_buf_ = "/al";
   in.update_completion();
   assert(in.completion_active_);
+  assert(in.completion_matches_.size() == 3);
   assert(in.completion_suffix_ == "low");
 
-  // /all → same matches → common prefix "/allow" → suffix "ow"
+  // /all → same matches → first: /allow → suffix "ow"
   in.input_buf_ = "/all";
   in.update_completion();
   assert(in.completion_active_);
   assert(in.completion_suffix_ == "ow");
 
-  // /allo → same matches → common prefix "/allow" → suffix "w"
+  // /allo → same matches → first: /allow → suffix "w"
   in.input_buf_ = "/allo";
   in.update_completion();
   assert(in.completion_active_);
   assert(in.completion_suffix_ == "w");
 
-  // /allow → same matches → common prefix "/allow" → equals buffer → no completion
+  // /allow → matches /allow, /allow-list, /allow-remove → first: /allow → suffix ""
   in.input_buf_ = "/allow";
   in.update_completion();
-  assert(!in.completion_active_);
+  assert(in.completion_active_);
   assert(in.completion_suffix_.empty());
+  assert(in.completion_matches_.size() == 3);
 
-  // /allow- → matches /allow-list, /allow-remove
-  // common prefix is "/allow-" → equals buffer → no completion
+  // /allow- → matches /allow-list, /allow-remove → first: /allow-list → suffix "list"
   in.input_buf_ = "/allow-";
   in.update_completion();
-  assert(!in.completion_active_);
-  assert(in.completion_suffix_.empty());
+  assert(in.completion_active_);
+  assert(in.completion_matches_.size() == 2);
+  assert(in.completion_suffix_ == "list");
 
   // /allow-l → single match /allow-list → suffix "ist"
   in.input_buf_ = "/allow-l";
   in.update_completion();
   assert(in.completion_active_);
+  assert(in.completion_matches_.size() == 1);
   assert(in.completion_suffix_ == "ist");
 
   // /allow-r → single match /allow-remove → suffix "emove"
   in.input_buf_ = "/allow-r";
   in.update_completion();
   assert(in.completion_active_);
+  assert(in.completion_matches_.size() == 1);
   assert(in.completion_suffix_ == "emove");
 
   // /allow-li → single match /allow-list → suffix "st"
@@ -558,44 +587,35 @@ static void test_completion_common_prefix() {
   assert(in.completion_active_);
   assert(in.completion_suffix_ == "move");
 
-  // /a → matches /audio, /allow, /allow-list, /allow-remove, /audit
-  // common prefix is "/a" → equals buffer → no completion
-  in.input_buf_ = "/a";
-  in.update_completion();
-  assert(!in.completion_active_);
-  assert(in.completion_suffix_.empty());
-
-  // /au → matches /audio, /audit
-  // common prefix is "/audi" → suffix "di"
+  // /au → matches /audio, /audit → first: /audio → suffix "dio"
   in.input_buf_ = "/au";
   in.update_completion();
   assert(in.completion_active_);
-  assert(in.completion_suffix_ == "di");
+  assert(in.completion_matches_.size() == 2);
+  assert(in.completion_suffix_ == "dio");
 
-  // /aud → matches /audio, /audit
-  // common prefix is "/audi" → suffix "i"
+  // /aud → matches /audio, /audit → first: /audio → suffix "io"
   in.input_buf_ = "/aud";
   in.update_completion();
   assert(in.completion_active_);
-  assert(in.completion_suffix_ == "i");
+  assert(in.completion_suffix_ == "io");
 
-  // /audi → matches /audio, /audit
-  // common prefix is "/audi" → equals buffer → no completion
+  // /audi → matches /audio, /audit → first: /audio → suffix "o"
   in.input_buf_ = "/audi";
   in.update_completion();
-  assert(!in.completion_active_);
-  assert(in.completion_suffix_.empty());
+  assert(in.completion_active_);
+  assert(in.completion_suffix_ == "o");
 
-  // /audio → exact match → no suffix
+  // /audio → exact match → suffix ""
   in.input_buf_ = "/audio";
   in.update_completion();
-  assert(!in.completion_active_);
+  assert(in.completion_active_);
   assert(in.completion_suffix_.empty());
 
-  // /audit → exact match → no suffix
+  // /audit → exact match → suffix ""
   in.input_buf_ = "/audit";
   in.update_completion();
-  assert(!in.completion_active_);
+  assert(in.completion_active_);
   assert(in.completion_suffix_.empty());
 
   cout << "test_completion_common_prefix passed" << endl;
@@ -607,15 +627,18 @@ static void test_completion_common_prefix() {
 static void test_completion_narrowing() {
   Input in;
 
-  // /se → /session, /set, /settings → multiple → no completion
+  // /se → /security-audit, /session, /set, /settings → multiple → first: /security-audit → suffix "curity-audit"
   in.input_buf_ = "/se";
   in.update_completion();
-  assert(!in.completion_active_);
+  assert(in.completion_active_);
+  assert(in.completion_matches_.size() == 4);
+  assert(in.completion_suffix_ == "curity-audit");
 
   // /ses → /session only → suffix "sion"
   in.input_buf_ = "/ses";
   in.update_completion();
   assert(in.completion_active_);
+  assert(in.completion_matches_.size() == 1);
   assert(in.completion_suffix_ == "sion");
 
   // /sess → /session only → suffix "ion"
@@ -624,15 +647,18 @@ static void test_completion_narrowing() {
   assert(in.completion_active_);
   assert(in.completion_suffix_ == "ion");
 
-  // /s → /session, /set, /settings, /save → multiple
+  // /s → /save, /security-audit, /session, /set, /settings, /skill → multiple → first: /save → suffix "ave"
   in.input_buf_ = "/s";
   in.update_completion();
-  assert(!in.completion_active_);
+  assert(in.completion_active_);
+  assert(in.completion_matches_.size() == 6);
+  assert(in.completion_suffix_ == "ave");
 
   // /sa → /save only → suffix "ve"
   in.input_buf_ = "/sa";
   in.update_completion();
   assert(in.completion_active_);
+  assert(in.completion_matches_.size() == 1);
   assert(in.completion_suffix_ == "ve");
 
   cout << "test_completion_narrowing passed" << endl;
@@ -656,13 +682,103 @@ static void test_completion_case_insensitive() {
 
   in.input_buf_ = "/HELP";
   in.update_completion();
-  assert(!in.completion_active_);  // exact match, no suffix
+  assert(in.completion_active_);  // exact match, empty suffix
+  assert(in.completion_suffix_.empty());
 
   in.input_buf_ = "/hElp";
   in.update_completion();
-  assert(!in.completion_active_);  // exact match (case-insensitive)
+  assert(in.completion_active_);  // exact match (case-insensitive)
+  assert(in.completion_suffix_.empty());
 
   cout << "test_completion_case_insensitive passed" << endl;
+}
+
+//
+// Test: TAB cycling through multiple completions
+//
+static void test_completion_cycling() {
+  Input in;
+
+  // /s → 6 matches: /save, /security-audit, /session, /set, /settings, /skill
+  in.input_buf_ = "/s";
+  in.update_completion();
+  assert(in.completion_active_);
+  assert(in.completion_matches_.size() == 6);
+  assert(in.completion_index_ == 0);
+  assert(in.completion_suffix_ == "ave");
+
+  // Simulate TAB: cycle to index 1
+  in.completion_index_ = (in.completion_index_ + 1) % static_cast<int>(in.completion_matches_.size());
+  in.completion_suffix_ = in.completion_matches_[in.completion_index_].substr(in.input_buf_.size());
+  assert(in.completion_index_ == 1);
+  assert(in.completion_suffix_ == "ecurity-audit");
+
+  // TAB: cycle to index 2
+  in.completion_index_ = (in.completion_index_ + 1) % static_cast<int>(in.completion_matches_.size());
+  in.completion_suffix_ = in.completion_matches_[in.completion_index_].substr(in.input_buf_.size());
+  assert(in.completion_index_ == 2);
+  assert(in.completion_suffix_ == "ession");
+
+  // TAB: cycle to index 3
+  in.completion_index_ = (in.completion_index_ + 1) % static_cast<int>(in.completion_matches_.size());
+  in.completion_suffix_ = in.completion_matches_[in.completion_index_].substr(in.input_buf_.size());
+  assert(in.completion_index_ == 3);
+  assert(in.completion_suffix_ == "et");
+
+  // TAB: cycle to index 4
+  in.completion_index_ = (in.completion_index_ + 1) % static_cast<int>(in.completion_matches_.size());
+  in.completion_suffix_ = in.completion_matches_[in.completion_index_].substr(in.input_buf_.size());
+  assert(in.completion_index_ == 4);
+  assert(in.completion_suffix_ == "ettings");
+
+  // TAB: cycle to index 5
+  in.completion_index_ = (in.completion_index_ + 1) % static_cast<int>(in.completion_matches_.size());
+  in.completion_suffix_ = in.completion_matches_[in.completion_index_].substr(in.input_buf_.size());
+  assert(in.completion_index_ == 5);
+  assert(in.completion_suffix_ == "kill");
+
+  // TAB: wrap around to index 0
+  in.completion_index_ = (in.completion_index_ + 1) % static_cast<int>(in.completion_matches_.size());
+  in.completion_suffix_ = in.completion_matches_[in.completion_index_].substr(in.input_buf_.size());
+  assert(in.completion_index_ == 0);
+  assert(in.completion_suffix_ == "ave");
+
+  cout << "test_completion_cycling passed" << endl;
+}
+
+//
+// Test: cycling with /allow prefix (3 matches, first has empty suffix)
+//
+static void test_completion_cycling_allow() {
+  Input in;
+
+  // /allow → 3 matches: /allow, /allow-list, /allow-remove
+  in.input_buf_ = "/allow";
+  in.update_completion();
+  assert(in.completion_active_);
+  assert(in.completion_matches_.size() == 3);
+  assert(in.completion_index_ == 0);
+  assert(in.completion_suffix_.empty());  // exact match, no suffix
+
+  // TAB → index 1: /allow-list → suffix "-list"
+  in.completion_index_ = (in.completion_index_ + 1) % 3;
+  in.completion_suffix_ = in.completion_matches_[in.completion_index_].substr(in.input_buf_.size());
+  assert(in.completion_index_ == 1);
+  assert(in.completion_suffix_ == "-list");
+
+  // TAB → index 2: /allow-remove → suffix "-remove"
+  in.completion_index_ = (in.completion_index_ + 1) % 3;
+  in.completion_suffix_ = in.completion_matches_[in.completion_index_].substr(in.input_buf_.size());
+  assert(in.completion_index_ == 2);
+  assert(in.completion_suffix_ == "-remove");
+
+  // TAB → wrap to index 0: /allow → suffix ""
+  in.completion_index_ = (in.completion_index_ + 1) % 3;
+  in.completion_suffix_ = in.completion_matches_[in.completion_index_].substr(in.input_buf_.size());
+  assert(in.completion_index_ == 0);
+  assert(in.completion_suffix_.empty());
+
+  cout << "test_completion_cycling_allow passed" << endl;
 }
 
 //
@@ -727,6 +843,8 @@ void input_test() {
   test_completion_common_prefix();
   test_completion_narrowing();
   test_completion_case_insensitive();
+  test_completion_cycling();
+  test_completion_cycling_allow();
   test_dismiss_completion();
   test_completion_dismiss_on_edit();
 

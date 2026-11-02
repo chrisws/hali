@@ -274,10 +274,21 @@ void Input::build_dispatch() {
   };
 
   dispatch_["TAB"] = [this](const InputEvent &, TuiContext &tui, std::string &) -> bool {
-    if (completion_active_ && !completion_suffix_.empty()) {
-      input_buf_.insert(cursor_pos_, completion_suffix_);
-      cursor_pos_ += static_cast<int>(completion_suffix_.size());
-      dismiss_completion();
+    if (completion_active_ && !completion_matches_.empty()) {
+      if (completion_matches_.size() == 1) {
+        // Single match: accept it
+        if (!completion_suffix_.empty()) {
+          input_buf_.insert(cursor_pos_, completion_suffix_);
+          cursor_pos_ += static_cast<int>(completion_suffix_.size());
+        }
+        dismiss_completion();
+      } else {
+        // Multiple matches: cycle forward (wrap around)
+        completion_index_ = (completion_index_ + 1)
+                            % static_cast<int>(completion_matches_.size());
+        completion_suffix_ = completion_matches_[completion_index_]
+                             .substr(input_buf_.size());
+      }
       tui.redraw_input();
       tui.render();
       return true;
@@ -442,9 +453,9 @@ int Input::lowercase_word(const int pos) {
 //
 // Update the slash command completion state.
 // Called after every edit to the input buffer.
-// Shows a completion suffix when:
-//   - Exactly one command matches → complete the full name
-//   - Multiple commands match → complete the longest common prefix
+// Collects all matching commands (sorted alphabetically), stores them
+// in completion_matches_, and sets the suffix for the first match.
+// TAB cycles through the matches; ENTER accepts the current one.
 //
 void Input::update_completion() {
   if (input_buf_.empty() || input_buf_[0] != '/') {
@@ -472,31 +483,13 @@ void Input::update_completion() {
     dismiss_completion();
     return;
   }
-  std::string suffix;
-  if (matches.size() == 1) {
-    // Single match: complete the full name
-    suffix = matches[0].substr(input_buf_.size());
-  } else {
-    // Multiple matches: find the longest common prefix
-    std::string common = matches[0];
-    for (size_t i = 1; i < matches.size(); ++i) {
-      size_t j = 0;
-      while (j < common.size() && j < matches[i].size() && common[j] == matches[i][j]) {
-        ++j;
-      }
-      common.resize(j);
-    }
-    // Only show suffix if common prefix extends beyond current buffer
-    if (common.size() > input_buf_.size()) {
-      suffix = common.substr(input_buf_.size());
-    }
-  }
-  if (!suffix.empty()) {
-    completion_suffix_ = suffix;
-    completion_active_ = true;
-  } else {
-    dismiss_completion();
-  }
+  // Sort alphabetically for predictable cycling order
+  std::sort(matches.begin(), matches.end());
+  completion_matches_ = std::move(matches);
+  completion_index_ = 0;
+  // Suffix for the first match
+  completion_suffix_ = completion_matches_[0].substr(input_buf_.size());
+  completion_active_ = true;
 }
 
 //
@@ -518,6 +511,8 @@ void Input::accept_completion(TuiContext &tui) {
 void Input::dismiss_completion() {
   completion_suffix_.clear();
   completion_active_ = false;
+  completion_matches_.clear();
+  completion_index_ = 0;
 }
 
 static std::string make_key_name(const InputEvent &ev) {
