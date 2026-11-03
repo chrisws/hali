@@ -53,6 +53,14 @@ void Tui::redraw_all() {
   // no-op in tests
 }
 
+void Tui::show_modal_popup(const std::string &, const std::string &) {
+  // no-op in tests
+}
+
+void Tui::dismiss_modal_popup() {
+  // no-op in tests
+}
+
 void Tui::toggle_theme() {
   // no-op in tests
 }

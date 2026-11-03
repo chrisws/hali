@@ -393,6 +393,7 @@ class Tui final: TuiContext {
   void setup_model(const std::string &model_name, const LlamaMemoryInfo &mem, bool thinking);
   void tick_spinner();
   void set_thinking(bool on);
+  void set_spinner_label(const std::string &label);
   void update_usage(float tokens_sec, const LlamaMemoryInfo &mem);
   void set_tokens_per_sec(float tokens_per_sec) { tokens_per_sec_ = tokens_per_sec; }
   void set_mode_str(const std::string &s) { mode_str_ = s; }
@@ -529,6 +530,7 @@ class Tui final: TuiContext {
   // ── thinking spinner ──────────────────────────────────────────────
   bool thinking_;
   int spinner_frame_;
+  std::string spinner_label_;
 
   // ── input ─────────────────────────────────────────────────────────
   Input input_;

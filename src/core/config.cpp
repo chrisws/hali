@@ -413,6 +413,7 @@ std::string HaliConfig::prompt_core() const {
     "  TOOL:RND                   random float 0..1\n"
     "  TOOL:TUNE  <key=val ...>   adjust sampling settings (temperature, top_p, min_p, top_k, penalties)\n"
     "  TOOL:RAG    <query>        query the RAG index for additional context\n"
+    "  TOOL:RAGINFO               inspect RAG subsystem state (loaded DBs, chunks, config)\n"
     "  TOOL:ASK    <query>        ask the user for clarification or additional context\n"
     "  TOOL:CHOICE <question>|<opt1>|<opt2>|...  multiple-choice popup (pipe-delimited)\n"
     "  TOOL:TABLE  <R>x<C> <rows>  format pipe-delimited rows into an aligned table\n"

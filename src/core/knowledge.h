@@ -47,6 +47,72 @@ struct KnowledgeManager {
   ~KnowledgeManager() = default;
 
   //
+  // --- Embedding model management ---
+  //
+
+  //
+  // Load an embedding model. Returns true on success.
+  //
+  bool setup_embed(const std::string &path, Tui &tui);
+
+  //
+  // Access the embedding model (nullptr if not loaded)
+  //
+  Llama *embed_model() const { return embed_llama_.get(); }
+
+  //
+  // Check if the RAG subsystem is active (embed model loaded)
+  //
+  bool active() const { return embed_llama_ != nullptr; }
+
+  //
+  // --- Query / retrieval ---
+  //
+
+  //
+  // Query the RAG library. Returns context string.
+  // Caches last query/result.
+  //
+  std::string query(const std::string &text, int top_k, int n_ctx);
+
+  //
+  // Clear the query cache
+  //
+  void reset_cache() const { last_query_.clear(); last_result_.clear(); }
+
+  //
+  // --- Index loading / building ---
+  //
+
+  //
+  // Load a pre-built .rag/.bin file into the library by path.
+  //
+  bool load_bin(const std::string &path, Tui &tui);
+
+  //
+  // Index a source code file or directory, save to .hali/rag/
+  //
+  bool index_path(const std::string &path, Tui &tui, const std::string &sandbox);
+
+  //
+  // Load all .rag files from a directory into the library
+  //
+  int load_dir(const std::string &dir);
+
+  //
+  // --- Inspection ---
+  //
+
+  //
+  // Full status report for RAGINFO
+  //
+  std::string inspect(int top_k) const;
+
+  //
+  // --- Knowledge index management (Kiwix .zim) ---
+  //
+
+  //
   // Load the index JSON from index_json_path_. Returns true on success.
   //
   bool load_index_json();
@@ -167,6 +233,9 @@ private:
   RagLibrary                 library_;
   std::string                rag_dir_ = ".hali/rag";
   std::string                index_json_path_ = ".hali/kiwix-index.json";
+  std::unique_ptr<Llama>     embed_llama_;
+  mutable std::string        last_query_;
+  mutable std::string        last_result_;
 };
 
 #endif

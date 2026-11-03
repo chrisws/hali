@@ -603,8 +603,12 @@ ToolMap Agent::build_tool_dispatch() {
     return handle_tune(a1, a2);
   };
   tools["TOOL:RAG"] = [this](const std::string &a1, const std::string &a2) -> std::string {
-    tui_.show_tool("TOOL:RAG");
+    tui_.show_tool("rag");
     return rag_tool(a1);
+  };
+  tools["TOOL:RAGINFO"] = [this](const std::string &a1, const std::string &a2) -> std::string {
+    tui_.show_tool("raginfo");
+    return rag_inspect();
   };
   tools["TOOL:LIST"] = [this](const std::string &a1, const std::string &a2) -> std::string {
     std::string dir = resolve_path(cfg_.sandbox_, a1);

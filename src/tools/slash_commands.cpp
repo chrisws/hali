@@ -21,6 +21,7 @@
 
 #include "config.h"
 #include "agent.h"
+#include "agent_utils.h"
 #include "tui.h"
 #include "icon.h"
 #include "webview.h"
@@ -698,7 +699,7 @@ static void slash_tool(const std::string &rest, Agent &agent, Tui &tui) {
 // /index [name|status|remove <name>|load <name>|unload <name>]
 //
 static void slash_index(const std::string &rest, HaliConfig &cfg, Agent &agent, Tui &tui) {
-  static KnowledgeManager km;
+  KnowledgeManager &km = agent.knowledge();
 
   // Set up directories on first use
   static bool initialized = false;
@@ -774,8 +775,32 @@ static void slash_index(const std::string &rest, HaliConfig &cfg, Agent &agent, 
       return;
     }
     if (idx == (int)ids.size() + 1) {
-      // "status"
-      tui.append_line(ICON_SYS + km.status());
+      // "status" — show RAG info as a table
+      {
+        std::ostringstream data;
+        data << "Field|Value\n";
+        data << "State|" << (km.active() ? "ACTIVE" : "INACTIVE") << "\n";
+        data << "Embed model|" << (km.active() ? "loaded" : "not loaded") << "\n";
+        data << "Top-K|" << cfg.rag_top_k_ << "\n";
+        data << "Databases|" << km.library().size() << "\n";
+        data << "Total chunks|" << km.library().total_chunks() << "\n";
+        auto names = km.library().names();
+        for (const auto &name : names) {
+          const RagDB *db = km.library().get(name);
+          if (db) {
+            data << name << "|" << db->size() << " chunks, dim=" << db->embed_dim << "\n";
+          }
+        }
+        int total_rows = 5 + (int)names.size();
+        auto table = tool_table(std::to_string(total_rows) + "x2", data.str());
+        if (!table.error.empty()) {
+          tui.append_line(ICON_ERR + table.error);
+        } else {
+          for (const auto &row : table.rows) {
+            tui.append_line(row);
+          }
+        }
+      }
       tui.append_line(ICON_SYS + "");
       tui.append_line(ICON_SYS + "Indexed:");
       tui.append_line(km.list_indexed());
@@ -797,7 +822,31 @@ static void slash_index(const std::string &rest, HaliConfig &cfg, Agent &agent, 
   }
 
   if (sub == "status") {
-    tui.append_line(ICON_SYS + km.status());
+    {
+      std::ostringstream data;
+      data << "Field|Value\n";
+      data << "State|" << (km.active() ? "ACTIVE" : "INACTIVE") << "\n";
+      data << "Embed model|" << (km.active() ? "loaded" : "not loaded") << "\n";
+      data << "Top-K|" << cfg.rag_top_k_ << "\n";
+      data << "Databases|" << km.library().size() << "\n";
+      data << "Total chunks|" << km.library().total_chunks() << "\n";
+      auto names = km.library().names();
+      for (const auto &name : names) {
+        const RagDB *db = km.library().get(name);
+        if (db) {
+          data << name << "|" << db->size() << " chunks, dim=" << db->embed_dim << "\n";
+        }
+      }
+      int total_rows = 5 + (int)names.size();
+      auto table = tool_table(std::to_string(total_rows) + "x2", data.str());
+      if (!table.error.empty()) {
+        tui.append_line(ICON_ERR + table.error);
+      } else {
+        for (const auto &row : table.rows) {
+          tui.append_line(row);
+        }
+      }
+    }
     tui.append_line(ICON_SYS + "");
     tui.append_line(ICON_SYS + "Indexed:");
     tui.append_line(km.list_indexed());

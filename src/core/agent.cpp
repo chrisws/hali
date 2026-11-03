@@ -120,21 +120,7 @@ bool Agent::setup_model() {
 }
 
 bool Agent::setup_embed(const std::string &path) {
-  tui_.show_loading_modal_popup("embedding model: " + fs::path(path).filename().string());
-  tui_.redraw_all();
-  rag_.embed_llama = std::make_unique<Llama>();
-  if (!rag_.embed_llama->load_embedding_model(path)) {
-    tui_.dismiss_modal_popup();
-    tui_.append_line(ICON_ERR + rag_.embed_llama->last_error());
-    tui_.redraw_all();
-    rag_.embed_llama.reset();
-    return false;
-  }
-  tui_.dismiss_modal_popup();
-  rag_.rag_lib = std::make_unique<RagLibrary>();
-  tui_.append_line(ICON_SYS + "Embedding model ready.");
-  tui_.redraw_all();
-  return true;
+  return knowledge_.setup_embed(path, tui_);
 }
 
 void Agent::reset_conversation(const std::string &sysprompt) {
@@ -232,97 +218,24 @@ std::string Agent::memory_info_text() const {
   return oss.str();
 }
 
-std::string Agent::rag_tool(const std::string &agent_query) const {
-  // Return cached result if same query this turn
-  if (agent_query == rag_.last_query && !rag_.last_result.empty()) {
-    return rag_.last_result;
-  }
-  std::string result;
-  if (rag_.active()) {
-    result = rag_.embed_llama->rag_retrieve_multi(*rag_.rag_lib, agent_query, cfg_.rag_top_k_, cfg_.n_ctx_);
-    if (result.empty()) {
-      result = std::string("RAG: no context found: ") + rag_.embed_llama->last_error();
-    }
-  } else {
-    result = "RAG: not enabled";
-  }
-  rag_.last_query = agent_query;
-  rag_.last_result = result;
-  return result;
+std::string Agent::rag_tool(const std::string &agent_query) {
+  return knowledge_.query(agent_query, cfg_.rag_top_k_, cfg_.n_ctx_);
 }
 
-bool Agent::rag_load_index(const std::string &path) const {
-  if (!rag_.active()) {
-    tui_.append_line(ICON_ERR + "Load an embedding model first: /embed <path>");
-    tui_.redraw_all();
-    return false;
-  }
-
-  RagDB db;
-  if (!db.load(path)) {
-    tui_.append_line(ICON_SYS + "failed to load");
-    tui_.redraw_all();
-    return false;
-  }
-
-  // Derive a name from the filename (strip extension)
-  fs::path p(path);
-  std::string name = p.stem().string();
-  rag_.rag_lib->add(name, std::move(db));
-  tui_.append_line(ICON_SYS + "loaded RAG index: " + name);
-  tui_.redraw_all();
-  return true;
+std::string Agent::rag_inspect() const {
+  return knowledge_.inspect(cfg_.rag_top_k_);
 }
 
-int Agent::rag_load_dir(const std::string &dir) const {
-  if (!rag_.active()) {
-    return 0;
-  }
-  return rag_.rag_lib->load_dir(dir);
+bool Agent::rag_load_index(const std::string &path) {
+  return knowledge_.load_bin(path, tui_);
 }
 
-bool Agent::rag_index(const std::string &path) const {
-  if (!rag_.active()) {
-    tui_.append_line(ICON_ERR + "Load an embedding model first: /embed <path>");
-    tui_.redraw_all();
-    return false;
-  }
+int Agent::rag_load_dir(const std::string &dir) {
+  return knowledge_.load_dir(dir);
+}
 
-  RagDB db;
-  db.embed_dim = rag_.embed_llama->get_embed_dim();
-
-  auto index_one = [&](const std::string &filepath) {
-    tui_.append_line(ICON_SYS + "  indexing: " + filepath);
-    tui_.redraw_all();
-    if (!rag_.embed_llama->rag_index(db, filepath)) {
-      tui_.append_line(ICON_ERR + "rag_load: " + rag_.embed_llama->last_error());
-      tui_.redraw_all();
-    }
-  };
-
-  fs::path rp(path);
-  std::error_code ec;
-  if (fs::is_directory(rp, ec)) {
-    for (const auto &entry : fs::recursive_directory_iterator(rp, ec)) {
-      if (entry.is_regular_file()) {
-        index_one(entry.path().string());
-      }
-    }
-  } else {
-    index_one(path);
-  }
-
-  // Derive a name from the path
-  std::string name = rp.stem().string();
-  rag_.rag_lib->add(name, db);
-
-  // Save to .hali/rag/ directory
-  std::string save_dir = join_path(cfg_.sandbox_, ".hali/rag");
-  fs::create_directories(save_dir, ec);
-  std::string save_path = join_path(save_dir, name + ".rag");
-  tui_.append_line(ICON_SYS + "saving index: " + save_path);
-  tui_.redraw_all();
-  return db.save(save_path);
+bool Agent::rag_index(const std::string &path) {
+  return knowledge_.index_path(path, tui_, cfg_.sandbox_);
 }
 
 std::string Agent::restart() {
@@ -443,15 +356,13 @@ bool Agent::run_turn(const std::string &user_message) {
   }
 
   std::string effective_message = user_message;
-  if (rag_.active()) {
-    std::string context = rag_.embed_llama->rag_retrieve_multi(*rag_.rag_lib, user_message, cfg_.rag_top_k_, cfg_.n_ctx_);
-    rag_.last_query = user_message;
-    rag_.last_result = context;
-    if (!context.empty()) {
+  if (knowledge_.active()) {
+    std::string context = knowledge_.query(user_message, cfg_.rag_top_k_, cfg_.n_ctx_);
+    if (!context.empty() && context != "RAG: not enabled") {
       log_write(LEVEL_DEBUG, "agent", "RAG: %s", context.c_str());
       effective_message = "Context:\n" + context + "\n\nUser: " + user_message;
     } else {
-      log_write(LEVEL_DEBUG, "agent", "RAG: no context found [%s]", rag_.embed_llama->last_error());
+      log_write(LEVEL_DEBUG, "agent", "RAG: no context found");
     }
   }
   if (!iter_) {
@@ -462,7 +373,7 @@ bool Agent::run_turn(const std::string &user_message) {
   broadcast_.reset();
   turn_.number++;
   turn_.reset();
-  rag_.reset_cache();
+  knowledge_.reset_cache();
   last_response_.clear();
   bool flushed = false;
   if (!llama_->add_message(*iter_, "user", effective_message)) {

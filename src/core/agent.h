@@ -20,6 +20,7 @@
 #include "mcp_client.h"
 #include "usage_log.h"
 #include "planner.h"
+#include "knowledge.h"
 
 using ToolFn     = std::function<std::string(const std::string &, const std::string &)>;
 using ToolMap    = std::unordered_map<std::string, ToolFn>;
@@ -64,18 +65,7 @@ struct BroadcastState {
   }
 };
 
-//
-// RAG (retrieval-augmented generation) subsystem state
-//
-struct RagState {
-  std::unique_ptr<Llama>      embed_llama;
-  std::unique_ptr<RagLibrary> rag_lib;
-  mutable std::string last_query;
-  mutable std::string last_result;
 
-  bool active() const { return embed_llama && rag_lib; }
-  void reset_cache() const { last_query.clear(); last_result.clear(); }
-};
 
 //
 // Agent
@@ -97,14 +87,14 @@ struct Agent {
   bool setup_model();
   void reset_conversation(const std::string &sysprompt);
   void notify(const std::string &msg);
-  bool rag_index(const std::string &path) const;
-  bool rag_load_index(const std::string &path) const;
-  int  rag_load_dir(const std::string &dir) const;
+  bool rag_index(const std::string &path);
+  bool rag_load_index(const std::string &path);
+  int  rag_load_dir(const std::string &dir);
   std::string memory_info_text() const;
   void apply_generation_params() const;
   bool model_loaded() const { return model_loaded_; }
   const LlamaMemoryInfo &last_mem_info() const { return cached_mem_info_; }
-  Llama *embed_model() const { return rag_.embed_llama.get(); }
+  Llama *embed_model() const { return knowledge_.embed_model(); }
   void save_mtp_best_settings();
   void dump_usage_log(const std::string &path) const;
   void generate_badge(const std::string &sandbox);
@@ -128,7 +118,8 @@ struct Agent {
   std::string handle_choice(const std::string &a1, const std::string &a2);
   std::string handle_music(const std::string &a1, const std::string &a2);
   std::string handle_gui(const std::string &a1, const std::string &a2);
-  std::string rag_tool(const std::string &agent_query) const;
+  std::string rag_tool(const std::string &agent_query);
+  std::string rag_inspect() const;
   std::string restart();
   double elapsed_seconds() const;
   float tokens_per_sec() const;
@@ -154,7 +145,11 @@ struct Agent {
   std::chrono::steady_clock::time_point last_mem_update_{};
   LlamaMemoryInfo cached_mem_info_{};
   LlamaMemoryInfo get_mem_info();
-  RagState rag_;
+  KnowledgeManager knowledge_;
+
+  public:
+  KnowledgeManager &knowledge() { return knowledge_; }
+  const KnowledgeManager &knowledge() const { return knowledge_; }
 };
 
 #endif

@@ -28,10 +28,171 @@
 #include "string_utils.h"
 #include "agent_utils.h"
 #include "ui/tui.h"
+#include "ui/icon.h"
 
 namespace fs = std::filesystem;
 
 KnowledgeManager::KnowledgeManager() = default;
+
+//
+// Load an embedding model
+//
+bool KnowledgeManager::setup_embed(const std::string &path, Tui &tui) {
+  tui.show_loading_modal_popup("embedding model: " + fs::path(path).filename().string());
+  tui.redraw_all();
+  embed_llama_ = std::make_unique<Llama>();
+  if (!embed_llama_->load_embedding_model(path)) {
+    tui.dismiss_modal_popup();
+    tui.append_line(ICON_ERR + embed_llama_->last_error());
+    tui.redraw_all();
+    embed_llama_.reset();
+    return false;
+  }
+  tui.dismiss_modal_popup();
+  tui.append_line(ICON_SYS + "Embedding model ready.");
+  tui.redraw_all();
+  return true;
+}
+
+//
+// Query the RAG library with caching
+//
+std::string KnowledgeManager::query(const std::string &text, int top_k, int n_ctx) {
+  if (text == last_query_ && !last_result_.empty()) {
+    return last_result_;
+  }
+  std::string result;
+  if (active()) {
+    result = embed_llama_->rag_retrieve_multi(library_, text, top_k, n_ctx);
+    if (result.empty()) {
+      result = std::string("RAG: no context found: ") + embed_llama_->last_error();
+    }
+  } else {
+    result = "RAG: not enabled";
+  }
+  last_query_ = text;
+  last_result_ = result;
+  return result;
+}
+
+//
+// Load a pre-built .rag/.bin file into the library
+//
+bool KnowledgeManager::load_bin(const std::string &path, Tui &tui) {
+  if (!active()) {
+    tui.append_line(ICON_ERR + "Load an embedding model first: /embed <path>");
+    tui.redraw_all();
+    return false;
+  }
+
+  RagDB db;
+  if (!db.load(path)) {
+    tui.append_line(ICON_SYS + "failed to load");
+    tui.redraw_all();
+    return false;
+  }
+
+  fs::path p(path);
+  std::string name = p.stem().string();
+  library_.add(name, std::move(db));
+  tui.append_line(ICON_SYS + "loaded RAG index: " + name);
+  tui.redraw_all();
+  return true;
+}
+
+//
+// Index a source code file or directory
+//
+bool KnowledgeManager::index_path(const std::string &path, Tui &tui, const std::string &sandbox) {
+  if (!active()) {
+    tui.append_line(ICON_ERR + "Load an embedding model first: /embed <path>");
+    tui.redraw_all();
+    return false;
+  }
+
+  RagDB db;
+  db.embed_dim = embed_llama_->get_embed_dim();
+
+  auto index_one = [&](const std::string &filepath) {
+    tui.append_line(ICON_SYS + "  indexing: " + filepath);
+    tui.redraw_all();
+    if (!embed_llama_->rag_index(db, filepath)) {
+      tui.append_line(ICON_ERR + "rag_load: " + embed_llama_->last_error());
+      tui.redraw_all();
+    }
+  };
+
+  fs::path rp(path);
+  std::error_code ec;
+  if (fs::is_directory(rp, ec)) {
+    for (const auto &entry : fs::recursive_directory_iterator(rp, ec)) {
+      if (entry.is_regular_file()) {
+        index_one(entry.path().string());
+      }
+    }
+  } else {
+    index_one(path);
+  }
+
+  std::string name = rp.stem().string();
+  library_.add(name, db);
+
+  std::string save_dir = join_path(sandbox, ".hali/rag");
+  fs::create_directories(save_dir, ec);
+  std::string save_path = join_path(save_dir, name + ".rag");
+  tui.append_line(ICON_SYS + "saving index: " + save_path);
+  tui.redraw_all();
+  return db.save(save_path);
+}
+
+//
+// Load all .rag files from a directory
+//
+int KnowledgeManager::load_dir(const std::string &dir) {
+  if (!active()) {
+    return 0;
+  }
+  return library_.load_dir(dir);
+}
+
+//
+// Full status report for RAGINFO
+//
+std::string KnowledgeManager::inspect(int top_k) const {
+  std::ostringstream oss;
+  oss << "RAG Subsystem Status\n";
+  oss << "────────────────────\n";
+
+  if (!active()) {
+    oss << "State: INACTIVE (no embedding model loaded)\n";
+  } else {
+    oss << "State: ACTIVE\n";
+    oss << "Embed model: loaded\n";
+    oss << "Top-K:     " << top_k << "\n";
+  }
+  oss << "────────────────────\n";
+  oss << "Library: " << library_.size() << " DB(s), "
+      << library_.total_chunks() << " total chunks\n";
+
+  auto names = library_.names();
+  if (names.empty()) {
+    oss << "  (empty — no indexes loaded)\n";
+  } else {
+    for (const auto &name : names) {
+      const RagDB *db = library_.get(name);
+      if (db) {
+        oss << "  • " << name << ": " << db->size()
+            << " chunks, dim=" << db->embed_dim << "\n";
+      }
+    }
+  }
+
+  oss << "────────────────────\n";
+  oss << "Cache: last_query=\"" << (last_query_.empty() ? "(none)" : last_query_) << "\"\n";
+  oss << "       last_result=" << (last_result_.empty() ? "(empty)" : (last_result_.size() > 80 ? std::string(last_result_.begin(), last_result_.begin() + 80) + "…" : last_result_)) << "\n";
+
+  return oss.str();
+}
 
 //
 // Load the index JSON from index_json_path_
@@ -211,16 +372,12 @@ bool KnowledgeManager::build_from_path(const std::string &zim_path,
   fs::remove_all(extract_dir);
   fs::create_directories(extract_dir);
 
-  if (progress) {
-    progress("extracting " + zim_path + " ...");
-  }
-
   // Run zimdump with spinner, extract articles to the extraction directory
   const std::string cmd = std::format(
     "zimdump dump --dir='{}' --ns=A '{}'", extract_dir, zim_path);
   const std::string result = run_with_spinner(tui, [cmd]() -> std::string {
     return run_shell_command(cmd);
-  });
+  }, "extracting " + zim_path);
 
   // Log full zimdump output (verbose "Wrote ..." lines) to a log file
   {
