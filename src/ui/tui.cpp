@@ -523,6 +523,91 @@ void Tui::dismiss_modal_popup() {
 }
 
 //
+// ─── Progress Modal ─────────────────────────────────────────────────
+//
+void Tui::show_progress_modal(const std::string &title, int total) {
+  dismiss_modal_popup();
+  progress_total_ = total;
+  progress_current_ = 0;
+  progress_chunks_ = 0;
+
+  int popup_w = std::min(term_cols_ - 8, 50);
+  popup_w = std::max(popup_w, 30);
+  int popup_h = 5;
+  int py = std::max(0, (term_rows_ - popup_h) / 2);
+  int px = std::max(0, (term_cols_ - popup_w) / 2);
+
+  ncplane_options opts{};
+  opts.y    = py; opts.x    = px;
+  opts.rows = static_cast<unsigned>(popup_h);
+  opts.cols = static_cast<unsigned>(popup_w);
+  modal_plane_ = ncplane_create(stdpl_, &opts);
+  if (!modal_plane_) return;
+
+  draw_popup_box(modal_plane_, popup_h, popup_w);
+  update_progress(0, total, 0);
+}
+
+void Tui::update_progress(int current, int total, int chunks) {
+  progress_current_ = current;
+  progress_total_ = total;
+  progress_chunks_ = chunks;
+  if (!modal_plane_) return;
+
+  auto tc = theme_->get_popup_color();
+  auto bg = theme_->get_popup_background();
+  uint64_t text_ch = NCCHANNELS_INITIALIZER(tc.r, tc.g, tc.b, bg.r, bg.g, bg.b);
+  ncplane_set_channels(modal_plane_, text_ch);
+
+  // Title line
+  ncplane_erase(modal_plane_);
+  draw_popup_box(modal_plane_, 5, ncplane_dim_x(modal_plane_));
+  ncplane_set_channels(modal_plane_, text_ch);
+
+  int bar_w = ncplane_dim_x(modal_plane_) - 6;
+  int pct = (total > 0) ? (current * 100) / total : 0;
+
+  // Line 1: title
+  ncplane_putstr_yx(modal_plane_, 0, 2, "Indexing…");
+
+  // Line 2: progress bar
+  std::string bar;
+  int filled = (bar_w * pct) / 100;
+  bar.reserve(bar_w);
+  for (int i = 0; i < bar_w; i++) {
+    bar += (i < filled) ? "\xE2\x96\x88" : "\xE2\x96\x91";
+  }
+  std::string bar_line = std::format(" [{}] {}% ", bar, pct);
+  ncplane_putstr_yx(modal_plane_, 1, 2, bar_line.c_str());
+
+  // Line 3: detail
+  std::string detail = std::format("  {}/{} files  ({} chunks)",
+                                   current, total, chunks);
+  ncplane_putstr_yx(modal_plane_, 2, 2, detail.c_str());
+
+  // Line 4: hint
+  ncplane_putstr_yx(modal_plane_, 3, 2, "  Esc to abort");
+
+  notcurses_render(nc_);
+}
+
+void Tui::dismiss_progress_modal() {
+  dismiss_modal_popup();
+}
+
+bool Tui::poll_escape() {
+  ncinput ni{};
+  notcurses_get_nblock(nc_, &ni);
+  if (ni.id == NCKEY_ESC) {
+    return true;
+  }
+  if (ni.id == NCKEY_RESIZE) {
+    resize();
+  }
+  return false;
+}
+
+//
 // ─── Tui::file_picker ────────────────────────────────────────────────
 // Unified interactive directory/file browser used by /rag, /model, /embed.
 // title_hint appears in the popup header (e.g. "RAG Folder", "Model File").

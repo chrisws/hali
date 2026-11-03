@@ -15,6 +15,7 @@
 #include "llama_sb_rag.h"
 
 struct Llama;
+struct Tui;
 
 //
 // A single entry in the .hali/kiwix-index.json tracking file
@@ -64,10 +65,13 @@ struct KnowledgeManager {
   // Index a .zim file from an arbitrary path.
   // Extracts text with zimdump, embeds chunks, saves .rag file,
   // and updates the index JSON.
+  // If error is non-null, the specific failure reason is written to it.
   //
   bool build_from_path(const std::string &zim_path,
                        Llama &llama,
-                       const ProgressFn &progress);
+                       Tui &tui,
+                       const ProgressFn &progress,
+                       std::string *error = nullptr);
 
   //
   // Load a built .rag file into the session library
@@ -136,6 +140,11 @@ struct KnowledgeManager {
   // Check if zimdump is available on the system
   //
   static bool zimdump_available();
+
+  //
+  // Return a platform-specific install hint for zimdump
+  //
+  static std::string zimdump_install_hint();
 
   //
   // Check if a .rag file exists for the given id

@@ -749,9 +749,16 @@ static void slash_index(const std::string &rest, HaliConfig &cfg, Agent &agent, 
         tui.redraw_all();
         return;
       }
+      if (!KnowledgeManager::zimdump_available()) {
+        tui.append_line(ICON_ERR + "zimdump not found.");
+        tui.append_line(ICON_ERR + KnowledgeManager::zimdump_install_hint());
+        tui.redraw_all();
+        return;
+      }
       tui.append_line(ICON_SYS + "Indexing " + zim_path + "…");
       tui.redraw_all();
-      if (km.build_from_path(zim_path, *agent.embed_model(), progress)) {
+      std::string build_err;
+      if (km.build_from_path(zim_path, *agent.embed_model(), tui, progress, &build_err)) {
         // Load into session
         fs::path zp(zim_path);
         std::string id = zp.stem().string();
@@ -761,7 +768,7 @@ static void slash_index(const std::string &rest, HaliConfig &cfg, Agent &agent, 
           tui.append_line(ICON_ERR + "Build succeeded but load failed: " + id);
         }
       } else {
-        tui.append_line(ICON_ERR + "Index build failed.");
+        tui.append_line(ICON_ERR + "Index build failed: " + build_err);
       }
       tui.redraw_all();
       return;
@@ -884,9 +891,16 @@ static void slash_index(const std::string &rest, HaliConfig &cfg, Agent &agent, 
       tui.redraw_all();
       return;
     }
+    if (!KnowledgeManager::zimdump_available()) {
+      tui.append_line(ICON_ERR + "zimdump not found.");
+      tui.append_line(ICON_ERR + KnowledgeManager::zimdump_install_hint());
+      tui.redraw_all();
+      return;
+    }
     tui.append_line(ICON_SYS + "Indexing " + sub + "…");
     tui.redraw_all();
-    if (km.build_from_path(sub, *agent.embed_model(), progress)) {
+    std::string build_err;
+    if (km.build_from_path(sub, *agent.embed_model(), tui, progress, &build_err)) {
       fs::path zp(sub);
       std::string id = zp.stem().string();
       if (km.load(id)) {
@@ -895,7 +909,7 @@ static void slash_index(const std::string &rest, HaliConfig &cfg, Agent &agent, 
         tui.append_line(ICON_ERR + "Build succeeded but load failed: " + id);
       }
     } else {
-      tui.append_line(ICON_ERR + "Index build failed.");
+      tui.append_line(ICON_ERR + "Index build failed: " + build_err);
     }
     tui.redraw_all();
     return;
@@ -971,11 +985,15 @@ static void slash_task(const std::string &rest, HaliConfig &cfg, Agent &agent, T
       if (new_state && agent.embed_model() == nullptr) {
         tui.append_line(ICON_ERR + "Knowledge mode requires an embedding model.");
         tui.append_line(ICON_ERR + "Load one first: /embed <path>");
+      } else if (new_state && !KnowledgeManager::zimdump_available()) {
+        tui.append_line(ICON_ERR + "Knowledge mode requires zimdump.");
+        tui.append_line(ICON_ERR + KnowledgeManager::zimdump_install_hint());
       } else {
         cfg.modes_.knowledge = new_state;
         tui.append_line(ICON_SYS + "Task: knowledge");
         tui.append_line(ICON_SYS + "  RAG active, top_k → " + std::to_string(cfg.rag_top_k_));
         if (new_state) {
+          tui.append_line(ICON_SYS + "Use /index load to select a source.");
           slash_index("", cfg, agent, tui);
         }
       }

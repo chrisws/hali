@@ -164,4 +164,88 @@ std::vector<std::string> split_utf8_string(const std::string &input, size_t max_
   return result;
 }
 
+//
+// Remove <prefix...>...</close> blocks from text (in-place)
+//
+static void remove_blocks(std::string &text,
+                          const std::string &open_prefix,
+                          const std::string &close_tag) {
+  size_t pos = 0;
+  while ((pos = text.find(open_prefix, pos)) != std::string::npos) {
+    size_t tag_end = text.find('>', pos);
+    if (tag_end == std::string::npos) {
+      break;
+    }
+    size_t block_end = text.find(close_tag, tag_end + 1);
+    if (block_end == std::string::npos) {
+      text.erase(pos);
+      break;
+    }
+    text.erase(pos, (block_end + close_tag.size()) - pos);
+  }
+}
+
+//
+// Strip HTML markup, decode basic entities, collapse whitespace
+//
+std::string strip_html(const std::string &html) {
+  std::string text = html;
+
+  remove_blocks(text, "<style", "</style>");
+  remove_blocks(text, "<script", "</script>");
+  remove_blocks(text, "<table", "</table>");
+
+  std::string result;
+  result.reserve(text.size() / 2);
+  for (size_t i = 0; i < text.size(); i++) {
+    if (text[i] == '<') {
+      size_t end = text.find('>', i);
+      if (end == std::string::npos) {
+        break;
+      }
+      i = end;
+      continue;
+    }
+    result += text[i];
+  }
+
+  std::string decoded;
+  decoded.reserve(result.size());
+  for (size_t i = 0; i < result.size(); i++) {
+    if (result[i] == '&') {
+      if (result.compare(i, 5, "&amp;") == 0)   { decoded += '&';    i += 4; continue; }
+      if (result.compare(i, 4, "&lt;") == 0)    { decoded += '<';    i += 3; continue; }
+      if (result.compare(i, 4, "&gt;") == 0)    { decoded += '>';    i += 3; continue; }
+      if (result.compare(i, 6, "&quot;") == 0)  { decoded += '"';    i += 5; continue; }
+      if (result.compare(i, 5, "&#39;") == 0)   { decoded += '\'';   i += 4; continue; }
+      if (result.compare(i, 6, "&nbsp;") == 0)  { decoded += ' ';    i += 5; continue; }
+    }
+    decoded += result[i];
+  }
+
+  std::string out;
+  out.reserve(decoded.size());
+  bool in_space = false;
+  for (char c : decoded) {
+    if (isspace((unsigned char)c)) {
+      if (!in_space && !out.empty()) {
+        out += ' ';
+      }
+      in_space = true;
+    } else {
+      out += c;
+      in_space = false;
+    }
+  }
+
+  while (!out.empty() && isspace((unsigned char)out.front())) {
+    out.erase(0, 1);
+  }
+  while (!out.empty() && isspace((unsigned char)out.back())) {
+    out.pop_back();
+  }
+
+  return out;
+}
+
 }

@@ -425,6 +425,16 @@ class Tui final: TuiContext {
   }
   void dismiss_modal_popup();
 
+  // ── progress modal (0-100% bar, Escape to abort) ──────────────
+  // Shows a modal with a progress bar. Returns immediately.
+  void show_progress_modal(const std::string &title, int total);
+  // Update the bar. Call from the worker loop.
+  void update_progress(int current, int total, int chunks);
+  // Dismiss the progress modal.
+  void dismiss_progress_modal();
+  // Non-blocking Escape check. Returns true if Escape was pressed.
+  bool poll_escape();
+
   // ── folder picker popup ───────────────────────────────────────
   std::string file_picker(const std::string &start_dir,
                           const std::string &title_hint = "File");
@@ -529,6 +539,11 @@ class Tui final: TuiContext {
   int match_index_ = 0;
   int total_matches_ = 0;
   std::vector<std::pair<int, int>> match_positions_;
+
+  // ── progress modal state ─────────────────────────────────────────
+  int progress_total_ = 0;
+  int progress_current_ = 0;
+  int progress_chunks_ = 0;
 
   // ── theme ─────────────────────────────────────────────────────────
   ThemeMode current_theme_;

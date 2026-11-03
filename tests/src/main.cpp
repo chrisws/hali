@@ -73,6 +73,7 @@ void music_project_test();
 void rag_test();
 void knowledge_test();
 void gui_test();
+void tui_progress_test();
 
 int main() {
   log_open_console();
@@ -107,6 +108,7 @@ int main() {
   run_htp_test("music_project", music_project_test);
   run_htp_test("rag", rag_test);
   run_htp_test("knowledge", knowledge_test);
+  run_htp_test("tui_progress", tui_progress_test);
   run_htp_test("gui", gui_test);
 
   return g_failures ? 1 : 0;

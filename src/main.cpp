@@ -205,19 +205,12 @@ int main(int argc, char **argv) {
       tui.redraw_all();
       std::string sysp = cfg.build_system_prompt();
       agent.reset_conversation(sysp);
-      tui.append_line(ICON_SYS + "Ready");
-      tui.redraw_all();
     }
     if (!cfg.embed_path_.empty()) {
       agent.setup_embed(cfg.embed_path_);
-      // Auto-load .hali/rag/*.rag indexes
-      std::string rag_dir = (fs::path(cfg.sandbox_) / ".hali" / "rag").string();
-      int n_loaded = agent.rag_load_dir(rag_dir);
-      if (n_loaded > 0) {
-        tui.append_line(ICON_SYS + std::format("Loaded {} RAG index(es) from .hali/rag/", n_loaded));
-        tui.redraw_all();
-      }
     }
+    tui.append_line(ICON_SYS + "System ready 🚀");
+    tui.redraw_all();
   } else {
     ui::no_model(tui);
   }

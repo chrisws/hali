@@ -16,12 +16,18 @@
 #include <unistd.h>
 #include <chrono>
 #include <ctime>
+#include <thread>
+#include <atomic>
+#include <mutex>
 
 #include "knowledge.h"
+#include "util/platform.h"
 #include "shell_util.h"
 #include "util/json.h"
 #include "llama_sb.h"
 #include "string_utils.h"
+#include "agent_utils.h"
+#include "ui/tui.h"
 
 namespace fs = std::filesystem;
 
@@ -134,7 +140,31 @@ bool KnowledgeManager::rag_exists(const std::string &id) const {
 //
 bool KnowledgeManager::zimdump_available() {
   const std::string result = run_shell_command("which zimdump 2>/dev/null");
+  // run_shell_command appends "[exit code: N]" on failure,
+  // so a non-empty result does NOT mean the binary was found.
+  if (result.find("[exit code:") != std::string::npos) {
+    return false;
+  }
   return !utils::trim(result).empty();
+}
+
+//
+// Return a platform-specific install hint for zimdump
+//
+std::string KnowledgeManager::zimdump_install_hint() {
+  switch (current_platform()) {
+    case Platform::Linux:
+      return "Install: sudo apt install zim-tools (Debian/Ubuntu)\n"
+             "  or build: cd zim-tools && meson setup build && meson compile -C build";
+    case Platform::macOS:
+      return "Install: brew install zim-tools\n"
+             "  or build: cd zim-tools && meson setup build && meson compile -C build";
+    case Platform::Windows:
+      return "Build from source: cd zim-tools && meson setup build && meson compile -C build\n"
+             "  (requires Meson + Ninja, see https://mesonbuild.com/)";
+    default:
+      return "Build from source: cd zim-tools && meson setup build && meson compile -C build";
+  }
 }
 
 //
@@ -142,19 +172,25 @@ bool KnowledgeManager::zimdump_available() {
 //
 bool KnowledgeManager::build_from_path(const std::string &zim_path,
                                        Llama &llama,
-                                       const ProgressFn &progress) {
-  if (!fs::exists(zim_path)) {
+                                       Tui &tui,
+                                       const ProgressFn &progress,
+                                       std::string *error) {
+  auto fail = [progress, error](const std::string &msg) {
     if (progress) {
-      progress("ZIM file not found: " + zim_path);
+      progress(msg);
     }
+    if (error) {
+      *error = msg;
+    }
+  };
+
+  if (!fs::exists(zim_path)) {
+    fail("ZIM file not found: " + zim_path);
     return false;
   }
 
   if (!zimdump_available()) {
-    if (progress) {
-      progress("ERROR: zimdump not found. Build kiwix-tools: "
-               "cd zim-tools && meson setup build && meson compile -C build");
-    }
+    fail("zimdump not found. " + zimdump_install_hint());
     return false;
   }
 
@@ -179,13 +215,68 @@ bool KnowledgeManager::build_from_path(const std::string &zim_path,
     progress("extracting " + zim_path + " ...");
   }
 
-  // Run zimdump to extract text articles
+  // Run zimdump with spinner, extract articles to the extraction directory
   const std::string cmd = std::format(
-    "zimdump --text '{}' '{}'", zim_path, extract_dir);
-  const std::string result = run_shell_command(cmd);
+    "zimdump dump --dir='{}' --ns=A '{}'", extract_dir, zim_path);
+  const std::string result = run_with_spinner(tui, [cmd]() -> std::string {
+    return run_shell_command(cmd);
+  });
+
+  // Log full zimdump output (verbose "Wrote ..." lines) to a log file
+  {
+    const std::string log_path = ".hali/zim_extract.log";
+    fs::create_directories(".hali");
+    std::ofstream logf(log_path, std::ios::app);
+    if (logf) {
+      auto now = std::chrono::system_clock::now();
+      auto t = std::chrono::system_clock::to_time_t(now);
+      std::tm tm_buf {};
+      localtime_r(&t, &tm_buf);
+      char ts[32];
+      std::strftime(ts, sizeof(ts), "%Y-%m-%dT%H:%M:%S", &tm_buf);
+      logf << "[" << ts << "] zimdump " << zim_path << "\n";
+      logf << result << "\n";
+    }
+  }
+
+  // Check if zimdump reported an error
+  const bool had_error = result.find("[exit code:") != std::string::npos;
+
+  // Verify files were actually extracted (zimdump can exit non-zero
+  // after partially writing files, e.g. exit 255 on a corrupt entry)
+  int disk_count = 0;
+  if (fs::is_directory(extract_dir)) {
+    for (const auto &entry : fs::recursive_directory_iterator(extract_dir)) {
+      if (entry.is_regular_file()) {
+        disk_count++;
+      }
+    }
+  }
+
+  if (disk_count == 0) {
+    fail("zimdump produced no files" +
+         (had_error ? ": " + utils::trim(result) : ""));
+    fs::remove_all(extract_dir);
+    return false;
+  }
+
+  if (had_error) {
+    // Log a warning but proceed — files were written
+    const std::string log_path = ".hali/zim_extract.log";
+    std::ofstream logf(log_path, std::ios::app);
+    if (logf) {
+      logf << "WARNING: zimdump exited with error but "
+           << disk_count << " files were extracted, proceeding\n";
+    }
+    if (progress) {
+      progress(std::format("warning: zimdump exited with error, "
+                           "but {} files extracted — continuing",
+                           disk_count));
+    }
+  }
 
   if (progress) {
-    progress("extraction complete, building index ...");
+    progress(std::format("extracted {} files, building index ...", disk_count));
   }
 
   // Collect all extracted text files
@@ -199,9 +290,7 @@ bool KnowledgeManager::build_from_path(const std::string &zim_path,
   }
 
   if (text_files.empty()) {
-    if (progress) {
-      progress("ERROR: no text files extracted from ZIM");
-    }
+    fail("no text files extracted from ZIM");
     fs::remove_all(extract_dir);
     return false;
   }
@@ -214,40 +303,93 @@ bool KnowledgeManager::build_from_path(const std::string &zim_path,
   // Build RAG index
   RagDB db;
   db.embed_dim = llama.get_embed_dim();
+
+  // Phase 1: parallel read + chunk
+  struct ChunkData {
+    std::string content;
+    std::string source_name;
+  };
+  std::vector<ChunkData> chunks;
+  {
+    std::mutex chunk_mutex;
+    std::atomic<int> read_idx{0};
+    const int nthreads =
+        std::max(1u, std::thread::hardware_concurrency() - 2);
+
+    if (progress) {
+      progress(std::format("reading {} files with {} threads ...",
+                           text_files.size(), nthreads));
+    }
+
+    auto worker = [&]() {
+      while (true) {
+        int idx = read_idx.fetch_add(1);
+        if (idx >= (int)text_files.size()) {
+          break;
+        }
+        const auto &tf = text_files[idx];
+        std::ifstream f(tf);
+        if (!f) {
+          continue;
+        }
+        std::string content((std::istreambuf_iterator<char>(f)),
+                             std::istreambuf_iterator<char>());
+        f.close();
+        if (content.size() < 80) {
+          continue;
+        }
+        content = utils::strip_html(content);
+        if (content.size() < 80) {
+          continue;
+        }
+        std::lock_guard<std::mutex> lock(chunk_mutex);
+        chunks.push_back({std::move(content), tf.filename().string()});
+      }
+    };
+
+    std::vector<std::thread> threads;
+    for (int i = 0; i < nthreads; i++) {
+      threads.emplace_back(worker);
+    }
+    for (auto &t : threads) {
+      t.join();
+    }
+  }
+
+  if (chunks.empty()) {
+    fail("no chunks produced");
+    fs::remove_all(extract_dir);
+    return false;
+  }
+
+  // Phase 2: sequential embed with progress modal
+  tui.show_progress_modal("Embedding", (int)chunks.size());
   int total_chunks = 0;
-  int file_idx = 0;
+  bool aborted = false;
 
-  for (const auto &tf : text_files) {
-    file_idx++;
-    std::ifstream f(tf);
-    if (!f) {
-      continue;
+  for (int i = 0; i < (int)chunks.size(); i++) {
+    if (tui.poll_escape()) {
+      aborted = true;
+      break;
     }
-    std::string content((std::istreambuf_iterator<char>(f)),
-                         std::istreambuf_iterator<char>());
-    f.close();
-
-    if (content.size() < 80) {
-      continue;
-    }
-
-    const std::string source_name = tf.filename().string();
-    llama.rag_index_prose(db, content, source_name);
+    llama.rag_index_prose(db, chunks[i].content, chunks[i].source_name);
     total_chunks = db.size();
+    tui.update_progress(i + 1, (int)chunks.size(), total_chunks);
+  }
 
-    if (progress && (file_idx % 50 == 0 || file_idx == (int)text_files.size())) {
-      progress(std::format("embedded {}/{} files ({} chunks)",
-                           file_idx, text_files.size(), total_chunks));
-    }
+  tui.dismiss_progress_modal();
+
+  if (aborted) {
+    fail("embedding aborted by user");
+    fs::remove_all(extract_dir);
+    return false;
   }
 
   // Clean up extraction directory
   fs::remove_all(extract_dir);
 
   if (db.empty()) {
-    if (progress) {
-      progress("ERROR: no chunks produced");
-    }
+    fail("no chunks produced");
     return false;
   }
 
@@ -255,9 +397,7 @@ bool KnowledgeManager::build_from_path(const std::string &zim_path,
   fs::create_directories(rag_dir_);
   const std::string rag_file = rag_path(id);
   if (!db.save(rag_file)) {
-    if (progress) {
-      progress("ERROR: failed to save " + rag_file);
-    }
+    fail("failed to save " + rag_file);
     return false;
   }
 

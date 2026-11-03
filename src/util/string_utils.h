@@ -58,6 +58,13 @@ namespace utils {
   //
   std::vector<std::string> split_utf8_string(const std::string &input, size_t max_rows_segment);
 
+  //
+  // Strip HTML markup, decode basic entities, collapse whitespace.
+  // Removes <style>, <script>, <table> blocks entirely,
+  // then all remaining tags, then decodes entities.
+  //
+  std::string strip_html(const std::string &html);
+
 } // namespace utils
 
 
