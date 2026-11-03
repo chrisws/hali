@@ -15,6 +15,7 @@
 #include <deque>
 #include <fstream>
 #include <mutex>
+#include <random>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -566,12 +567,37 @@ void play_test() {
 }
 
 void play_tool_tick() {
-  // E6 → G6: quick bright ascending blip (Mario coin-pickup style)
-  static const NoteEvent events[] = {
-    { {1318.51, 0.04} },
-    { {1568.00, 0.04} },
+  // A set of short robotic "expressions" — randomly selected for variety.
+  // Each is a quick 2-3 note phrase.
+  static const std::vector<NoteEvent> phrases[] = {
+    // 0: ascending blip (classic)
+    { { {1318.51, 0.04} }, { {1568.00, 0.04} } },
+    // 1: descending "done"
+    { { {1568.00, 0.04} }, { {1318.51, 0.05} } },
+    // 2: ascending run C6→E6→G6
+    { { {1046.50, 0.03} }, { {1318.51, 0.03} }, { {1568.00, 0.05} } },
+    // 3: double-beep then up (E6, E6, G6)
+    { { {1318.51, 0.03} }, { {1318.51, 0.03} }, { {1568.00, 0.05} } },
+    // 4: descending arpeggio A6→G6→E6
+    { { {1760.00, 0.03} }, { {1568.00, 0.03} }, { {1318.51, 0.05} } },
+    // 5: little "whee" G6→A6→G6
+    { { {1568.00, 0.03} }, { {1760.00, 0.03} }, { {1568.00, 0.05} } },
+    // 6: big jump C6→G6
+    { { {1046.50, 0.04} }, { {1568.00, 0.06} } },
+    // 7: ascending run E6→G6→A6
+    { { {1318.51, 0.03} }, { {1568.00, 0.03} }, { {1760.00, 0.05} } },
+    // 8: "low-hi" — dramatic octave rise A5→A6
+    { { {880.00, 0.05} }, { {1760.00, 0.08} } },
+    // 9: "hi-low" — dramatic octave fall A6→A5
+    { { {1760.00, 0.05} }, { {880.00, 0.08} } },
+    // 10: "electronic purr" — two close sines (E3+F3) beat at ~10 Hz
+    { { {164.81, 0.18}, {174.61, 0.18} } },
   };
-  play_events(std::vector<NoteEvent>(std::begin(events), std::end(events)));
+
+  static std::mt19937 rng(std::random_device{}());
+  std::uniform_int_distribution<size_t> dist(0, sizeof(phrases)/sizeof(phrases[0]) - 1);
+  const auto &phrase = phrases[dist(rng)];
+  play_events(phrase);
 }
 
 void play_user_prompt() {
