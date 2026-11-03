@@ -489,6 +489,11 @@ bool Agent::run_turn(const std::string &user_message) {
   }
   tui_.append_line("Hali: ");
 
+  // Track cumulative tokens and elapsed time across all generation segments
+  // (add_message resets _tokens_generated and _t_start on each tool_result)
+  auto turn_start = iter_->_t_start;
+  int turn_tokens = 0;
+
   ThinkParser thinker(cfg_.thinking_, llama_->is_gemma_4());
 
   tui_.set_thinking(true);
@@ -556,6 +561,7 @@ bool Agent::run_turn(const std::string &user_message) {
     auto tool_start = buffer.find("TOOL:");
     if (tool_start == 0) {
       fetch_tool();
+      turn_tokens += iter_->_tokens_generated;
       invoke_tool(utils::trim(buffer), "TOOL_RESULT: {}");
       buffer.clear();
       thinker.set_mode(ThinkParser::Init);
@@ -595,23 +601,29 @@ bool Agent::run_turn(const std::string &user_message) {
   }
   flush_broadcast();
 
+  turn_tokens += iter_->_tokens_generated;
+
+  auto turn_end = std::chrono::high_resolution_clock::now();
+  double turn_elapsed = std::chrono::duration<double>(turn_end - turn_start).count();
+  double turn_tps = (turn_elapsed > 0.0 && turn_tokens > 0) ? (turn_tokens / turn_elapsed) : 0.0;
+
   tui_.set_thinking(false);
-  tui_.update_usage(tokens_per_sec(), get_mem_info());
+  tui_.update_usage(static_cast<float>(turn_tps), get_mem_info());
 
   char stat[128];
   const auto pattern = ICON_SYS + "%.1f tok/s  (%d tokens)  %.1fs elapsed  KV %.1f%%";
   std::snprintf(stat, sizeof(stat), pattern.c_str(),
-                static_cast<double>(tui_.get_tokens_per_sec()),
-                iter_->_tokens_generated,
-                elapsed_seconds(),
+                turn_tps,
+                turn_tokens,
+                turn_elapsed,
                 static_cast<double>(tui_.get_kv_percent()));
   tui_.append_line(stat);
 
   // Record usage log for this turn
   TurnMetrics metrics;
   metrics.turn_number       = turn_.number;
-  metrics.llm_latency_ms    = elapsed_seconds() * 1000.0;
-  metrics.completion_tokens = iter_->_tokens_generated;
+  metrics.llm_latency_ms    = turn_elapsed * 1000.0;
+  metrics.completion_tokens = turn_tokens;
   metrics.tool_call_count   = turn_.tool_calls;
   metrics.tool_error_count  = turn_.tool_errors;
   metrics.kv_usage_pct      = llama_->memory_kv_percent();
