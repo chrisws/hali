@@ -653,7 +653,9 @@ ToolMap Agent::build_tool_dispatch() {
     } else {
       path_part = sa.path_and_flags;
     }
-    return tool_search(cfg_.sandbox_, sa.pattern, path_part, flags_part, cfg_.extra_dirs_);
+    return run_with_spinner(tui_, [this, &sa, &path_part, &flags_part]() -> std::string {
+      return tool_search(cfg_.sandbox_, sa.pattern, path_part, flags_part, cfg_.extra_dirs_);
+    });
   };
   tools["TOOL:WRITE"] = [this](const std::string &a1, const std::string &a2) -> std::string {
     const auto data = strip_code_fences(a1, a2);
