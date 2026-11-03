@@ -30,7 +30,7 @@ Most agentic shells assume a hosted API and treat context as free. Hali assumes 
 - **Sampling profiles** — after model load, Hali prompts for a sampling profile (General, Programming, Creative, Concise) that sets temperature, top_p, top_k, min_p, and penalty parameters in one step. Smart defaults are also applied based on detected VRAM and GPU layer count.
 - **Task modes** — `/task` switches the agent's behavioral focus between `web`, `music`, `audio`, `knowledge`, or `default`. Each mode adjusts the system prompt, enables relevant tools, and can start/stop subsystems (e.g. the web server for `web` mode).
 - **Multi-track music** — `TOOL:MUSIC` manages a persistent multi-track project with per-track volume, pan, and note scripts. Supports pitch notes, drum tokens (kick/snare/hi-hat/open-hat/tom), chords, and global tempo. Projects can be saved, loaded, listed, and exported to stereo `.wav`.
-- **Command completions** — tab-completion for slash commands in the TUI input line.
+- **Command completions** — tab-completion for slash commands in the TUI input line. With multiple matches, repeated Tab presses cycle through the options (wrapping around); a single match is accepted immediately.
 - **A full sandboxed tool suite** — every file operation is scoped to a sandbox root (the directory Hali is launched in, or an explicit path argument):
 
   | Tool                                                    | Purpose                                                                                                                                                                                                                                                |
@@ -166,13 +166,13 @@ Settable keys via `/set`: `temperature`, `top_p`, `top_k`, `min_p`, `penalty_rep
 
 ## Knowledge Base (ZIM)
 
-Hali can build offline knowledge bases from [ZIM archives](https://www.kiwix.org/) (Wikipedia, DevDocs, Stack Exchange, etc.) and query them via RAG. The workflow is: **list → download → index → query**.
+Hali can build offline knowledge bases from [ZIM archives](https://www.kiwix.org/) (Wikipedia, DevDocs, Stack Exchange, etc.) and query them via RAG. The workflow is: **pick a .zim file → index → query**.
 
 ### Prerequisites
 
 - An **embedding model** loaded (`/embed` or `-e` at startup) — required for indexing and retrieval.
-- **kiwix-tools** (`zimdump`) installed for ZIM text extraction: `sudo apt install kiwix-tools`.
-- Network access for downloading ZIM files (one-time; files are cached locally).
+- **zim-tools** (`zimdump`) installed for ZIM text extraction: `sudo apt install zim-tools`.
+- A `.zim` file on disk (download separately from [Kiwix](https://www.kiwix.org/) or any other source).
 
 ### The `/index` command
 
@@ -180,9 +180,9 @@ All subcommands that accept a source name will show an **interactive picker** (T
 
 | Subcommand | Description |
 |---|---|
-| `/index` | Picker: select a source to download+index, or "status" |
-| `/index status` | Show status: available sources, loaded sources, disk usage |
-| `/index <id>` | Download ZIM, build RAG index, and load (one step) |
+| `/index` | Picker: select an indexed source to load, "Pick a .zim file…", or "status" |
+| `/index status` | Show status: indexed sources, loaded sources, disk usage |
+| `/index <path>` | Index a `.zim` file from a path and load it (one step) |
 | `/index load [id]` | Load a `.rag` index into the session (picker if no id) |
 | `/index unload [id]` | Remove a loaded index from the session (picker if no id) |
 | `/index remove [id]` | Delete the `.rag` and `.zim` files for a source (picker if no id) |
@@ -190,11 +190,11 @@ All subcommands that accept a source name will show an **interactive picker** (T
 ### Workflow
 
 ```
-# 1. Pick a source from the interactive list
+# 1. Pick a .zim file from the interactive picker
 /index
 
-# 2. (or target a specific source directly)
-/index devdocs_en_python
+# 2. (or target a specific file directly)
+/index /path/to/devdocs_en_python.zim
 
 # 3. Query it — the model uses TOOL:RAG automatically
 ```
@@ -206,8 +206,7 @@ Files are stored under the sandbox's `.hali/` directory:
 | Path | Contents |
 |---|---|
 | `.hali/rag/<id>.rag` | Binary RAG index (embeddings + chunks) |
-| `.hali/zim/<id>.zim` | Downloaded ZIM archive |
-| `share/kiwix-meta.json` | Meta-index of available sources (shipped with Hali) |
+| `.hali/kiwix-index.json` | Local tracking index of indexed sources (id, paths, chunk count, timestamp) |
 
 ### Auto-load
 
@@ -329,7 +328,7 @@ hali/
 │   │   ├── agent_dispatch.cpp  # tool dispatch table (all TOOL:* handlers)
 │   │   ├── agent_utils.cpp/.h  # path helpers, tool arg parsing, SEARCH/REPLACE/TABLE, ThinkParser
 │   │   ├── config.cpp/.h       # settings, persistence, help text, prompt assembly, modes
-│   │   ├── knowledge.cpp/.h    # KnowledgeManager: ZIM download, RAG index build/load
+│   │   ├── knowledge.cpp/.h    # KnowledgeManager: ZIM index build/load, local tracking
 │   │   ├── run_allowed.h       # persistent user-approved TOOL:RUN allowlist
 │   │   └── shell_util.cpp/.h   # shell command execution, metacharacter detection
 │   ├── model/              # llama.cpp integration
