@@ -348,6 +348,54 @@ bool is_enabled() {
   return g_enabled;
 }
 
+static int note_to_semitone(char note, char acc) {
+  int idx;
+  switch (note) {
+    case 'C': idx = 0;  break;
+    case 'D': idx = 2;  break;
+    case 'E': idx = 4;  break;
+    case 'F': idx = 5;  break;
+    case 'G': idx = 7;  break;
+    case 'A': idx = 9;  break;
+    case 'B': idx = 11; break;
+    default:  return -1;
+  }
+  if (acc == '#' || acc == '+') idx++;
+  else if (acc == '-' || acc == 'b') idx--;
+  return idx;
+}
+
+static double midi_to_freq(int midi) {
+  return 440.0 * pow(2.0, (midi - 69) / 12.0);
+}
+
+static bool parse_note_token(const std::string &tok, double tempo, double default_len,
+                             double &freq, double &dur) {
+  char c = tok[0];
+  if (c < 'A' || c > 'G') return false;
+  int pos = 1;
+  char acc = 0;
+  if (pos < (int)tok.size() && (tok[pos] == '#' || tok[pos] == '-' || tok[pos] == 'b' || tok[pos] == '+')) {
+    acc = tok[pos];
+    pos++;
+  }
+  int octave = 4;
+  if (pos < (int)tok.size() && isdigit((unsigned char)tok[pos])) {
+    octave = tok[pos] - '0';
+    pos++;
+  }
+  dur = (60.0 / tempo) * (4.0 / default_len);
+  if (pos < (int)tok.size() && tok[pos] == ':') {
+    pos++;
+    dur = std::stod(tok.substr(pos));
+  }
+  int semi = note_to_semitone(c, acc);
+  if (semi < 0) return false;
+  int midi = (octave + 1) * 12 + semi;
+  freq = midi_to_freq(midi);
+  return true;
+}
+
 ScriptResult play_script(const std::string &notes_str) {
   ScriptResult result;
 
@@ -357,57 +405,8 @@ ScriptResult play_script(const std::string &notes_str) {
   double volume = 0.5;
   double default_len = 4.0;
 
-  auto note_to_semitone = [](char note, char acc) -> int {
-    int idx;
-    switch (note) {
-      case 'C': idx = 0;  break;
-      case 'D': idx = 2;  break;
-      case 'E': idx = 4;  break;
-      case 'F': idx = 5;  break;
-      case 'G': idx = 7;  break;
-      case 'A': idx = 9;  break;
-      case 'B': idx = 11; break;
-      default:  return -1;
-    }
-    if (acc == '#' || acc == '+') idx++;
-    else if (acc == '-' || acc == 'b') idx--;
-    return idx;
-  };
-
-  auto midi_to_freq = [](int midi) -> double {
-    return 440.0 * pow(2.0, (midi - 69) / 12.0);
-  };
-
   auto default_duration = [&]() -> double {
     return (60.0 / tempo) * (4.0 / default_len);
-  };
-
-  // Parse a single note token (no brackets) into {freq, dur}.
-  // Returns false on error.
-  auto parse_note = [&](const std::string &tok, double &freq, double &dur) -> bool {
-    char c = tok[0];
-    if (c < 'A' || c > 'G') return false;
-    int pos = 1;
-    char acc = 0;
-    if (pos < (int)tok.size() && (tok[pos] == '#' || tok[pos] == '-' || tok[pos] == 'b' || tok[pos] == '+')) {
-      acc = tok[pos];
-      pos++;
-    }
-    int octave = 4;
-    if (pos < (int)tok.size() && isdigit((unsigned char)tok[pos])) {
-      octave = tok[pos] - '0';
-      pos++;
-    }
-    dur = default_duration();
-    if (pos < (int)tok.size() && tok[pos] == ':') {
-      pos++;
-      dur = std::stod(tok.substr(pos));
-    }
-    int semi = note_to_semitone(c, acc);
-    if (semi < 0) return false;
-    int midi = (octave + 1) * 12 + semi;
-    freq = midi_to_freq(midi);
-    return true;
   };
 
   std::istringstream iss(notes_str);
@@ -517,7 +516,7 @@ ScriptResult play_script(const std::string &notes_str) {
 
     // Note token
     double freq = 0.0, dur = 0.0;
-    if (!parse_note(tok, freq, dur)) {
+    if (!parse_note_token(tok, tempo, default_len, freq, dur)) {
       result.error = "ERROR: invalid note: " + tok;
       return result;
     }

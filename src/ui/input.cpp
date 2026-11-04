@@ -27,19 +27,15 @@ Input::Input()
 }
 
 void Input::build_dispatch() {
-  dispatch_["F2"] = [this](const InputEvent &, TuiContext &tui, std::string &) -> bool {
-    log_write(LEVEL_DEBUG, "input", "F2 key pressed (toggle mouse mode)");
-    mouse_mode_ = !mouse_mode_;
-    tui.enable_mouse(mouse_mode_);
-    return true;
-  };
+  build_scroll_handlers();
+  build_cursor_handlers();
+  build_edit_handlers();
+  build_mode_handlers();
+  build_history_handlers();
+  build_misc_handlers();
+}
 
-  dispatch_["F12"] = [this](const InputEvent &, TuiContext &tui, std::string &) -> bool {
-    log_write(LEVEL_DEBUG, "input", "F12 key pressed (toggle theme)");
-    tui.toggle_theme();
-    return true;
-  };
-
+void Input::build_scroll_handlers() {
   dispatch_["PGUP"] = [this](const InputEvent &, TuiContext &tui, std::string &) -> bool {
     log_write(LEVEL_DEBUG, "input", "Page Up key pressed");
     const int term_rows = tui.get_term_rows();
@@ -73,53 +69,9 @@ void Input::build_dispatch() {
     tui.render();
     return true;
   };
+}
 
-  dispatch_["UP"] = [this](const InputEvent &, TuiContext &tui, std::string &draft) -> bool {
-    log_write(LEVEL_DEBUG, "input", "Up arrow key pressed");
-    std::string hist_entry;
-    if (history_.up(hist_entry)) {
-      if (!input_buf_.empty() && hist_entry != input_buf_) {
-        draft = input_buf_;
-      }
-      input_buf_  = hist_entry;
-      cursor_pos_ = input_buf_.size();
-    }
-    tui.redraw_input();
-    tui.render();
-    return true;
-  };
-
-  dispatch_["DOWN"] = [this](const InputEvent &, TuiContext &tui, std::string &draft) -> bool {
-    log_write(LEVEL_DEBUG, "input", "Down arrow key pressed");
-    std::string hist_entry;
-    if (history_.down(hist_entry)) {
-      input_buf_  = hist_entry;
-      cursor_pos_ = input_buf_.size();
-    } else {
-      input_buf_  = draft;
-      cursor_pos_ = input_buf_.size();
-      draft.clear();
-    }
-    tui.redraw_input();
-    tui.render();
-    return true;
-  };
-
-  dispatch_["C-L"] = [this](const InputEvent &, TuiContext &tui, std::string &) -> bool {
-    log_write(LEVEL_DEBUG, "input", "Ctrl+L key pressed (clear screen)");
-    cursor_pos_ = 0;
-    scroll_offset_ = 0;
-    input_buf_.clear();
-    tui.redraw_input();
-    tui.render();
-    return true;
-  };
-
-  dispatch_["C-Z"] = [this](const InputEvent &, TuiContext &, std::string &) -> bool {
-    log_write(LEVEL_DEBUG, "input", "Ctrl+Z key pressed (ignored)");
-    return true;
-  };
-
+void Input::build_cursor_handlers() {
   dispatch_["C-LEFT"] = [this](const InputEvent &, TuiContext &tui, std::string &) -> bool {
     log_write(LEVEL_DEBUG, "input", "Ctrl+left pressed [%d]", cursor_pos_);
     cursor_pos_ = move_to_prev_word(cursor_pos_);
@@ -163,7 +115,9 @@ void Input::build_dispatch() {
     tui.render();
     return true;
   };
+}
 
+void Input::build_edit_handlers() {
   dispatch_["C-SPACE"] = [this](const InputEvent &, TuiContext &tui, std::string &) -> bool {
     log_write(LEVEL_DEBUG, "input", "Ctrl+space key pressed");
     input_buf_.insert(cursor_pos_, 1, ' ');
@@ -218,14 +172,6 @@ void Input::build_dispatch() {
     return true;
   };
 
-  dispatch_["C-V"] = [this](const InputEvent &, TuiContext &tui, std::string &) -> bool {
-    log_write(LEVEL_DEBUG, "input", "Ctrl+V key pressed (enter insert mode)");
-    insert_mode_ = true;
-    tui.redraw_input();
-    tui.render();
-    return true;
-  };
-
   dispatch_["C-H"] = [this](const InputEvent &, TuiContext &tui, std::string &) -> bool {
     log_write(LEVEL_DEBUG, "input", "Ctrl+H key pressed (backspace)");
     if (cursor_pos_ > 0) {
@@ -237,16 +183,25 @@ void Input::build_dispatch() {
     }
     return false;
   };
+}
 
-  dispatch_["M-L"] = [this](const InputEvent &, TuiContext &tui, std::string &) -> bool {
-    cursor_pos_ = uppercase_word(cursor_pos_);
-    tui.redraw_input();
-    tui.render();
+void Input::build_mode_handlers() {
+  dispatch_["F2"] = [this](const InputEvent &, TuiContext &tui, std::string &) -> bool {
+    log_write(LEVEL_DEBUG, "input", "F2 key pressed (toggle mouse mode)");
+    mouse_mode_ = !mouse_mode_;
+    tui.enable_mouse(mouse_mode_);
     return true;
   };
 
-  dispatch_["M-D"] = [this](const InputEvent &, TuiContext &tui, std::string &) -> bool {
-    cursor_pos_ = lowercase_word(cursor_pos_);
+  dispatch_["F12"] = [this](const InputEvent &, TuiContext &tui, std::string &) -> bool {
+    log_write(LEVEL_DEBUG, "input", "F12 key pressed (toggle theme)");
+    tui.toggle_theme();
+    return true;
+  };
+
+  dispatch_["C-V"] = [this](const InputEvent &, TuiContext &tui, std::string &) -> bool {
+    log_write(LEVEL_DEBUG, "input", "Ctrl+V key pressed (enter insert mode)");
+    insert_mode_ = true;
     tui.redraw_input();
     tui.render();
     return true;
@@ -272,18 +227,80 @@ void Input::build_dispatch() {
     tui.render();
     return true;
   };
+}
+
+void Input::build_history_handlers() {
+  dispatch_["UP"] = [this](const InputEvent &, TuiContext &tui, std::string &draft) -> bool {
+    log_write(LEVEL_DEBUG, "input", "Up arrow key pressed");
+    std::string hist_entry;
+    if (history_.up(hist_entry)) {
+      if (!input_buf_.empty() && hist_entry != input_buf_) {
+        draft = input_buf_;
+      }
+      input_buf_  = hist_entry;
+      cursor_pos_ = input_buf_.size();
+    }
+    tui.redraw_input();
+    tui.render();
+    return true;
+  };
+
+  dispatch_["DOWN"] = [this](const InputEvent &, TuiContext &tui, std::string &draft) -> bool {
+    log_write(LEVEL_DEBUG, "input", "Down arrow key pressed");
+    std::string hist_entry;
+    if (history_.down(hist_entry)) {
+      input_buf_  = hist_entry;
+      cursor_pos_ = input_buf_.size();
+    } else {
+      input_buf_  = draft;
+      cursor_pos_ = input_buf_.size();
+      draft.clear();
+    }
+    tui.redraw_input();
+    tui.render();
+    return true;
+  };
+}
+
+void Input::build_misc_handlers() {
+  dispatch_["C-L"] = [this](const InputEvent &, TuiContext &tui, std::string &) -> bool {
+    log_write(LEVEL_DEBUG, "input", "Ctrl+L key pressed (clear screen)");
+    cursor_pos_ = 0;
+    scroll_offset_ = 0;
+    input_buf_.clear();
+    tui.redraw_input();
+    tui.render();
+    return true;
+  };
+
+  dispatch_["C-Z"] = [this](const InputEvent &, TuiContext &, std::string &) -> bool {
+    log_write(LEVEL_DEBUG, "input", "Ctrl+Z key pressed (ignored)");
+    return true;
+  };
+
+  dispatch_["M-L"] = [this](const InputEvent &, TuiContext &tui, std::string &) -> bool {
+    cursor_pos_ = uppercase_word(cursor_pos_);
+    tui.redraw_input();
+    tui.render();
+    return true;
+  };
+
+  dispatch_["M-D"] = [this](const InputEvent &, TuiContext &tui, std::string &) -> bool {
+    cursor_pos_ = lowercase_word(cursor_pos_);
+    tui.redraw_input();
+    tui.render();
+    return true;
+  };
 
   dispatch_["TAB"] = [this](const InputEvent &, TuiContext &tui, std::string &) -> bool {
     if (completion_active_ && !completion_matches_.empty()) {
       if (completion_matches_.size() == 1) {
-        // Single match: accept it
         if (!completion_suffix_.empty()) {
           input_buf_.insert(cursor_pos_, completion_suffix_);
           cursor_pos_ += static_cast<int>(completion_suffix_.size());
         }
         dismiss_completion();
       } else {
-        // Multiple matches: cycle forward (wrap around)
         completion_index_ = (completion_index_ + 1)
                             % static_cast<int>(completion_matches_.size());
         completion_suffix_ = completion_matches_[completion_index_]
@@ -293,7 +310,6 @@ void Input::build_dispatch() {
       tui.render();
       return true;
     }
-    // No active completion → insert a space
     input_buf_.insert(cursor_pos_, 1, ' ');
     ++cursor_pos_;
     tui.redraw_input();

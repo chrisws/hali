@@ -160,6 +160,304 @@ static const std::string RELOAD_SNIPPET =
   "  ws.addEventListener('error', (e) => console.error('[%o]', e));\n"
   "});\n"
   "</script>\n";
+
+// ────────────────────────────────────────────────────────────────────────────
+// WebSocket frame helpers (RFC 6455)
+// ────────────────────────────────────────────────────────────────────────────
+
+namespace {
+
+std::string ws_encode_frame(const std::string &payload) {
+  // Server → client text frame, unmasked.
+  std::string frame;
+  frame += static_cast<char>(0x81); // FIN=1, opcode=1 (text)
+  size_t len = payload.size();
+  if (len < 126) {
+    frame += static_cast<char>(len);
+  } else if (len < 65536) {
+    frame += static_cast<char>(126);
+    frame += static_cast<char>((len >> 8) & 0xFF);
+    frame += static_cast<char>(len & 0xFF);
+  } else {
+    frame += static_cast<char>(127);
+    for (int i = 7; i >= 0; --i) {
+      frame += static_cast<char>((len >> (i * 8)) & 0xFF);
+    }
+  }
+  frame += payload;
+  return frame;
+}
+
+// Decode a single WebSocket frame from a byte buffer.
+// Returns the number of bytes consumed, or 0 if incomplete.
+size_t ws_decode_frame(const char *data, size_t len, std::string &out) {
+  if (len < 2) return 0;
+  uint8_t b1 = static_cast<uint8_t>(data[1]);
+  bool   masked  = (b1 & 0x80) != 0;
+  size_t p_len   = b1 & 0x7F;
+  size_t pos     = 2;
+
+  if (p_len == 126) {
+    if (len < 4) return 0;
+    p_len = (static_cast<uint16_t>(
+      (static_cast<unsigned char>(data[2]) << 8) |
+      static_cast<unsigned char>(data[3])));
+    pos = 4;
+  } else if (p_len == 127) {
+    if (len < 10) return 0;
+    uint64_t long_len = 0;
+    for (int i = 0; i < 8; ++i) {
+      long_len = (long_len << 8) | static_cast<unsigned char>(data[2 + i]);
+    }
+    p_len = static_cast<size_t>(long_len);
+    pos = 10;
+  }
+
+  uint8_t mask[4];
+
+  if (masked) {
+    if (len < pos + 4) return 0;
+    std::memcpy(mask, data + pos, 4);
+    pos += 4;
+  }
+
+  if (len < pos + p_len) return 0;
+
+  out.assign(data + pos, p_len);
+  if (masked) {
+    for (size_t i = 0; i < p_len; ++i) {
+      out[i] = static_cast<char>(static_cast<unsigned char>(out[i]) ^ mask[i % 4]);
+    }
+  }
+
+  return pos + p_len;
+}
+
+std::string ws_accept_key(const std::string &client_key) {
+  std::string concat = client_key + WS_GUID;
+  auto digest = sha1::hash(concat);
+  return base64_encode(digest.data(), digest.size());
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// HTTP request parsing
+// ────────────────────────────────────────────────────────────────────────────
+
+// Read the full HTTP request head (up to \r\n\r\n).
+bool read_request_head(int fd, std::string &head) {
+  head.clear();
+  char buf[4096];
+  while (true) {
+    auto pos = head.find("\r\n\r\n");
+    if (pos != std::string::npos) return true;
+    ssize_t n = ::recv(fd, buf, sizeof(buf), 0);
+    if (n <= 0) return false;
+    head.append(buf, static_cast<size_t>(n));
+    if (head.size() > 65536) return false; // safety cap
+  }
+}
+
+// Parsed HTTP request with case-insensitive header lookup
+// that preserves the case of header *values*.
+struct Request {
+  std::string method, path;
+  std::string head;
+
+  std::string header(const std::string &name) const {
+    std::string lower_name = name;
+    std::ranges::transform(lower_name, lower_name.begin(), ::tolower);
+
+    size_t line_start = 0;
+    auto nl = head.find("\r\n");
+    if (nl != std::string::npos) line_start = nl + 2;
+
+    while (line_start < head.size()) {
+      auto eol = head.find("\r\n", line_start);
+      if (eol == std::string::npos) eol = head.size();
+      auto colon = head.find(':', line_start);
+      if (colon == std::string::npos || colon > eol) break;
+
+      std::string hname_lower = head.substr(line_start, colon - line_start);
+      std::ranges::transform(hname_lower, hname_lower.begin(), ::tolower);
+      hname_lower.erase(0, hname_lower.find_first_not_of(" \t"));
+      hname_lower.erase(hname_lower.find_last_not_of(" \t") + 1);
+
+      if (hname_lower == lower_name) {
+        size_t vstart = colon + 1;
+        std::string val = head.substr(vstart, eol - vstart);
+        val.erase(0, val.find_first_not_of(" \t"));
+        val.erase(val.find_last_not_of(" \t\r\n") + 1);
+        return val;
+      }
+      line_start = eol + 2;
+    }
+    return "";
+  }
+};
+
+Request parse_request(const std::string &head) {
+  Request req;
+  req.head = head;
+  auto sp1 = head.find(' ');
+  if (sp1 == std::string::npos) return req;
+  req.method = head.substr(0, sp1);
+  auto sp2 = head.find(' ', sp1 + 1);
+  if (sp2 == std::string::npos) return req;
+  req.path = head.substr(sp1 + 1, sp2 - sp1 - 1);
+  auto qm = req.path.find('?');
+  if (qm != std::string::npos) req.path = req.path.substr(0, qm);
+  return req;
+}
+
+void send_http_response(int fd, int status, const std::string &status_text,
+                        const std::string &content_type,
+                        const std::string &body) {
+  std::ostringstream resp;
+  resp << "HTTP/1.1 " << status << " " << status_text << "\r\n";
+  resp << "Content-Type: " << content_type << "\r\n";
+  resp << "Content-Length: " << body.size() << "\r\n";
+  resp << "Cache-Control: no-store\r\n";
+  resp << "Connection: close\r\n";
+  resp << "\r\n";
+  resp << body;
+  std::string out = resp.str();
+  size_t sent = 0;
+  while (sent < out.size()) {
+    ssize_t n = ::send(fd, out.data() + sent, out.size() - sent, MSG_NOSIGNAL);
+    if (n <= 0) break;
+    sent += static_cast<size_t>(n);
+  }
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// File serving
+// ────────────────────────────────────────────────────────────────────────────
+
+// Serve a static file, injecting the reload snippet into .html files.
+void serve_file(int fd, const std::string &rel_path,
+                const std::string &root, bool live_reload) {
+  if (rel_path.find("..") != std::string::npos) {
+    send_http_response(fd, 403, "Forbidden", "text/plain", "Forbidden");
+    return;
+  }
+
+  fs::path file_path = fs::path(root) / rel_path;
+
+  if (fs::is_directory(file_path)) {
+    file_path /= "index.html";
+  }
+
+  if (!fs::is_regular_file(file_path)) {
+    send_http_response(fd, 404, "Not Found", "text/plain", "Not Found");
+    return;
+  }
+
+  std::ifstream file(file_path, std::ios::binary);
+  if (!file) {
+    send_http_response(fd, 500, "Internal Server Error", "text/plain",
+                       "Cannot read file");
+    return;
+  }
+
+  std::string content((std::istreambuf_iterator<char>(file)),
+                      std::istreambuf_iterator<char>());
+
+  if (live_reload) {
+    std::string ext = file_path.extension().string();
+    if (ext == ".html" || ext == ".htm") {
+      auto pos = content.find("</head>");
+      if (pos != std::string::npos) {
+        content.insert(pos, RELOAD_SNIPPET);
+      } else {
+        content += RELOAD_SNIPPET;
+      }
+    }
+  }
+
+  send_http_response(fd, 200, "OK", mime_type(rel_path), content);
+}
+
+void serve_favicon(int fd) {
+  std::string body(reinterpret_cast<const char *>(FAVICON_PNG), FAVICON_PNG_SIZE);
+  send_http_response(fd, 200, "OK", "image/x-icon", body);
+  ::close(fd);
+}
+
+// Serve the built-in /ai shell page (generated in-memory).
+void serve_ai_page(int fd) {
+  std::string page =
+    "<!DOCTYPE html>\n"
+    "<html>\n"
+    "<head>\n"
+    "<title>Hali</title>\n"
+    "<link rel=\"icon\" href=\"/favicon.ico\">\n"
+    "<style>\n"
+    "  body { margin:0; background:#1a1a2e; color:#eee; font-family:monospace; }\n"
+    "  #container { width:100vw; height:100vh; display:flex; align-items:center;\n"
+    "               justify-content:center; overflow:auto; }\n"
+    "  .waiting { opacity:0.5; animation: pulse 2s infinite; }\n"
+    "  @keyframes pulse { 50% { opacity:0.2; } }\n"
+    "</style>\n"
+    "</head>\n"
+    "<body>\n"
+    "<div id=\"container\"><span class=\"waiting\">&#x23F3; Hali is ready &mdash; ask me to display something</span></div>\n"
+    "<script>\n"
+    "(function() {\n"
+    "  function handleMessage(e) {\n"
+    "    if (typeof e.data !== 'string') { return; }\n"
+    "    if (e.data.trim() === '') { return; }\n"
+    "    if (e.data === 'reload') { location.reload(); return; }\n"
+    "    if (e.data === 'clear') {\n"
+    "      var el = document.getElementById('container');\n"
+    "      if (el) { el.innerHTML = '<span class=\"waiting\">&#x23F3; Hali is ready</span>'; }\n"
+    "      return;\n"
+    "    }\n"
+    "    if (e.data.charAt(0) === '<') {\n"
+    "      var c = document.getElementById('container');\n"
+    "      if (!c) { return; }\n"
+    "      c.innerHTML = '';\n"
+    "      var f = document.createElement('iframe');\n"
+    "      f.style.width = '100vw';\n"
+    "      f.style.height = '100vh';\n"
+    "      f.style.border = 'none';\n"
+    "      f.srcdoc = e.data;\n"
+    "      c.appendChild(f);\n"
+    "      return;\n"
+    "    }\n"
+    "    console.log(e.data);\n"
+    "  }\n"
+    "  window._ws_onMessage = handleMessage;\n"
+    "  window._ws_sendMessage = function(msg) {\n"
+    "    if (window._ws && window._ws.readyState === 1) { window._ws.send(msg); }\n"
+    "  };\n"
+    "  document.addEventListener('DOMContentLoaded', function() {\n"
+    "    var proto = location.protocol === 'https:' ? 'wss://' : 'ws://';\n"
+    "    var ws = new WebSocket(proto + location.host + '/__hali_ws__');\n"
+    "    window._ws = ws;\n"
+    "    ws.onmessage = function(e) { handleMessage(e); };\n"
+    "    ws.onopen = function() {\n"
+    "      if (typeof window._ws_onOpen === 'function') { window._ws_onOpen(); }\n"
+    "    };\n"
+    "    ws.onclose = function(e) { console.log('ws closed', e); };\n"
+    "    ws.onerror = function(e) { console.error('ws error', e); };\n"
+    "  });\n"
+    "})();\n"
+    "</script>\n"
+    "</body>\n"
+    "</html>\n";
+  send_http_response(fd, 200, "OK", "text/html; charset=utf-8", page);
+  ::close(fd);
+}
+
+} // anonymous namespace
+
+// Forward declarations (defined below, after WebServer).
+struct WebServer;
+
+namespace {
+void handle_ws_upgrade(int fd, const Request &req, WebServer *server);
+}
+
 // ────────────────────────────────────────────────────────────────────────────
 // WebServer
 // ────────────────────────────────────────────────────────────────────────────
@@ -174,6 +472,7 @@ static const std::string RELOAD_SNIPPET =
 //   • No file-system watching — the caller is responsible for invoking
 //     broadcast_reload() at the right moment.
 //
+
 struct WebServer {
   int         port_        = 9080;
   std::string root_;
@@ -268,79 +567,6 @@ struct WebServer {
   }
 
   // ── Internals ─────────────────────────────────────────────────────
-  static std::string ws_encode_frame(const std::string &payload) {
-    // RFC 6455: server → client text frame, unmasked.
-    std::string frame;
-    frame += static_cast<char>(0x81); // FIN=1, opcode=1 (text)
-    size_t len = payload.size();
-    if (len < 126) {
-      frame += static_cast<char>(len);
-    } else if (len < 65536) {
-      frame += static_cast<char>(126);
-      frame += static_cast<char>((len >> 8) & 0xFF);
-      frame += static_cast<char>(len & 0xFF);
-    } else {
-      frame += static_cast<char>(127);
-      for (int i = 7; i >= 0; --i) {
-        frame += static_cast<char>((len >> (i * 8)) & 0xFF);
-      }
-    }
-    frame += payload;
-    return frame;
-  }
-
-  // Decode a single WebSocket frame from a byte buffer (RFC 6455).
-  // Returns the number of bytes consumed, or 0 if the buffer does
-  // not yet contain a complete frame.
-  static size_t ws_decode_frame(const char *data, size_t len, std::string &out) {
-    if (len < 2) return 0;
-    uint8_t b1 = static_cast<uint8_t>(data[1]);
-    bool   masked  = (b1 & 0x80) != 0;
-    size_t p_len   = b1 & 0x7F;
-    size_t pos     = 2;
-
-    if (p_len == 126) {
-      if (len < 4) return 0;
-      p_len = (static_cast<uint16_t>(
-        (static_cast<unsigned char>(data[2]) << 8) |
-        static_cast<unsigned char>(data[3])));
-      pos = 4;
-    } else if (p_len == 127) {
-      if (len < 10) return 0;
-      uint64_t long_len = 0;
-      for (int i = 0; i < 8; ++i) {
-        long_len = (long_len << 8) | static_cast<unsigned char>(data[2 + i]);
-      }
-      p_len = static_cast<size_t>(long_len);
-      pos = 10;
-    }
-
-    uint8_t mask[4];
-
-    if (masked) {
-      if (len < pos + 4) return 0;
-      std::memcpy(mask, data + pos, 4);
-      pos += 4;
-    }
-
-    if (len < pos + p_len) return 0;
-
-    out.assign(data + pos, p_len);
-    if (masked) {
-      for (size_t i = 0; i < p_len; ++i) {
-        out[i] = static_cast<char>(static_cast<unsigned char>(out[i]) ^ mask[i % 4]);
-      }
-    }
-
-    return pos + p_len;
-  }
-
-  static std::string ws_accept_key(const std::string &client_key) {
-    std::string concat = client_key + WS_GUID;
-    auto digest = sha1::hash(concat);
-    return base64_encode(digest.data(), digest.size());
-  }
-
   void accept_loop() {
     while (!stop_) {
       sockaddr_in client_addr{};
@@ -352,305 +578,8 @@ struct WebServer {
         }
         continue;
       }
-      // Each connection is handled in a detached thread so the accept
-      // loop never blocks.  For a local dev server the number of
-      // concurrent connections is tiny.
       std::thread([this, client_fd] { handle_client(client_fd); }).detach();
     }
-  }
-
-  // Read the full HTTP request head (up to \r\n\r\n).
-  static bool read_request_head(int fd, std::string &head) {
-    head.clear();
-    char buf[4096];
-    while (true) {
-      auto pos = head.find("\r\n\r\n");
-      if (pos != std::string::npos) return true;
-      ssize_t n = ::recv(fd, buf, sizeof(buf), 0);
-      if (n <= 0) return false;
-      head.append(buf, static_cast<size_t>(n));
-      if (head.size() > 65536) return false; // safety cap
-    }
-  }
-
-  // Parsed HTTP request with case-insensitive header lookup
-  // that preserves the case of header *values* (important for
-  // the base64 Sec-WebSocket-Key).
-  struct Request {
-    std::string method, path;
-    std::string head;
-
-    std::string header(const std::string &name) const {
-      std::string lower_name = name;
-      std::ranges::transform(lower_name, lower_name.begin(), ::tolower);
-
-      size_t line_start = 0;
-      auto nl = head.find("\r\n");
-      if (nl != std::string::npos) line_start = nl + 2;
-
-      while (line_start < head.size()) {
-        auto eol = head.find("\r\n", line_start);
-        if (eol == std::string::npos) eol = head.size();
-        auto colon = head.find(':', line_start);
-        if (colon == std::string::npos || colon > eol) break;
-
-        // Lowercase the header name only for comparison.
-        std::string hname_lower = head.substr(line_start, colon - line_start);
-        std::ranges::transform(hname_lower, hname_lower.begin(), ::tolower);
-        hname_lower.erase(0, hname_lower.find_first_not_of(" \t"));
-        hname_lower.erase(hname_lower.find_last_not_of(" \t") + 1);
-
-        if (hname_lower == lower_name) {
-          // Return the value as-is (preserving case).
-          size_t vstart = colon + 1;
-          std::string val = head.substr(vstart, eol - vstart);
-          val.erase(0, val.find_first_not_of(" \t"));
-          val.erase(val.find_last_not_of(" \t\r\n") + 1);
-          return val;
-        }
-        line_start = eol + 2;
-      }
-      return "";
-    }
-  };
-
-  static Request parse_request(const std::string &head) {
-    Request req;
-    req.head = head;
-    auto sp1 = head.find(' ');
-    if (sp1 == std::string::npos) return req;
-    req.method = head.substr(0, sp1);
-    auto sp2 = head.find(' ', sp1 + 1);
-    if (sp2 == std::string::npos) return req;
-    req.path = head.substr(sp1 + 1, sp2 - sp1 - 1);
-    auto qm = req.path.find('?');
-    if (qm != std::string::npos) req.path = req.path.substr(0, qm);
-    return req;
-  }
-
-  static void send_http_response(int fd, int status, const std::string &status_text,
-                                 const std::string &content_type,
-                                 const std::string &body) {
-    std::ostringstream resp;
-    resp << "HTTP/1.1 " << status << " " << status_text << "\r\n";
-    resp << "Content-Type: " << content_type << "\r\n";
-    resp << "Content-Length: " << body.size() << "\r\n";
-    resp << "Cache-Control: no-store\r\n";
-    resp << "Connection: close\r\n";
-    resp << "\r\n";
-    resp << body;
-    std::string out = resp.str();
-    size_t sent = 0;
-    while (sent < out.size()) {
-      ssize_t n = ::send(fd, out.data() + sent, out.size() - sent, MSG_NOSIGNAL);
-      if (n <= 0) break;
-      sent += static_cast<size_t>(n);
-    }
-  }
-
-  // Serve a static file, injecting the reload snippet into .html files.
-  void serve_file(int fd, const std::string &rel_path) const {
-    // Prevent path traversal.
-    if (rel_path.find("..") != std::string::npos) {
-      send_http_response(fd, 403, "Forbidden", "text/plain", "Forbidden");
-      return;
-    }
-
-    fs::path file_path = fs::path(root_) / rel_path;
-
-    // If the resolved path is a directory, look for index.html.
-    if (fs::is_directory(file_path)) {
-      file_path /= "index.html";
-    }
-
-    if (!fs::is_regular_file(file_path)) {
-      send_http_response(fd, 404, "Not Found", "text/plain", "Not Found");
-      return;
-    }
-
-    std::ifstream file(file_path, std::ios::binary);
-    if (!file) {
-      send_http_response(fd, 500, "Internal Server Error", "text/plain",
-                         "Cannot read file");
-      return;
-    }
-
-    std::string content((std::istreambuf_iterator<char>(file)),
-                        std::istreambuf_iterator<char>());
-
-    // Inject the live-reload WebSocket client into HTML pages.
-    if (live_reload_) {
-      std::string ext = file_path.extension().string();
-      if (ext == ".html" || ext == ".htm") {
-        auto pos = content.find("</head>");
-        if (pos != std::string::npos) {
-          content.insert(pos, RELOAD_SNIPPET);
-        } else {
-          content += RELOAD_SNIPPET;
-        }
-      }
-    }
-
-    send_http_response(fd, 200, "OK", mime_type(rel_path), content);
-  }
-
-  // Serve the embedded favicon PNG.
-  void serve_favicon(int fd) const {
-    std::string body(reinterpret_cast<const char *>(FAVICON_PNG), FAVICON_PNG_SIZE);
-    send_http_response(fd, 200, "OK", "image/x-icon", body);
-    ::close(fd);
-  }
-
-  // Handle a WebSocket upgrade request and pump the bidirectional channel.
-  void handle_ws_upgrade(int fd, const Request &req) {
-    std::string key = req.header("sec-websocket-key");
-    if (key.empty()) {
-      log_write(LEVEL_INFO, "webview", "ws-upgrade bad request");
-      send_http_response(fd, 400, "Bad Request", "text/plain", "Expected WebSocket upgrade request");
-      ::close(fd);
-      return;
-    }
-
-    std::string accept = ws_accept_key(key);
-    std::ostringstream resp;
-    log_write(LEVEL_INFO, "webview", "ws-upgrade [%s] key[%s] accept[%s]", req.path.c_str(), key.c_str(), accept.c_str());
-    resp << "HTTP/1.1 101 Switching Protocols\r\n";
-    resp << "Upgrade: websocket\r\n";
-    resp << "Connection: Upgrade\r\n";
-    resp << "Sec-WebSocket-Accept: " << accept << "\r\n";
-    resp << "\r\n";
-    std::string out = resp.str();
-    size_t sent = 0;
-    while (sent < out.size()) {
-      ssize_t n = ::send(fd, out.data() + sent, out.size() - sent, MSG_WAITALL);
-      if (n <= 0) break;
-      sent += static_cast<size_t>(n);
-    }
-
-    log_write(LEVEL_INFO, "webview", "sent [%d] of [%d] bytes", sent, out.length());
-    {
-      std::lock_guard<std::mutex> lock(ws_mutex_);
-      ws_clients_.push_back(fd);
-    }
-
-    // Pump the client → server channel until the browser disconnects.
-    // Each text frame is pushed onto the message queue for the agent to consume.
-    std::string rx;  // leftover bytes that do not yet form a complete frame
-    char chunk[4096];
-    while (true) {
-      ssize_t n = ::recv(fd, chunk, sizeof(chunk), 0);
-      if (n <= 0) {
-        log_write(LEVEL_INFO, "webview", "ws recv [%d]", n);
-        break;
-      }
-      rx.append(chunk, static_cast<size_t>(n));
-      // Decode every complete frame in rx.
-      size_t pos = 0;
-      while (true) {
-        std::string text;
-        size_t consumed = ws_decode_frame(
-          rx.data() + pos, rx.size() - pos, text);
-        if (consumed == 0) break;  // incomplete — wait for more.
-        {
-          std::lock_guard<std::mutex> lock(msg_mutex_);
-          msg_queue_.push_back(std::move(text));
-        }
-        pos += consumed;
-      }
-      rx.erase(0, pos);
-    }
-    log_write(LEVEL_INFO, "webview", "ws connection released");
-    {
-      std::lock_guard<std::mutex> lock(ws_mutex_);
-      auto it = std::ranges::find(ws_clients_, fd);
-      if (it != ws_clients_.end()) {
-        ws_clients_.erase(it);
-      }
-    }
-    ::close(fd);
-  }
-
-  // Serve a static file request, normalising the path first.
-  void handle_static_file(int fd, const Request &req) {
-    std::string rel_path = req.path;
-    if (rel_path == "/" || rel_path.empty()) {
-      rel_path = "index.html";
-    } else if (!rel_path.empty() && rel_path[0] == '/') {
-      rel_path = rel_path.substr(1);
-    }
-
-    log_write(LEVEL_INFO, "webview", "serve %s", rel_path.c_str());
-    serve_file(fd, rel_path);
-    ::close(fd);
-  }
-
-  // Serve the built-in /ai shell page.  This page is generated in-memory
-  // (not from the filesystem) and includes the WebSocket client setup
-  // inline so it works without the RELOAD_SNIPPET injection path.
-  void serve_ai_page(int fd) const {
-    std::string page =
-      "<!DOCTYPE html>\n"
-      "<html>\n"
-      "<head>\n"
-      "<title>Hali</title>\n"
-      "<link rel=\"icon\" href=\"/favicon.ico\">\n"
-      "<style>\n"
-      "  body { margin:0; background:#1a1a2e; color:#eee; font-family:monospace; }\n"
-      "  #container { width:100vw; height:100vh; display:flex; align-items:center;\n"
-      "               justify-content:center; overflow:auto; }\n"
-      "  .waiting { opacity:0.5; animation: pulse 2s infinite; }\n"
-      "  @keyframes pulse { 50% { opacity:0.2; } }\n"
-
-      "</style>\n"
-      "</head>\n"
-      "<body>\n"
-      "<div id=\"container\"><span class=\"waiting\">&#x23F3; Hali is ready &mdash; ask me to display something</span></div>\n"
-      "<script>\n"
-      "(function() {\n"
-      "  function handleMessage(e) {\n"
-      "    if (typeof e.data !== 'string') { return; }\n"
-      "    if (e.data.trim() === '') { return; }\n"
-      "    if (e.data === 'reload') { location.reload(); return; }\n"
-      "    if (e.data === 'clear') {\n"
-      "      var el = document.getElementById('container');\n"
-      "      if (el) { el.innerHTML = '<span class=\"waiting\">&#x23F3; Hali is ready</span>'; }\n"
-      "      return;\n"
-      "    }\n"
-      "    if (e.data.charAt(0) === '<') {\n"
-      "      var c = document.getElementById('container');\n"
-      "      if (!c) { return; }\n"
-      "      c.innerHTML = '';\n"
-      "      var f = document.createElement('iframe');\n"
-      "      f.style.width = '100vw';\n"
-      "      f.style.height = '100vh';\n"
-      "      f.style.border = 'none';\n"
-      "      f.srcdoc = e.data;\n"
-      "      c.appendChild(f);\n"
-      "      return;\n"
-      "    }\n"
-      "    console.log(e.data);\n"
-      "  }\n"
-      "  window._ws_onMessage = handleMessage;\n"
-      "  window._ws_sendMessage = function(msg) {\n"
-      "    if (window._ws && window._ws.readyState === 1) { window._ws.send(msg); }\n"
-      "  };\n"
-      "  document.addEventListener('DOMContentLoaded', function() {\n"
-      "    var proto = location.protocol === 'https:' ? 'wss://' : 'ws://';\n"
-      "    var ws = new WebSocket(proto + location.host + '/__hali_ws__');\n"
-      "    window._ws = ws;\n"
-      "    ws.onmessage = function(e) { handleMessage(e); };\n"
-      "    ws.onopen = function() {\n"
-      "      if (typeof window._ws_onOpen === 'function') { window._ws_onOpen(); }\n"
-      "    };\n"
-      "    ws.onclose = function(e) { console.log('ws closed', e); };\n"
-      "    ws.onerror = function(e) { console.error('ws error', e); };\n"
-      "  });\n"
-      "})();\n"
-      "</script>\n"
-      "</body>\n"
-      "</html>\n";
-    send_http_response(fd, 200, "OK", "text/html; charset=utf-8", page);
-    ::close(fd);
   }
 
   // Per-connection handler: WebSocket upgrade, /ai shell, or static file.
@@ -665,9 +594,8 @@ struct WebServer {
 
     Request req = parse_request(head);
 
-    // ── Dispatch ────────────────────────────────────────────────────
     if (req.path == std::string(WS_PATH)) {
-      handle_ws_upgrade(fd, req);
+      handle_ws_upgrade(fd, req, this);
     } else if (req.path == "/ai") {
       serve_ai_page(fd);
     } else if (req.path == "/favicon.ico") {
@@ -676,11 +604,100 @@ struct WebServer {
       handle_static_file(fd, req);
     }
   }
+
+  // Serve a static file request, normalising the path first.
+  void handle_static_file(int fd, const Request &req) {
+    std::string rel_path = req.path;
+    if (rel_path == "/" || rel_path.empty()) {
+      rel_path = "index.html";
+    } else if (!rel_path.empty() && rel_path[0] == '/') {
+      rel_path = rel_path.substr(1);
+    }
+
+    log_write(LEVEL_INFO, "webview", "serve %s", rel_path.c_str());
+    serve_file(fd, rel_path, root_, live_reload_);
+    ::close(fd);
+  }
 }; // struct WebServer
+
+// ────────────────────────────────────────────────────────────────────────────
+// WebSocket upgrade (needs server state)
+// ────────────────────────────────────────────────────────────────────────────
+
+namespace {
+
+void handle_ws_upgrade(int fd, const Request &req, WebServer *server) {
+  std::string key = req.header("sec-websocket-key");
+  if (key.empty()) {
+    log_write(LEVEL_INFO, "webview", "ws-upgrade bad request");
+    send_http_response(fd, 400, "Bad Request", "text/plain", "Expected WebSocket upgrade request");
+    ::close(fd);
+    return;
+  }
+
+  std::string accept = ws_accept_key(key);
+  std::ostringstream resp;
+  log_write(LEVEL_INFO, "webview", "ws-upgrade [%s] key[%s] accept[%s]", req.path.c_str(), key.c_str(), accept.c_str());
+  resp << "HTTP/1.1 101 Switching Protocols\r\n";
+  resp << "Upgrade: websocket\r\n";
+  resp << "Connection: Upgrade\r\n";
+  resp << "Sec-WebSocket-Accept: " << accept << "\r\n";
+  resp << "\r\n";
+  std::string out = resp.str();
+  size_t sent = 0;
+  while (sent < out.size()) {
+    ssize_t n = ::send(fd, out.data() + sent, out.size() - sent, MSG_WAITALL);
+    if (n <= 0) break;
+    sent += static_cast<size_t>(n);
+  }
+
+  log_write(LEVEL_INFO, "webview", "sent [%d] of [%d] bytes", sent, out.length());
+  {
+    std::lock_guard<std::mutex> lock(server->ws_mutex_);
+    server->ws_clients_.push_back(fd);
+  }
+
+  // Pump the client → server channel until the browser disconnects.
+  std::string rx;
+  char chunk[4096];
+  while (true) {
+    ssize_t n = ::recv(fd, chunk, sizeof(chunk), 0);
+    if (n <= 0) {
+      log_write(LEVEL_INFO, "webview", "ws recv [%d]", n);
+      break;
+    }
+    rx.append(chunk, static_cast<size_t>(n));
+    size_t pos = 0;
+    while (true) {
+      std::string text;
+      size_t consumed = ws_decode_frame(
+        rx.data() + pos, rx.size() - pos, text);
+      if (consumed == 0) break;
+      {
+        std::lock_guard<std::mutex> lock(server->msg_mutex_);
+        server->msg_queue_.push_back(std::move(text));
+      }
+      pos += consumed;
+    }
+    rx.erase(0, pos);
+  }
+  log_write(LEVEL_INFO, "webview", "ws connection released");
+  {
+    std::lock_guard<std::mutex> lock(server->ws_mutex_);
+    auto it = std::ranges::find(server->ws_clients_, fd);
+    if (it != server->ws_clients_.end()) {
+      server->ws_clients_.erase(it);
+    }
+  }
+  ::close(fd);
+}
+
+} // anonymous namespace
 
 // ────────────────────────────────────────────────────────────────────────────
 // Global instance + public API for Hali agent integration
 // ────────────────────────────────────────────────────────────────────────────
+
 static WebServer g_webserver;
 
 namespace webview {

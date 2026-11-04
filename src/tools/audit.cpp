@@ -44,6 +44,168 @@ struct FileMetrics {
 };
 
 //
+// ── Per-line scan state (shared between helpers) ──────────────────────────
+//
+struct LineScanState {
+  int nesting = 0;
+  int func_start = -1;
+  int in_func = 0;
+  std::vector<int> ns_braces;
+  bool pending_ns = false;
+  int switch_depth = 0;
+  int switch_cases = 0;
+  int switch_start = 0;
+  int param_commas = 0;
+  int param_paren_depth = 0;
+  bool in_params = false;
+};
+
+//
+// ── Brace / nesting / function-span tracking ──────────────────────────────
+//
+static void update_brace_tracking(const std::string &line, int line_num,
+                                  LineScanState &st, FileMetrics &m) {
+  bool in_str = false;
+  bool in_char = false;
+  bool in_comment = false;
+  for (size_t i = 0; i < line.size(); ++i) {
+    char c = line[i];
+    if (in_comment) {
+      continue;
+    }
+    if (in_str) {
+      if (c == '\\' && i + 1 < line.size()) {
+        ++i;
+      } else if (c == '"') {
+        in_str = false;
+      }
+      continue;
+    }
+    if (in_char) {
+      if (c == '\\' && i + 1 < line.size()) {
+        ++i;
+      } else if (c == '\'') {
+        in_char = false;
+      }
+      continue;
+    }
+    if (c == '/' && i + 1 < line.size() && line[i + 1] == '/') {
+      in_comment = true;
+      continue;
+    }
+    if (c == '"') {
+      in_str = true;
+      continue;
+    }
+    if (c == '\'') {
+      in_char = true;
+      continue;
+    }
+    if (c == '{') {
+      ++st.nesting;
+      if (st.pending_ns) {
+        st.ns_braces.push_back(st.nesting);
+        st.pending_ns = false;
+      }
+      int eff_depth = st.nesting - static_cast<int>(st.ns_braces.size());
+      if (eff_depth > m.max_nesting) {
+        m.max_nesting = eff_depth;
+        m.max_nesting_line = line_num;
+      }
+      if (eff_depth == 1 && st.func_start == -1) {
+        st.func_start = line_num;
+        st.in_func = 1;
+      } else if (st.in_func > 0) {
+        ++st.in_func;
+      }
+    } else if (c == '}') {
+      if (st.in_func > 0) {
+        --st.in_func;
+        if (st.in_func == 0 && st.func_start > 0) {
+          int func_len = line_num - st.func_start + 1;
+          if (func_len > m.longest_func_lines) {
+            m.longest_func_lines = func_len;
+            m.longest_func_start = st.func_start;
+          }
+          st.func_start = -1;
+        }
+      }
+      if (!st.ns_braces.empty() && st.nesting == st.ns_braces.back()) {
+        st.ns_braces.pop_back();
+      }
+      if (st.nesting > 0) {
+        --st.nesting;
+      }
+    }
+  }
+}
+
+//
+// ── Parameter-count tracking ───────────────────────────────────────────────
+//
+static void update_param_tracking(const std::string &line, int line_num,
+                                  LineScanState &st, FileMetrics &m) {
+  bool in_str = false;
+  bool in_char = false;
+  bool in_comment = false;
+  for (size_t i = 0; i < line.size(); ++i) {
+    char c = line[i];
+    if (in_comment) {
+      continue;
+    }
+    if (in_str) {
+      if (c == '\\' && i + 1 < line.size()) {
+        ++i;
+      } else if (c == '"') {
+        in_str = false;
+      }
+      continue;
+    }
+    if (in_char) {
+      if (c == '\\' && i + 1 < line.size()) {
+        ++i;
+      } else if (c == '\'') {
+        in_char = false;
+      }
+      continue;
+    }
+    if (c == '/' && i + 1 < line.size() && line[i + 1] == '/') {
+      in_comment = true;
+      continue;
+    }
+    if (c == '"') {
+      in_str = true;
+      continue;
+    }
+    if (c == '\'') {
+      in_char = true;
+      continue;
+    }
+    if (c == '(') {
+      ++st.param_paren_depth;
+      if (st.param_paren_depth == 1) {
+        st.in_params = true;
+        st.param_commas = 0;
+      }
+    } else if (c == ')') {
+      if (st.param_paren_depth == 1) {
+        st.in_params = false;
+        int params = st.param_commas + 1;
+        if (params > m.max_params) {
+          m.max_params = params;
+          m.max_params_line = line_num;
+        }
+      }
+      if (st.param_paren_depth > 0) {
+        --st.param_paren_depth;
+      }
+    } else if (c == ',' && st.in_params && st.param_paren_depth == 1) {
+      ++st.param_commas;
+    }
+  }
+}
+
+//
 // ── Scan a single file ─────────────────────────────────────────────────────
 //
 static FileMetrics scan_file(const std::string &path) {
@@ -57,31 +219,19 @@ static FileMetrics scan_file(const std::string &path) {
     return m;
   }
 
+  LineScanState st;
   std::string line;
   int line_num = 0;
-  int nesting = 0;
-  int func_start = -1;
-  int in_func = 0; // brace depth inside current function body
-  int param_commas = 0;
-  int param_paren_depth = 0;
-  bool in_params = false;
-  int switch_depth = 0;
-  int switch_cases = 0;
-  int switch_start = 0;
-  std::vector<int> ns_braces; // nesting levels at which namespace '{' opened
-  bool pending_ns = false;
 
   while (std::getline(f, line)) {
     ++line_num;
     m.total_lines++;
 
-    // Longest line
     if (static_cast<int>(line.size()) > m.longest_line_len) {
       m.longest_line_len = static_cast<int>(line.size());
       m.longest_line_num = line_num;
     }
 
-    // Preprocessor counts
     std::string trimmed;
     {
       auto pos = line.find_first_not_of(" \t");
@@ -100,171 +250,30 @@ static FileMetrics scan_file(const std::string &path) {
       m.define_count++;
     }
 
-    // Detect namespace keyword so the next '{' is tracked as structural
     if (trimmed.rfind("namespace", 0) == 0 ||
         trimmed.rfind("inline namespace", 0) == 0) {
-      pending_ns = true;
+      st.pending_ns = true;
     }
 
-    // Track nesting depth via braces (skipping string/char literals and comments)
-    {
-      bool in_str = false;
-      bool in_char = false;
-      bool in_comment = false;
-      for (size_t i = 0; i < line.size(); ++i) {
-        char c = line[i];
-        if (in_comment) {
-          continue;
-        }
-        if (in_str) {
-          if (c == '\\' && i + 1 < line.size()) {
-            ++i;
-          } else if (c == '"') {
-            in_str = false;
-          }
-          continue;
-        }
-        if (in_char) {
-          if (c == '\\' && i + 1 < line.size()) {
-            ++i;
-          } else if (c == '\'') {
-            in_char = false;
-          }
-          continue;
-        }
-        if (c == '/' && i + 1 < line.size() && line[i + 1] == '/') {
-          in_comment = true;
-          continue;
-        }
-        if (c == '"') {
-          in_str = true;
-          continue;
-        }
-        if (c == '\'') {
-          in_char = true;
-          continue;
-        }
-        if (c == '{') {
-          ++nesting;
-          if (pending_ns) {
-            ns_braces.push_back(nesting);
-            pending_ns = false;
-          }
-          int eff_depth = nesting - static_cast<int>(ns_braces.size());
-          if (eff_depth > m.max_nesting) {
-            m.max_nesting = eff_depth;
-            m.max_nesting_line = line_num;
-          }
-          // Detect function start: a '{' one level above the current
-          // structural scope (namespace / class)
-          if (eff_depth == 1 && func_start == -1) {
-            func_start = line_num;
-            in_func = 1;
-          } else if (in_func > 0) {
-            ++in_func;
-          }
-        } else if (c == '}') {
-          if (in_func > 0) {
-            --in_func;
-            if (in_func == 0 && func_start > 0) {
-              int func_len = line_num - func_start + 1;
-              if (func_len > m.longest_func_lines) {
-                m.longest_func_lines = func_len;
-                m.longest_func_start = func_start;
-              }
-              func_start = -1;
-            }
-          }
-          // Close a namespace if this '}' matches the innermost one
-          if (!ns_braces.empty() && nesting == ns_braces.back()) {
-            ns_braces.pop_back();
-          }
-          if (nesting > 0) {
-            --nesting;
-          }
-        }
-      }
-    }
+    update_brace_tracking(line, line_num, st, m);
 
-    // Track switch cases
     if (trimmed.rfind("switch", 0) == 0) {
-      switch_depth = nesting;
-      switch_cases = 0;
-      switch_start = line_num;
+      st.switch_depth = st.nesting;
+      st.switch_cases = 0;
+      st.switch_start = line_num;
     }
-    if (switch_depth > 0 && trimmed.rfind("case", 0) == 0) {
-      ++switch_cases;
-      if (switch_cases > m.switch_case_max) {
-        m.switch_case_max = switch_cases;
-        m.switch_case_line = switch_start;
+    if (st.switch_depth > 0 && trimmed.rfind("case", 0) == 0) {
+      ++st.switch_cases;
+      if (st.switch_cases > m.switch_case_max) {
+        m.switch_case_max = st.switch_cases;
+        m.switch_case_line = st.switch_start;
       }
     }
-    if (switch_depth > 0 && nesting < switch_depth) {
-      switch_depth = 0;
+    if (st.switch_depth > 0 && st.nesting < st.switch_depth) {
+      st.switch_depth = 0;
     }
 
-    // Track parameter count in function signatures
-    // Heuristic: count commas at paren depth 1 in lines that look like signatures
-    {
-      bool in_str = false;
-      bool in_char = false;
-      bool in_comment = false;
-      for (size_t i = 0; i < line.size(); ++i) {
-        char c = line[i];
-        if (in_comment) {
-          continue;
-        }
-        if (in_str) {
-          if (c == '\\' && i + 1 < line.size()) {
-            ++i;
-          } else if (c == '"') {
-            in_str = false;
-          }
-          continue;
-        }
-        if (in_char) {
-          if (c == '\\' && i + 1 < line.size()) {
-            ++i;
-          } else if (c == '\'') {
-            in_char = false;
-          }
-          continue;
-        }
-        if (c == '/' && i + 1 < line.size() && line[i + 1] == '/') {
-          in_comment = true;
-          continue;
-        }
-        if (c == '"') {
-          in_str = true;
-          continue;
-        }
-        if (c == '\'') {
-          in_char = true;
-          continue;
-        }
-        if (c == '(') {
-          ++param_paren_depth;
-          if (param_paren_depth == 1) {
-            in_params = true;
-            param_commas = 0;
-          }
-        } else if (c == ')') {
-          if (param_paren_depth == 1) {
-            in_params = false;
-            int params = param_commas + 1;
-            if (params > m.max_params) {
-              m.max_params = params;
-              m.max_params_line = line_num;
-            }
-          }
-          if (param_paren_depth > 0) {
-            --param_paren_depth;
-          }
-        } else if (c == ',' && in_params && param_paren_depth == 1) {
-          ++param_commas;
-        }
-      }
-    }
+    update_param_tracking(line, line_num, st, m);
   }
 
   return m;

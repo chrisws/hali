@@ -135,3 +135,6 @@ void help(Tui &tui) {
   // no-op in tests
 }
 }
+void Tui::set_spinner_label(const std::string &) {
+  // no-op in tests
+}

@@ -355,16 +355,7 @@ bool Agent::run_turn(const std::string &user_message) {
     return false;
   }
 
-  std::string effective_message = user_message;
-  if (knowledge_.active()) {
-    std::string context = knowledge_.query(user_message, cfg_.rag_top_k_, cfg_.n_ctx_);
-    if (!context.empty() && context != "RAG: not enabled") {
-      log_write(LEVEL_DEBUG, "agent", "RAG: %s", context.c_str());
-      effective_message = "Context:\n" + context + "\n\nUser: " + user_message;
-    } else {
-      log_write(LEVEL_DEBUG, "agent", "RAG: no context found");
-    }
-  }
+  std::string effective_message = build_effective_message(user_message);
   if (!iter_) {
     tui_.append_line(ICON_ERR + "Conversation not initialised (call /clear to reset)");
     tui_.redraw_all();
@@ -375,28 +366,10 @@ bool Agent::run_turn(const std::string &user_message) {
   turn_.reset();
   knowledge_.reset_cache();
   last_response_.clear();
-  bool flushed = false;
   if (!llama_->add_message(*iter_, "user", effective_message)) {
-    if (llama_->is_memory_flush()) {
-      if (++broadcast_.flush_count > MAX_FLUSH_RETRIES) {
-        tui_.append_line(ICON_ERR + "Multiple memory flushes detected. Stopping auto-continue.");
-        tui_.redraw_all();
-        return false;
-      }
-      tui_.append_line(ICON_ERR + "Warning! - memory has been flushed!");
-      reset_conversation(cfg_.build_system_prompt() + "\n" + format_session_md(tui_.get_chat()));
-      flushed = llama_->add_message(*iter_, "user",
-          "The session context was restored after a memory flush. "
-          "Continue with the pending actions from the session state.");
-    } else {
-      tui_.append_line(ICON_ERR + "add_message: " + llama_->last_error());
-    }
-    if (!flushed) {
-      tui_.redraw_all();
+    if (!handle_memory_flush()) {
       return false;
     }
-    tui_.append_line(ICON_SYS + "Auto-continuing from session context...");
-    tui_.redraw_all();
   }
   tui_.append_line("Hali: ");
 
@@ -516,6 +489,53 @@ bool Agent::run_turn(const std::string &user_message) {
 
   auto turn_end = std::chrono::high_resolution_clock::now();
   double turn_elapsed = std::chrono::duration<double>(turn_end - turn_start).count();
+
+  record_turn_metrics(turn_elapsed, turn_tokens);
+
+  tui_.redraw_all();
+  return true;
+}
+
+std::string Agent::build_effective_message(const std::string &user_message) {
+  std::string effective_message = user_message;
+  if (knowledge_.active()) {
+    std::string context = knowledge_.query(user_message, cfg_.rag_top_k_, cfg_.n_ctx_);
+    if (!context.empty() && context != "RAG: not enabled") {
+      log_write(LEVEL_DEBUG, "agent", "RAG: %s", context.c_str());
+      effective_message = "Context:\n" + context + "\n\nUser: " + user_message;
+    } else {
+      log_write(LEVEL_DEBUG, "agent", "RAG: no context found");
+    }
+  }
+  return effective_message;
+}
+
+bool Agent::handle_memory_flush() {
+  if (llama_->is_memory_flush()) {
+    if (++broadcast_.flush_count > MAX_FLUSH_RETRIES) {
+      tui_.append_line(ICON_ERR + "Multiple memory flushes detected. Stopping auto-continue.");
+      tui_.redraw_all();
+      return false;
+    }
+    tui_.append_line(ICON_ERR + "Warning! - memory has been flushed!");
+    reset_conversation(cfg_.build_system_prompt() + "\n" + format_session_md(tui_.get_chat()));
+    bool flushed = llama_->add_message(*iter_, "user",
+        "The session context was restored after a memory flush. "
+        "Continue with the pending actions from the session state.");
+    if (!flushed) {
+      tui_.redraw_all();
+      return false;
+    }
+    tui_.append_line(ICON_SYS + "Auto-continuing from session context...");
+    tui_.redraw_all();
+    return true;
+  }
+  tui_.append_line(ICON_ERR + "add_message: " + llama_->last_error());
+  tui_.redraw_all();
+  return false;
+}
+
+void Agent::record_turn_metrics(double turn_elapsed, int turn_tokens) {
   double turn_tps = (turn_elapsed > 0.0 && turn_tokens > 0) ? (turn_tokens / turn_elapsed) : 0.0;
 
   tui_.set_thinking(false);
@@ -530,7 +550,6 @@ bool Agent::run_turn(const std::string &user_message) {
                 static_cast<double>(tui_.get_kv_percent()));
   tui_.append_line(stat);
 
-  // Record usage log for this turn
   TurnMetrics metrics;
   metrics.turn_number       = turn_.number;
   metrics.llm_latency_ms    = turn_elapsed * 1000.0;
@@ -545,9 +564,6 @@ bool Agent::run_turn(const std::string &user_message) {
   if (usage_log_.kv_trending_high()) {
     tui_.append_line(ICON_SYS + "KV usage trending high — consider restarting soon.");
   }
-
-  tui_.redraw_all();
-  return true;
 }
 
 bool Agent::run_turn_with_skill(const std::string &skill_text, const std::string &user_msg) {

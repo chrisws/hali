@@ -18,6 +18,8 @@
 #include "config.h"
 #include "tui.h"
 #include "mcp_client.h"
+#include "music_project.h"
+#include "audio.h"
 #include "usage_log.h"
 #include "planner.h"
 #include "knowledge.h"
@@ -117,6 +119,13 @@ struct Agent {
   std::string handle_plan(const std::string &a1, const std::string &a2);
   std::string handle_choice(const std::string &a1, const std::string &a2);
   std::string handle_music(const std::string &a1, const std::string &a2);
+  MusicProject music_load_current(const std::string &proj_dir);
+  std::string music_build_mixes(const MusicProject &proj,
+                                std::vector<audio::TrackMix> &mixes);
+  std::string music_handle_set(const std::string &arg,
+                               const std::string &proj_dir);
+  std::string music_handle_add(const std::string &arg,
+                               const std::string &proj_dir);
   std::string handle_gui(const std::string &a1, const std::string &a2);
   std::string rag_tool(const std::string &agent_query);
   std::string rag_inspect() const;
@@ -126,6 +135,9 @@ struct Agent {
   void invoke_tool(const std::string &buffer, std::string_view template_str);
   void broadcast_throttled(const std::string &msg);
   void flush_broadcast();
+  std::string build_effective_message(const std::string &user_message);
+  bool handle_memory_flush();
+  void record_turn_metrics(double turn_elapsed, int turn_tokens);
 
   HaliConfig &cfg_;
   Tui &tui_;

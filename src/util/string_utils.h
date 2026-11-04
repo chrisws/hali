@@ -65,6 +65,33 @@ namespace utils {
   //
   std::string strip_html(const std::string &html);
 
+  //
+  // Join two path strings with a '/' separator.
+  // Strips trailing '/' from a, leading '/' from b (prevents absolute escape).
+  //
+  std::string join_path(const std::string &a, const std::string &b);
+
+  //
+  // Remove a matching outer "wrapper" from a string.
+  // Handles: "..." '...' |...| `...`  (...) [...] {...}  <tag>...</tag>  <...>
+  //
+  std::string unwrap(const std::string &input);
+
+  //
+  // Resolve a path relative to a sandbox root.
+  //
+  std::string resolve_path(const std::string &sandbox, const std::string &p);
+
+  //
+  // Check if a path is within a given directory (canonical comparison).
+  //
+  bool path_in_sandbox(const std::string &sandbox, const std::string &path);
+
+  //
+  // Check if a path is within the sandbox or any of the extra allowed dirs.
+  //
+  bool path_allowed(const std::string &sandbox, const std::vector<std::string> &extra_dirs, const std::string &path);
+
 } // namespace utils
 
 

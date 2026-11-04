@@ -509,8 +509,8 @@ static std::string validate_mcp_call(const std::string &name, const std::string 
   for (const auto &field : path_fields) {
     std::string value;
     if (root.get_str(field, value) && !value.empty()) {
-      const std::string resolved = resolve_path(sandbox, value);
-      if (!path_in_sandbox(sandbox, resolved)) {
+      const std::string resolved = utils::resolve_path(sandbox, value);
+      if (!utils::path_in_sandbox(sandbox, resolved)) {
         return "ERROR: MCP field [" + field + "] points outside sandbox: [" + value + "]";
       }
     }

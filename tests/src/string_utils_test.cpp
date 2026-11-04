@@ -320,6 +320,8 @@ void run_split_tests() {
   std::cout << "\n=== All tests completed ===\n";
 }
 
+static void run_strip_html_tests();
+
 void string_utils_test() {
   test_starts_with();
   test_ends_with();
@@ -328,7 +330,96 @@ void string_utils_test() {
   test_trim();
   test_trim_string_view();
   run_split_tests();
+  run_strip_html_tests();
   cout << "\nAll string_utils tests passed!\n" << endl;
 }
 
 
+
+// ── strip_html tests ──────────────────────────────────────────────
+
+static void test_strip_html_basic() {
+  std::string html = "<html><body><p>Hello world</p></body></html>";
+  std::string result = strip_html(html);
+  assert(result == "Hello world");
+  cout << "test_strip_html_basic passed" << endl;
+}
+
+static void test_strip_html_removes_closed_table() {
+  std::string html = "<p>Intro text</p><table><tr><td>cell</td></tr></table><p>Outro text</p>";
+  std::string result = strip_html(html);
+  // table content should be removed, surrounding text preserved
+  assert(result.find("Intro text") != std::string::npos);
+  assert(result.find("Outro text") != std::string::npos);
+  assert(result.find("cell") == std::string::npos);
+  cout << "test_strip_html_removes_closed_table passed" << endl;
+}
+
+static void test_strip_html_unclosed_table_preserves_content() {
+  // Simulates ZIM-extracted Wikipedia HTML where </table> is missing.
+  // The old code would erase everything from <table to end-of-string.
+  std::string html =
+    "<h1>Article Title</h1>"
+    "<table class=\"infobox\"><tr><td>data</td></tr>"
+    "<p>This is the main article body with substantial content "
+    "that must survive the stripping process.</p>";
+  std::string result = strip_html(html);
+  // The article body MUST be present
+  assert(result.find("main article body") != std::string::npos);
+  assert(result.find("substantial content") != std::string::npos);
+  assert(result.find("Article Title") != std::string::npos);
+  // Result should be well above the 80-byte threshold
+  assert(result.size() >= 80);
+  cout << "test_strip_html_unclosed_table_preserves_content passed" << endl;
+}
+
+static void test_strip_html_unclosed_style() {
+  std::string html =
+    "<style>.foo { color: red; }"
+    "<p>Real content that should survive the stripping process entirely.</p>";
+  std::string result = strip_html(html);
+  assert(result.find("Real content") != std::string::npos);
+  assert(result.find("stripping process") != std::string::npos);
+  cout << "test_strip_html_unclosed_style passed" << endl;
+}
+
+static void test_strip_html_entities() {
+  std::string html = "<p>Tom &amp; Jerry &lt;funny&gt;</p>";
+  std::string result = strip_html(html);
+  assert(result == "Tom & Jerry <funny>");
+  cout << "test_strip_html_entities passed" << endl;
+}
+
+static void test_strip_html_whitespace_collapse() {
+  std::string html = "<p>  Hello   world  </p>";
+  std::string result = strip_html(html);
+  assert(result == "Hello world");
+  cout << "test_strip_html_whitespace_collapse passed" << endl;
+}
+
+static void test_strip_html_multiple_unclosed_tables() {
+  // Multiple unclosed <table> tags — none should eat the content
+  std::string html =
+    "<p>First paragraph with enough text to pass the threshold.</p>"
+    "<table><tr><td>a</td></tr>"
+    "<p>Second paragraph also has plenty of content here.</p>"
+    "<table><tr><td>b</td></tr>"
+    "<p>Third and final paragraph with more text.</p>";
+  std::string result = strip_html(html);
+  assert(result.find("First paragraph") != std::string::npos);
+  assert(result.find("Second paragraph") != std::string::npos);
+  assert(result.find("Third and final") != std::string::npos);
+  cout << "test_strip_html_multiple_unclosed_tables passed" << endl;
+}
+
+static void run_strip_html_tests() {
+  std::cout << "=== strip_html tests ===\n";
+  test_strip_html_basic();
+  test_strip_html_removes_closed_table();
+  test_strip_html_unclosed_table_preserves_content();
+  test_strip_html_unclosed_style();
+  test_strip_html_entities();
+  test_strip_html_whitespace_collapse();
+  test_strip_html_multiple_unclosed_tables();
+  std::cout << "=== strip_html tests done ===\n";
+}

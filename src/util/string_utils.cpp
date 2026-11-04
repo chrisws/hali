@@ -6,8 +6,11 @@
 // Download the GNU Public License (GPL) from www.gnu.org
 //
 
+#include <algorithm>
 #include <cctype>
 #include <cstddef>
+#include <filesystem>
+#include <ranges>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -178,8 +181,11 @@ static void remove_blocks(std::string &text,
     }
     size_t block_end = text.find(close_tag, tag_end + 1);
     if (block_end == std::string::npos) {
-      text.erase(pos);
-      break;
+      // No matching close tag — just skip past the opening tag
+      // so the generic tag-stripper handles it. Do NOT erase
+      // to end-of-string, which would destroy the article body.
+      pos = tag_end + 1;
+      continue;
     }
     text.erase(pos, (block_end + close_tag.size()) - pos);
   }
@@ -246,6 +252,145 @@ std::string strip_html(const std::string &html) {
   }
 
   return out;
+}
+
+//
+// Join the two paths with a '/' separator
+//
+std::string join_path(const std::string &a, const std::string &b) {
+  if (b.empty()) return a;
+  std::string pa = a;
+  if (!pa.empty() && pa.back() == '/') pa.pop_back();
+  // Strip leading '/' from b to prevent absolute-path sandbox escape
+  std::string pb = (b.front() == '/') ? b.substr(1) : b;
+  if (pb.empty()) return pa;
+  return pa + "/" + pb;
+}
+
+//
+// unwrap() - Remove a matching outer "wrapper" from a string.
+//
+// Trims leading/trailing whitespace first, then checks (in order):
+//
+//  1. Same-character pairs   "..."  '...'  |...|  `...`
+//  2. Mirror pairs           (...)  [...]  {...}
+//  3. HTML-like tags         <tag>...</tag>
+//  4. Plain angle brackets   <...>          (fallback if tags don't match)
+//
+// If none of the above apply, returns the whitespace-trimmed input unchanged.
+//
+// Examples:
+//   unwrap("\"hello\"")        -> "hello"
+//   unwrap("  [foo]  ")        -> "foo"
+//   unwrap("<b>bold</b>")      -> "bold"
+//   unwrap("<file>x</file>")   -> "x"
+//   unwrap("<hello>")          -> "hello"
+//   unwrap("plain")            -> "plain"
+//   unwrap("")                 -> ""
+//
+std::string unwrap(const std::string &input) {
+  if (input.empty()) {
+    return input;
+  }
+
+  size_t left = 0;
+  size_t right = input.length() - 1;
+
+  while (left <= right && std::isspace(static_cast<unsigned char>(input[left]))) {
+    left++;
+  }
+  while (left <= right && std::isspace(static_cast<unsigned char>(input[right]))) {
+    right--;
+  }
+
+  if (left > right) {
+    return "";
+  }
+
+  // Same-character pairs: "", '', ||, ``
+  // Note: [], {} are NOT same-char pairs — they belong in mirror pairs only
+  if (input[left] == input[right]) {
+    if (input[left] == '"'  || input[left] == '\'' ||
+        input[left] == '|'  || input[left] == '`') {
+      return input.substr(left + 1, right - left - 1);
+    }
+  }
+
+  // Mirror pairs: (), [], {}, but NOT <> (handled below as possible HTML tags)
+  if (input[left] != input[right]) {
+    if ((input[left] == '(' && input[right] == ')') ||
+        (input[left] == '[' && input[right] == ']') ||
+        (input[left] == '{' && input[right] == '}')) {
+      return input.substr(left + 1, right - left - 1);
+    }
+  }
+
+  // HTML-like tags: <tag>content</tag>
+  // Also handles plain <...> as a fallback at the end
+  if (input[left] == '<' && input[right] == '>') {
+    // Find end of opening tag
+    size_t openTagEnd = left + 1;
+    while (openTagEnd <= right && input[openTagEnd] != '>') openTagEnd++;
+
+    if (openTagEnd < right) {
+      std::string openTagName = input.substr(left + 1, openTagEnd - left - 1);
+
+      // Find start of closing tag (search backwards for '<')
+      size_t closeTagStart = right;
+      while (closeTagStart > openTagEnd && input[closeTagStart] != '<') closeTagStart--;
+
+      if (closeTagStart > openTagEnd && input[closeTagStart + 1] == '/') {
+        std::string closeTagName = input.substr(closeTagStart + 2, right - closeTagStart - 2);
+
+        if (!openTagName.empty() && openTagName == closeTagName) {
+          // Return content between the tags
+          return input.substr(openTagEnd + 1, closeTagStart - openTagEnd - 1);
+        }
+      }
+    }
+
+    // Fallback: plain <...> with no matching HTML tags — unwrap the angle brackets
+    return input.substr(left + 1, right - left - 1);
+  }
+
+  return input.substr(left, right - left + 1);
+}
+
+//
+// Path helpers
+//
+std::string resolve_path(const std::string &sandbox, const std::string &p) {
+  if (p.empty() || p == ".") {
+    return sandbox;
+  }
+  if (p.substr(0, 2) == "./") {
+    return join_path(sandbox, p.substr(2));
+  }
+  if (p[0] == '/') {
+    return p;
+  }
+  return join_path(sandbox, unwrap(p));
+}
+
+bool path_in_sandbox(const std::string &sandbox, const std::string &path) {
+  std::error_code ec;
+  auto base   = std::filesystem::canonical(sandbox, ec);  if (ec) return false;
+  auto target = std::filesystem::weakly_canonical(path, ec);
+  std::string bstr = base.string() + "/";
+  std::string tstr = target.string();
+  return tstr == base.string() || tstr.compare(0, bstr.size(), bstr) == 0;
+}
+
+bool path_allowed(const std::string &sandbox, const std::vector<std::string> &extra_dirs, const std::string &path) {
+  if (path_in_sandbox(sandbox, path)) {
+    return true;
+  }
+  for (const auto &dir : extra_dirs) {
+    if (path_in_sandbox(dir, path)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 }

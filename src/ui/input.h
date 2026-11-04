@@ -38,6 +38,12 @@ class Input {
 
   private:
   void build_dispatch();
+  void build_scroll_handlers();
+  void build_cursor_handlers();
+  void build_edit_handlers();
+  void build_mode_handlers();
+  void build_history_handlers();
+  void build_misc_handlers();
   int pos_of_word_start(int pos) const;
   int pos_of_word_end(int pos) const;
   int move_to_prev_word(int pos) const;

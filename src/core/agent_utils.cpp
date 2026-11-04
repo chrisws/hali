@@ -6,16 +6,12 @@
 // Download the GNU Public License (GPL) from www.gnu.org
 //
 
-#include <algorithm>
 #include <filesystem>
 #include <fstream>
-#include <sstream>
 #include <string>
 #include <vector>
 #include <chrono>
-#include <cmath>
 #include <cstddef>
-#include <functional>
 #include <future>
 #include <cctype>
 #include <system_error>
@@ -110,115 +106,13 @@ bool hasDangerousPatterns(const std::string &command, const std::vector<std::str
 }
 
 //
-// Join the two paths with a '/' separator
-//
-std::string join_path(const std::string &a, const std::string &b) {
-  if (b.empty()) return a;
-  std::string pa = a;
-  if (!pa.empty() && pa.back() == '/') pa.pop_back();
-  // Strip leading '/' from b to prevent absolute-path sandbox escape
-  std::string pb = (b.front() == '/') ? b.substr(1) : b;
-  if (pb.empty()) return pa;
-  return pa + "/" + pb;
-}
-
-//
-// unwrap() - Remove a matching outer "wrapper" from a string.
-//
-// Trims leading/trailing whitespace first, then checks (in order):
-//
-//  1. Same-character pairs   "..."  '...'  |...|  `...`
-//  2. Mirror pairs           (...)  [...]  {...}
-//  3. HTML-like tags         <tag>...</tag>
-//  4. Plain angle brackets   <...>          (fallback if tags don't match)
-//
-// If none of the above apply, returns the whitespace-trimmed input unchanged.
-//
-// Examples:
-//   unwrap("\"hello\"")        -> "hello"
-//   unwrap("  [foo]  ")        -> "foo"
-//   unwrap("<b>bold</b>")      -> "bold"
-//   unwrap("<file>x</file>")   -> "x"
-//   unwrap("<hello>")          -> "hello"
-//   unwrap("plain")            -> "plain"
-//   unwrap("")                 -> ""
-//
-std::string unwrap(const std::string &input) {
-  if (input.empty()) {
-    return input;
-  }
-
-  size_t left = 0;
-  size_t right = input.length() - 1;
-
-  while (left <= right && std::isspace(static_cast<unsigned char>(input[left]))) {
-    left++;
-  }
-  while (left <= right && std::isspace(static_cast<unsigned char>(input[right]))) {
-    right--;
-  }
-
-  if (left > right) {
-    return "";
-  }
-
-  // Same-character pairs: "", '', ||, ``
-  // Note: [], {} are NOT same-char pairs — they belong in mirror pairs only
-  if (input[left] == input[right]) {
-    if (input[left] == '"'  || input[left] == '\'' ||
-        input[left] == '|'  || input[left] == '`') {
-      return input.substr(left + 1, right - left - 1);
-    }
-  }
-
-  // Mirror pairs: (), [], {}, but NOT <> (handled below as possible HTML tags)
-  if (input[left] != input[right]) {
-    if ((input[left] == '(' && input[right] == ')') ||
-        (input[left] == '[' && input[right] == ']') ||
-        (input[left] == '{' && input[right] == '}')) {
-      return input.substr(left + 1, right - left - 1);
-    }
-  }
-
-  // HTML-like tags: <tag>content</tag>
-  // Also handles plain <...> as a fallback at the end
-  if (input[left] == '<' && input[right] == '>') {
-    // Find end of opening tag
-    size_t openTagEnd = left + 1;
-    while (openTagEnd <= right && input[openTagEnd] != '>') openTagEnd++;
-
-    if (openTagEnd < right) {
-      std::string openTagName = input.substr(left + 1, openTagEnd - left - 1);
-
-      // Find start of closing tag (search backwards for '<')
-      size_t closeTagStart = right;
-      while (closeTagStart > openTagEnd && input[closeTagStart] != '<') closeTagStart--;
-
-      if (closeTagStart > openTagEnd && input[closeTagStart + 1] == '/') {
-        std::string closeTagName = input.substr(closeTagStart + 2, right - closeTagStart - 2);
-
-        if (!openTagName.empty() && openTagName == closeTagName) {
-          // Return content between the tags
-          return input.substr(openTagEnd + 1, closeTagStart - openTagEnd - 1);
-        }
-      }
-    }
-
-    // Fallback: plain <...> with no matching HTML tags — unwrap the angle brackets
-    return input.substr(left + 1, right - left - 1);
-  }
-
-  return input.substr(left, right - left + 1);
-}
-
-//
 // Removes backticks from the source text for TOOL:WRITE
 //
 std::string strip_code_fences(const std::string &filename, const std::string &src) {
   auto ext = fs::path(filename).extension().string();
   bool is_code = std::ranges::any_of(CODE_EXTENSIONS, [&](const std::string &e){ return ext == e; });
   if (!is_code) {
-    return unwrap(src);
+    return utils::unwrap(src);
   }
   auto pos = src.find("```");
   if (pos == std::string::npos) {
@@ -234,43 +128,6 @@ std::string strip_code_fences(const std::string &filename, const std::string &sr
     inner = inner.substr(0, end);
   }
   return inner;
-}
-
-//
-// Path helpers
-//
-std::string resolve_path(const std::string &sandbox, const std::string &p) {
-  if (p.empty() || p == ".") {
-    return sandbox;
-  }
-  if (p.substr(0, 2) == "./") {
-    return join_path(sandbox, p.substr(2));
-  }
-  if (p[0] == '/') {
-    return p;
-  }
-  return join_path(sandbox, unwrap(p));
-}
-
-bool path_in_sandbox(const std::string &sandbox, const std::string &path) {
-  std::error_code ec;
-  auto base   = fs::canonical(sandbox, ec);  if (ec) return false;
-  auto target = fs::weakly_canonical(path, ec);
-  std::string bstr = base.string() + "/";
-  std::string tstr = target.string();
-  return tstr == base.string() || tstr.compare(0, bstr.size(), bstr) == 0;
-}
-
-bool path_allowed(const std::string &sandbox, const std::vector<std::string> &extra_dirs, const std::string &path) {
-  if (path_in_sandbox(sandbox, path)) {
-    return true;
-  }
-  for (const auto &dir : extra_dirs) {
-    if (path_in_sandbox(dir, path)) {
-      return true;
-    }
-  }
-  return false;
 }
 
 //
@@ -550,8 +407,8 @@ std::string search_single_file(const std::string &filepath, const std::string &p
 
 std::string tool_search(const std::string &sandbox, const std::string &pattern, const std::string &path_arg, const std::string &flags_str, const std::vector<std::string> &extra_dirs) {
   SearchFlags flags = parse_search_flags(flags_str);
-  std::string path = resolve_path(sandbox, path_arg);
-  if (!path_allowed(sandbox, extra_dirs, path)) {
+  std::string path = utils::resolve_path(sandbox, path_arg);
+  if (!utils::path_allowed(sandbox, extra_dirs, path)) {
     return "ERROR: path outside sandbox";
   }
 
@@ -671,8 +528,8 @@ ReplaceArgs parse_replace_args(const std::string &arg2) {
 }
 
 std::string tool_replace(const std::string &sandbox, const std::string &file, const std::string &arg2) {
-  const auto path = resolve_path(sandbox, file);
-  if (!path_in_sandbox(sandbox, path)) {
+  const auto path = utils::resolve_path(sandbox, file);
+  if (!utils::path_in_sandbox(sandbox, path)) {
     return "ERROR: path outside sandbox";
   }
   auto args = parse_replace_args(arg2);
