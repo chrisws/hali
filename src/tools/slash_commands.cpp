@@ -13,6 +13,7 @@
 #include <ctime>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -696,12 +697,69 @@ static void slash_tool(const std::string &rest, Agent &agent, Tui &tui) {
 }
 
 //
-// /index [name|status|remove <name>|load <name>|unload <name>]
+// ── Index a .zim file and load it ──────────────────────────────────────────
+//
+static void index_zim_file(const std::string &path, Agent &agent, Tui &tui,
+                           const std::function<void(const std::string &)> &progress,
+                           KnowledgeManager &km) {
+  if (!agent.embed_model()) {
+    tui.append_line(ICON_ERR + "No embedding model loaded. Use /embed first.");
+    tui.redraw_all();
+    return;
+  }
+  if (!KnowledgeManager::zimdump_available()) {
+    tui.append_line(ICON_ERR + "zimdump not found.");
+    tui.append_line(ICON_ERR + KnowledgeManager::zimdump_install_hint());
+    tui.redraw_all();
+    return;
+  }
+  tui.append_line(ICON_SYS + "Indexing " + path + "…");
+  tui.redraw_all();
+  std::string build_err;
+  if (km.build_from_path(path, *agent.embed_model(), tui, progress, &build_err)) {
+    fs::path zp(path);
+    std::string id = zp.stem().string();
+    if (km.load(id)) {
+      tui.append_line(ICON_SYS + "Indexed and loaded: " + id);
+    } else {
+      tui.append_line(ICON_ERR + "Build succeeded but load failed: " + id);
+    }
+  } else {
+    tui.append_line(ICON_ERR + "Index build failed: " + build_err);
+  }
+  tui.redraw_all();
+}
+
+//
+// ── Pick a source from a list (or use provided arg) ───────────────────────
+//
+static std::string pick_source(Tui &tui, const std::string &arg,
+                               const std::vector<std::string> &labels,
+                               const std::vector<std::string> &ids,
+                               const std::string &prompt,
+                               const std::string &empty_msg) {
+  if (!arg.empty()) {
+    return arg;
+  }
+  if (labels.empty()) {
+    tui.append_line(ICON_SYS + empty_msg);
+    tui.redraw_all();
+    return "";
+  }
+  int idx = tui.list_picker(labels, prompt);
+  if (idx < 0) {
+    tui.redraw_all();
+    return "";
+  }
+  return ids[idx];
+}
+
+//
+// /index [name|remove <name>|load|unload <name>|help]
 //
 static void slash_index(const std::string &rest, HaliConfig &cfg, Agent &agent, Tui &tui) {
   KnowledgeManager &km = agent.knowledge();
 
-  // Set up directories on first use
   static bool initialized = false;
   if (!initialized) {
     std::string hali_dir = cfg.sandbox_ + "/.hali";
@@ -713,7 +771,6 @@ static void slash_index(const std::string &rest, HaliConfig &cfg, Agent &agent, 
     initialized = true;
   }
 
-  // Parse subcommand
   auto sp = rest.find(' ');
   std::string sub = (sp == std::string::npos) ? rest : rest.substr(0, sp);
   std::string arg;
@@ -728,150 +785,27 @@ static void slash_index(const std::string &rest, HaliConfig &cfg, Agent &agent, 
   };
 
   if (sub.empty()) {
-    // Show picker: indexed sources + "Pick a .zim file…" + "status"
-    auto labels = km.indexed_labels();
-    auto ids = km.indexed_ids();
-    labels.push_back("Pick a .zim file…");
-    labels.push_back("status");
-    int idx = tui.list_picker(labels, "Knowledge index");
-    if (idx < 0) {
-      tui.redraw_all();
-      return;
-    }
-    if (idx == (int)ids.size()) {
-      // "Pick a .zim file…"
-      std::string zim_path = tui.file_picker(cfg.sandbox_, "Select .zim file");
-      if (zim_path.empty()) {
-        tui.redraw_all();
-        return;
-      }
-      if (!agent.embed_model()) {
-        tui.append_line(ICON_ERR + "No embedding model loaded. Use /embed first.");
-        tui.redraw_all();
-        return;
-      }
-      if (!KnowledgeManager::zimdump_available()) {
-        tui.append_line(ICON_ERR + "zimdump not found.");
-        tui.append_line(ICON_ERR + KnowledgeManager::zimdump_install_hint());
-        tui.redraw_all();
-        return;
-      }
-      tui.append_line(ICON_SYS + "Indexing " + zim_path + "…");
-      tui.redraw_all();
-      std::string build_err;
-      if (km.build_from_path(zim_path, *agent.embed_model(), tui, progress, &build_err)) {
-        // Load into session
-        fs::path zp(zim_path);
-        std::string id = zp.stem().string();
-        if (km.load(id)) {
-          tui.append_line(ICON_SYS + "Indexed and loaded: " + id);
-        } else {
-          tui.append_line(ICON_ERR + "Build succeeded but load failed: " + id);
-        }
-      } else {
-        tui.append_line(ICON_ERR + "Index build failed: " + build_err);
-      }
-      tui.redraw_all();
-      return;
-    }
-    if (idx == (int)ids.size() + 1) {
-      // "status" — show RAG info as a table
-      {
-        std::ostringstream data;
-        data << "Field|Value\n";
-        data << "State|" << (km.active() ? "ACTIVE" : "INACTIVE") << "\n";
-        data << "Embed model|" << (km.active() ? "loaded" : "not loaded") << "\n";
-        data << "Top-K|" << cfg.rag_top_k_ << "\n";
-        data << "Databases|" << km.library().size() << "\n";
-        data << "Total chunks|" << km.library().total_chunks() << "\n";
-        auto names = km.library().names();
-        for (const auto &name : names) {
-          const RagDB *db = km.library().get(name);
-          if (db) {
-            data << name << "|" << db->size() << " chunks, dim=" << db->embed_dim << "\n";
-          }
-        }
-        int total_rows = 5 + (int)names.size();
-        auto table = tool_table(std::to_string(total_rows) + "x2", data.str());
-        if (!table.error.empty()) {
-          tui.append_line(ICON_ERR + table.error);
-        } else {
-          for (const auto &row : table.rows) {
-            tui.append_line(row);
-          }
-        }
-      }
-      tui.append_line(ICON_SYS + "");
-      tui.append_line(ICON_SYS + "Indexed:");
-      tui.append_line(km.list_indexed());
-      tui.append_line(ICON_SYS + "");
-      tui.append_line(ICON_SYS + "Loaded:");
-      tui.append_line(km.list_loaded());
-      tui.redraw_all();
-      return;
-    }
-    // An indexed source was selected — load it
-    sub = ids[idx];
-    if (km.load(sub)) {
-      tui.append_line(ICON_SYS + "Loaded: " + sub);
-    } else {
-      tui.append_line(ICON_ERR + "Failed to load: " + sub);
-    }
-    tui.redraw_all();
-    return;
+    sub = "help";
   }
 
-  if (sub == "status") {
-    {
-      std::ostringstream data;
-      data << "Field|Value\n";
-      data << "State|" << (km.active() ? "ACTIVE" : "INACTIVE") << "\n";
-      data << "Embed model|" << (km.active() ? "loaded" : "not loaded") << "\n";
-      data << "Top-K|" << cfg.rag_top_k_ << "\n";
-      data << "Databases|" << km.library().size() << "\n";
-      data << "Total chunks|" << km.library().total_chunks() << "\n";
-      auto names = km.library().names();
-      for (const auto &name : names) {
-        const RagDB *db = km.library().get(name);
-        if (db) {
-          data << name << "|" << db->size() << " chunks, dim=" << db->embed_dim << "\n";
-        }
-      }
-      int total_rows = 5 + (int)names.size();
-      auto table = tool_table(std::to_string(total_rows) + "x2", data.str());
-      if (!table.error.empty()) {
-        tui.append_line(ICON_ERR + table.error);
-      } else {
-        for (const auto &row : table.rows) {
-          tui.append_line(row);
-        }
-      }
-    }
-    tui.append_line(ICON_SYS + "");
-    tui.append_line(ICON_SYS + "Indexed:");
-    tui.append_line(km.list_indexed());
-    tui.append_line(ICON_SYS + "");
-    tui.append_line(ICON_SYS + "Loaded:");
-    tui.append_line(km.list_loaded());
+  if (sub == "help") {
+    tui.append_line(ICON_SYS + "/index [name|remove <name>|load|unload <name>|help]");
+    tui.append_line(ICON_SYS + "  (no arg)       show this help");
+    tui.append_line(ICON_SYS + "  <name>         load a source by name");
+    tui.append_line(ICON_SYS + "  <path>         index a .zim file from disk");
+    tui.append_line(ICON_SYS + "  remove <name>  remove an indexed source");
+    tui.append_line(ICON_SYS + "  load           show picker of indexed sources / .zim files");
+    tui.append_line(ICON_SYS + "  unload <name>  unload a loaded source");
+    tui.append_line(ICON_SYS + "  help           show this help");
     tui.redraw_all();
     return;
   }
 
   if (sub == "remove") {
+    arg = pick_source(tui, arg, km.indexed_labels(), km.indexed_ids(),
+                      "Select a source to remove", "No sources to remove.");
     if (arg.empty()) {
-      auto labels = km.indexed_labels();
-      auto ids = km.indexed_ids();
-      if (labels.empty()) {
-        tui.append_line(ICON_SYS + "No sources to remove.");
-        tui.redraw_all();
-        return;
-      }
-      int idx = tui.list_picker(labels, "Select a source to remove");
-      if (idx < 0) {
-        tui.redraw_all();
-        return;
-      }
-      arg = ids[idx];
+      return;
     }
     if (km.remove(arg)) {
       tui.append_line(ICON_SYS + "Removed: " + arg);
@@ -883,45 +817,38 @@ static void slash_index(const std::string &rest, HaliConfig &cfg, Agent &agent, 
   }
 
   if (sub == "load") {
-    if (arg.empty()) {
-      auto labels = km.indexed_labels();
-      auto ids = km.indexed_ids();
-      if (labels.empty()) {
-        tui.append_line(ICON_SYS + "No indexed sources available to load.");
-        tui.redraw_all();
-        return;
-      }
-      int idx = tui.list_picker(labels, "Select a source to load");
-      if (idx < 0) {
-        tui.redraw_all();
-        return;
-      }
-      arg = ids[idx];
+    auto labels = km.indexed_labels();
+    auto ids = km.indexed_ids();
+    labels.push_back("Pick a .zim file…");
+    int idx = tui.list_picker(labels, "Knowledge index");
+    if (idx < 0) {
+      tui.redraw_all();
+      return;
     }
-    if (km.load(arg)) {
-      tui.append_line(ICON_SYS + "Loaded: " + arg);
+    if (idx == (int)ids.size()) {
+      std::string zim_path = tui.file_picker(cfg.sandbox_, "Select .zim file");
+      if (zim_path.empty()) {
+        tui.redraw_all();
+        return;
+      }
+      index_zim_file(zim_path, agent, tui, progress, km);
+      return;
+    }
+    sub = ids[idx];
+    if (km.load(sub)) {
+      tui.append_line(ICON_SYS + "Loaded: " + sub);
     } else {
-      tui.append_line(ICON_ERR + "Failed to load: " + arg);
+      tui.append_line(ICON_ERR + "Failed to load: " + sub);
     }
     tui.redraw_all();
     return;
   }
 
   if (sub == "unload") {
+    arg = pick_source(tui, arg, km.loaded_labels(), km.loaded_ids(),
+                      "Select a source to unload", "No sources currently loaded.");
     if (arg.empty()) {
-      auto labels = km.loaded_labels();
-      auto ids = km.loaded_ids();
-      if (labels.empty()) {
-        tui.append_line(ICON_SYS + "No sources currently loaded.");
-        tui.redraw_all();
-        return;
-      }
-      int idx = tui.list_picker(labels, "Select a source to unload");
-      if (idx < 0) {
-        tui.redraw_all();
-        return;
-      }
-      arg = ids[idx];
+      return;
     }
     if (km.unload(arg)) {
       tui.append_line(ICON_SYS + "Unloaded: " + arg);
@@ -932,39 +859,11 @@ static void slash_index(const std::string &rest, HaliConfig &cfg, Agent &agent, 
     return;
   }
 
-  // Default: treat as a .zim file path or an indexed source id
   if (fs::exists(sub)) {
-    // It's a file path — index it
-    if (!agent.embed_model()) {
-      tui.append_line(ICON_ERR + "No embedding model loaded. Use /embed first.");
-      tui.redraw_all();
-      return;
-    }
-    if (!KnowledgeManager::zimdump_available()) {
-      tui.append_line(ICON_ERR + "zimdump not found.");
-      tui.append_line(ICON_ERR + KnowledgeManager::zimdump_install_hint());
-      tui.redraw_all();
-      return;
-    }
-    tui.append_line(ICON_SYS + "Indexing " + sub + "…");
-    tui.redraw_all();
-    std::string build_err;
-    if (km.build_from_path(sub, *agent.embed_model(), tui, progress, &build_err)) {
-      fs::path zp(sub);
-      std::string id = zp.stem().string();
-      if (km.load(id)) {
-        tui.append_line(ICON_SYS + "Indexed and loaded: " + id);
-      } else {
-        tui.append_line(ICON_ERR + "Build succeeded but load failed: " + id);
-      }
-    } else {
-      tui.append_line(ICON_ERR + "Index build failed: " + build_err);
-    }
-    tui.redraw_all();
+    index_zim_file(sub, agent, tui, progress, km);
     return;
   }
 
-  // Try loading an indexed source by id
   if (km.rag_exists(sub)) {
     if (km.load(sub)) {
       tui.append_line(ICON_SYS + "Loaded: " + sub);
@@ -976,7 +875,7 @@ static void slash_index(const std::string &rest, HaliConfig &cfg, Agent &agent, 
   }
 
   tui.append_line(ICON_ERR + "Unknown source or file: " + sub);
-  tui.append_line(ICON_SYS + "Type /index (no arg) to see available sources.");
+  tui.append_line(ICON_SYS + "Type /index load to see available sources.");
   tui.redraw_all();
 }
 
@@ -1043,7 +942,7 @@ static void slash_task(const std::string &rest, HaliConfig &cfg, Agent &agent, T
         tui.append_line(ICON_SYS + "  RAG active, top_k → " + std::to_string(cfg.rag_top_k_));
         if (new_state) {
           tui.append_line(ICON_SYS + "Use /index load to select a source.");
-          slash_index("", cfg, agent, tui);
+          slash_index("load", cfg, agent, tui);
         }
       }
     } else {
@@ -1224,7 +1123,7 @@ const std::vector<SlashCommand> &slash_commands() {
     {"/task",     "[name]",            "direct agent behavior (web, music, audio, knowledge)", "Tools"},
     {"/tool",     "[TOOL:NAME [args]]","invoke a tool (no args lists all tools)", "Tools"},
     {"/plan",     "[text]",            "open a multiline text editor for a plan", "Tools"},
-    {"/index",    "[name|status|remove|load|unload]", "manage knowledge sources (ZIM/Wikipedia)", "Knowledge"},
+    {"/index",    "[name|remove|load|unload|help]", "manage knowledge sources (ZIM/Wikipedia)", "Knowledge"},
     {"/audio",    "[test|volume <v>]", "enable/disable audio, test tone, set volume", "Audio"},
     {"/help",     "",                  "this message", "Help"},
   };

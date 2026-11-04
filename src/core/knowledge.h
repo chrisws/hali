@@ -9,8 +9,10 @@
 #ifndef KNOWLEDGE_H
 #define KNOWLEDGE_H
 
+#include <filesystem>
 #include <functional>
 #include <string>
+#include <utility>
 #include <vector>
 #include "llama_sb_rag.h"
 
@@ -229,6 +231,20 @@ struct KnowledgeManager {
   void set_index_json_path(const std::string &p) { index_json_path_ = p; }
 
 private:
+  int zim_extract(const std::string &zim_path, const std::string &id,
+                  Tui &tui, const ProgressFn &progress,
+                  std::string &extract_dir);
+  std::vector<std::pair<std::string, std::string>>
+  zim_read_chunks(const std::vector<std::filesystem::path> &text_files,
+                  const std::string &extract_dir,
+                  const ProgressFn &progress);
+  int zim_embed_chunks(
+      const std::vector<std::pair<std::string, std::string>> &chunks,
+      Llama &llama, Tui &tui, RagDB &db);
+  bool zim_save_and_index(const std::string &id, const std::string &zim_path,
+                          RagDB &db, int total_chunks,
+                          const ProgressFn &progress);
+
   std::vector<IndexedSource> indexed_;
   RagLibrary                 library_;
   std::string                rag_dir_ = ".hali/rag";
