@@ -16,11 +16,9 @@
 #include <unistd.h>
 #include <chrono>
 #include <ctime>
-#include <thread>
-#include <atomic>
 #include <mutex>
-#include <semaphore>
 #include <unordered_map>
+#include <unordered_set>
 
 #include "knowledge.h"
 #include "util/platform.h"
@@ -64,23 +62,16 @@ std::string KnowledgeManager::zimdump_install_hint() {
 
 int KnowledgeManager::zim_extract(const std::string &zim_path,
                                   const std::string &id,
-                                  Tui &tui,
                                   const ProgressFn &progress,
                                   std::string &extract_dir) {
-  extract_dir = "/tmp/hali_zim_" + id;
+  extract_dir = ".hali/tmp/hali_zim_" + id;
   if (fs::exists(extract_dir)) {
-    run_with_spinner(tui, [&]() -> std::string {
-      fs::remove_all(extract_dir);
-      return "";
-    }, "cleaning up previous extraction");
+    fs::remove_all(extract_dir);
   }
   fs::create_directories(extract_dir);
 
-  const std::string cmd = std::format(
-                                      "zimdump dump --dir='{}' --ns=A '{}'", extract_dir, zim_path);
-  const std::string result = run_with_spinner(tui, [cmd]() -> std::string {
-    return run_shell_command(cmd);
-  }, "extracting " + zim_path);
+  const std::string cmd = std::format("zimdump dump --dir='{}' --ns=A '{}'", extract_dir, zim_path);
+  const std::string result = run_shell_command(cmd);
 
   if (log_is_enabled(LEVEL_DEBUG)) {
     log_write(LEVEL_DEBUG, "zim", "zimdump cmd: %s", cmd.c_str());
@@ -91,14 +82,11 @@ int KnowledgeManager::zim_extract(const std::string &zim_path,
 
   int disk_count = 0;
   if (fs::is_directory(extract_dir)) {
-    run_with_spinner(tui, [&]() -> std::string {
-      for (const auto &entry : fs::recursive_directory_iterator(extract_dir)) {
-        if (entry.is_regular_file()) {
-          disk_count++;
-        }
+    for (const auto &entry : fs::recursive_directory_iterator(extract_dir)) {
+      if (entry.is_regular_file()) {
+        disk_count++;
       }
-      return "";
-    }, std::format("counting extracted files"));
+    }
   }
 
   if (disk_count == 0) {
@@ -143,6 +131,11 @@ struct CaseInsensitiveCache {
   std::mutex mutex;
   std::unordered_map<std::string,
                      std::unordered_map<std::string, fs::path>> dirs;
+
+  void clear() {
+    std::lock_guard<std::mutex> lock(mutex);
+    dirs.clear();
+  }
 
   static std::string to_lower(const std::string &s) {
     std::string r;
@@ -214,18 +207,19 @@ static std::string url_decode(const std::string &encoded) {
 // Check whether a page is a ZIM redirect stub (meta-refresh HTML shell).
 //
 static bool is_redirect_stub(const std::string &content) {
-  return content.size() < 500 &&
+  return content.size() < 2000 &&
     content.find("http-equiv=\"refresh\"") != std::string::npos;
 }
 
 //
 // Resolve a ZIM redirect stub to its target content.
 // Follows up to 3 chained redirects.
-// Returns true and sets `out` on success.
+// Returns true and sets `out` and `resolved_path` on success.
 //
 static bool resolve_redirect(const std::string &stub,
                              const fs::path &base_dir,
-                             std::string &out) {
+                             std::string &out,
+                             fs::path &resolved_path) {
   if (log_is_enabled(LEVEL_DEBUG)) {
     log_write(LEVEL_DEBUG, "zim", "resolve_redirect: %s", stub.c_str());
   }
@@ -258,9 +252,10 @@ static bool resolve_redirect(const std::string &stub,
     tf.close();
     if (tcontent.find("http-equiv") == std::string::npos) {
       out = std::move(tcontent);
+      resolved_path = target_path;
       return true;
     }
-    // Chained redirect — resolve relative to the current file's parent
+    // Chained redirect — resolve relative to the extraction root
     auto tpos = tcontent.find("url=");
     if (tpos == std::string::npos) {
       return false;
@@ -270,7 +265,7 @@ static bool resolve_redirect(const std::string &stub,
     if (tend == std::string::npos) {
       return false;
     }
-    target_path = resolve_case_insensitive(fs::path(utils::join_path(target_path.parent_path().string(),
+    target_path = resolve_case_insensitive(fs::path(utils::join_path(base_dir.string(),
                                                                      url_decode(tcontent.substr(tpos, tend - tpos)))));
   }
   return false;
@@ -291,218 +286,24 @@ static std::vector<fs::path> collect_text_files(const std::string &dir) {
   return files;
 }
 
-//
-// Statistics from the ZIM embedding pass.
-//
-struct ZimEmbedStats {
-  int total_chunks = 0;
-  int skip_unreadable = 0;
-  int skip_short_raw = 0;
-  int skip_redirect = 0;
-  int skip_short_stripped = 0;
-  int skip_no_chunks = 0;
-  int resolved_redirects = 0;
-  bool aborted = false;
-};
-
-//
-// Stream text files through the embedding model, populating `db`.
-// Returns stats. Caller is responsible for showing/dismissing
-// the progress modal.
-//
-static ZimEmbedStats embed_text_files(const std::vector<fs::path> &text_files,
-                                      const fs::path &base_dir,
-                                      Llama &llama,
-                                      Tui &tui,
-                                      RagDB &db) {
-  ZimEmbedStats stats;
-  db.embed_dim = llama.get_embed_dim();
-
-  for (size_t i = 0; i < text_files.size(); i++) {
-    if (tui.poll_escape()) {
-      stats.aborted = true;
-      break;
-    }
-
-    std::ifstream f(text_files[i]);
-    if (!f) {
-      stats.skip_unreadable++;
-      continue;
-    }
-    std::string content((std::istreambuf_iterator<char>(f)),
-                        std::istreambuf_iterator<char>());
-    f.close();
-
-    if (content.size() < 80) {
-      stats.skip_short_raw++;
-      continue;
-    }
-
-    if (is_redirect_stub(content)) {
-      std::string resolved;
-      if (resolve_redirect(content, text_files[i].parent_path(), resolved)) {
-        content = std::move(resolved);
-        stats.resolved_redirects++;
-      } else {
-        stats.skip_redirect++;
-        continue;
-      }
-    }
-
-    content = utils::strip_html(content);
-    if (content.size() < 80) {
-      stats.skip_short_stripped++;
-      continue;
-    }
-
-    int before = db.size();
-    llama.rag_index_prose(db, content,
-                          text_files[i].filename().string());
-    if (db.size() == before) {
-      stats.skip_no_chunks++;
-    }
-    stats.total_chunks = db.size();
-    tui.update_progress((int)(i + 1), (int)text_files.size(),
-                        stats.total_chunks);
-  }
-
-  return stats;
-}
-
-std::vector<std::pair<std::string, std::string>>
-  KnowledgeManager::zim_read_chunks(const std::vector<std::filesystem::path> &text_files,
-                                    const std::string &extract_dir,
-                                    const ProgressFn &progress) {
-  struct ChunkData {
-    std::string content;
-    std::string source_name;
-  };
-  std::vector<ChunkData> chunks;
-  {
-    std::mutex chunk_mutex;
-    std::atomic<int> read_idx{0};
-    const int nthreads = std::max(1u, std::thread::hardware_concurrency() / 2);
-
-    if (progress) {
-      progress(std::format("reading {} files with {} threads ...",
-                           text_files.size(), nthreads));
-    }
-
-    std::counting_semaphore io_sem(4);
-
-    auto worker = [&]() {
-      const std::filesystem::path base_dir(extract_dir);
-      std::vector<ChunkData> local;
-
-      while (true) {
-        int idx = read_idx.fetch_add(1);
-        if (idx >= (int)text_files.size()) {
-          break;
-        }
-        const auto &tf = text_files[idx];
-        io_sem.acquire();
-        std::ifstream f(tf);
-        if (!f) {
-          io_sem.release();
-          continue;
-        }
-        std::string content((std::istreambuf_iterator<char>(f)),
-                            std::istreambuf_iterator<char>());
-        f.close();
-        io_sem.release();
-        // Detect redirect stubs: small files with http-equiv refresh
-        if (content.size() < 500 &&
-            content.find("http-equiv") != std::string::npos) {
-          std::string resolved;
-          if (resolve_redirect(content, tf.parent_path(), resolved)) {
-            content = std::move(resolved);
-          } else {
-            continue; // unresolvable redirect, skip
-          }
-        }
-        if (content.size() < 80) {
-          continue;
-        }
-        content = utils::strip_html(content);
-        if (content.size() < 80) {
-          continue;
-        }
-        local.push_back({std::move(content), tf.filename().string()});
-      }
-
-      if (!local.empty()) {
-        std::lock_guard<std::mutex> lock(chunk_mutex);
-        chunks.insert(chunks.end(),
-                      std::make_move_iterator(local.begin()),
-                      std::make_move_iterator(local.end()));
-      }
-    };
-
-    std::vector<std::thread> threads;
-    for (int i = 0; i < nthreads; i++) {
-      threads.emplace_back(worker);
-    }
-    for (auto &t : threads) {
-      t.join();
-    }
-  }
-
-  if (log_is_enabled(LEVEL_DEBUG)) {
-    log_write(LEVEL_DEBUG, "zim", "read_chunks: %zu files in, %zu chunks out",
-              text_files.size(), chunks.size());
-  }
-
-  std::vector<std::pair<std::string, std::string>> result;
-  result.reserve(chunks.size());
-  for (auto &c : chunks) {
-    result.emplace_back(std::move(c.content), std::move(c.source_name));
-  }
-  return result;
-}
-
-int KnowledgeManager::zim_embed_chunks(const std::vector<std::pair<std::string, std::string>> &chunks,
-                                       Llama &llama, Tui &tui, RagDB &db) {
-  tui.show_progress_modal("Embedding", (int)chunks.size());
-  int total_chunks = 0;
-  bool aborted = false;
-
-  for (int i = 0; i < (int)chunks.size(); i++) {
-    if (tui.poll_escape()) {
-      aborted = true;
-      break;
-    }
-    llama.rag_index_prose(db, chunks[i].first, chunks[i].second);
-    total_chunks = db.size();
-    tui.update_progress(i + 1, (int)chunks.size(), total_chunks);
-  }
-
-  tui.dismiss_progress_modal();
-
-  if (aborted) {
-    return -1;
-  }
-  return total_chunks;
-}
-
 bool KnowledgeManager::zim_save_and_index(const std::string &id,
                                           const std::string &zim_path,
-                                          RagDB &db,
                                           int total_chunks,
+                                          const BuildStats &stats,
                                           const ProgressFn &progress) {
-  fs::create_directories(rag_dir_);
   const std::string rag_file = rag_path(id);
-  if (!db.save(rag_file)) {
+  if (!fs::exists(rag_file)) {
     if (log_is_enabled(LEVEL_DEBUG)) {
-      log_write(LEVEL_DEBUG, "zim", "failed to save %s", rag_file.c_str());
+      log_write(LEVEL_DEBUG, "zim", "rag file not found: %s", rag_file.c_str());
     }
     if (progress) {
-      progress("failed to save " + rag_file);
+      progress("rag file not found: " + rag_file);
     }
     return false;
   }
 
   if (log_is_enabled(LEVEL_DEBUG)) {
-    log_write(LEVEL_DEBUG, "zim", "saved %s (%d chunks)",
+    log_write(LEVEL_DEBUG, "zim", "indexed %s (%d chunks)",
               rag_file.c_str(), total_chunks);
   }
 
@@ -512,6 +313,7 @@ bool KnowledgeManager::zim_save_and_index(const std::string &id,
   src.zim_path = zim_path;
   src.rag_path = rag_file;
   src.chunks = total_chunks;
+  src.stats = stats;
 
   auto now = std::chrono::system_clock::now();
   auto t = std::chrono::system_clock::to_time_t(now);
@@ -543,7 +345,9 @@ bool KnowledgeManager::zim_save_and_index(const std::string &id,
 }
 
 //
-// Index a .zim file from an arbitrary path
+// Index a .zim file from an arbitrary path.
+// Uses a batch pipeline with incremental disk writes to bound memory:
+// only one batch of chunks is held in RAM at a time.
 //
 bool KnowledgeManager::build_from_path(const std::string &zim_path,
                                        Llama &llama,
@@ -569,11 +373,9 @@ bool KnowledgeManager::build_from_path(const std::string &zim_path,
     return false;
   }
 
-  // Derive id from filename stem
   fs::path zp(zim_path);
   const std::string id = zp.stem().string();
 
-  // Check if already indexed
   if (rag_exists(id)) {
     if (progress) {
       progress("already indexed: " + id);
@@ -583,13 +385,16 @@ bool KnowledgeManager::build_from_path(const std::string &zim_path,
 
   // Phase 1: Extract
   std::string extract_dir;
-  int disk_count = zim_extract(zim_path, id, tui, progress, extract_dir);
+  int disk_count = 0;
+  run_with_spinner(tui, [&]() -> std::string {
+    disk_count = zim_extract(zim_path, id, progress, extract_dir);
+    return "";
+  }, "extracting " + zim_path);
   if (disk_count == 0) {
     fail("zimdump produced no files");
     return false;
   }
 
-  // Collect all extracted text files
   auto text_files = collect_text_files(extract_dir);
   if (text_files.empty()) {
     fail("no text files extracted from ZIM");
@@ -603,52 +408,178 @@ bool KnowledgeManager::build_from_path(const std::string &zim_path,
   }
 
   if (progress) {
-    progress(std::format("found {} text files, embedding ...",
+    progress(std::format("found {} text files, embedding in batches ...",
                          text_files.size()));
   }
 
-  // Phase 2: Embed
-  RagDB db;
+  // Clear case-insensitive cache from any previous build
+  g_case_cache.clear();
+
+  // Phase 2: Batch embed with incremental disk writes
+  constexpr int BATCH_SIZE = 50;
+  const std::string rag_file = rag_path(id);
+  fs::create_directories(rag_dir_);
+
+  RagDB batch_db;
+  batch_db.embed_dim = llama.get_embed_dim();
+  if (!batch_db.init_file(rag_file)) {
+    fail("failed to init " + rag_file);
+    fs::remove_all(extract_dir);
+    return false;
+  }
+
+  int total_chunks = 0;
+  int skip_unreadable = 0;
+  int skip_short_raw = 0;
+  int skip_redirect = 0;
+  int skip_short_stripped = 0;
+  int skip_no_chunks = 0;
+  int skip_duplicate = 0;
+  int resolved_redirects = 0;
+  bool aborted = false;
+
+  // Dedup: track canonical content by 64-bit hash of its path.
+  // Multiple redirect stubs can point to the same article;
+  // we only want to embed each article once.
+  std::unordered_set<uint64_t> seen;
+  auto path_hash = [](const fs::path &p) -> uint64_t {
+    return static_cast<uint64_t>(std::hash<std::string>{}(p.string()));
+  };
+
   tui.show_progress_modal("Embedding", (int)text_files.size());
-  auto stats = embed_text_files(text_files, fs::path(extract_dir),
-                                llama, tui, db);
+
+  for (size_t i = 0; i < text_files.size(); i += BATCH_SIZE) {
+    const size_t end = std::min(i + (size_t)BATCH_SIZE, text_files.size());
+
+    for (size_t j = i; j < end; j++) {
+      if (tui.poll_escape()) {
+        aborted = true;
+        break;
+      }
+
+      std::ifstream f(text_files[j]);
+      if (!f) {
+        skip_unreadable++;
+        continue;
+      }
+      std::string content((std::istreambuf_iterator<char>(f)),
+                          std::istreambuf_iterator<char>());
+      f.close();
+
+      if (content.size() < 80) {
+        skip_short_raw++;
+        continue;
+      }
+
+      // Determine canonical identity for dedup
+      fs::path canonical = text_files[j];
+      if (is_redirect_stub(content)) {
+        std::string resolved;
+        fs::path resolved_path;
+        if (resolve_redirect(content, extract_dir, resolved, resolved_path)) {
+          content = std::move(resolved);
+          canonical = resolved_path;
+          resolved_redirects++;
+        } else {
+          skip_redirect++;
+          continue;
+        }
+      }
+
+      // Skip if we've already embedded this article
+      uint64_t h = path_hash(canonical);
+      if (!seen.insert(h).second) {
+        skip_duplicate++;
+        continue;
+      }
+
+      content = utils::strip_html(content);
+      if (content.size() < 80) {
+        skip_short_stripped++;
+        continue;
+      }
+
+      int before = batch_db.size();
+      llama.rag_index_prose(batch_db, content,
+                            text_files[j].filename().string());
+      if (batch_db.size() == before) {
+        skip_no_chunks++;
+      }
+    }
+
+    // Append this batch's chunks to disk, then free memory
+    if (!batch_db.chunks.empty()) {
+      const int batch_count = batch_db.size();
+      if (!batch_db.append_chunks(rag_file)) {
+        tui.dismiss_progress_modal();
+        fail("failed to append chunks to " + rag_file);
+        fs::remove_all(extract_dir);
+        fs::remove(rag_file);
+        return false;
+      }
+      total_chunks += batch_count;
+    }
+
+    tui.update_progress((int)std::min(end, text_files.size()),
+                        (int)text_files.size(), total_chunks);
+
+    if (aborted) {
+      break;
+    }
+  }
+
   tui.dismiss_progress_modal();
+
+  // Finalize the .rag file header with the real chunk count
+  RagDB::finalize_file(rag_file, (uint32_t)total_chunks);
+
+  // Clean up extraction directory and cache
+  fs::remove_all(extract_dir);
+  g_case_cache.clear();
+
+  if (aborted) {
+    fs::remove(rag_file);
+    fail("embedding aborted by user");
+    return false;
+  }
+
+  if (total_chunks == 0) {
+    fs::remove(rag_file);
+    fail("no chunks produced");
+    return false;
+  }
 
   if (log_is_enabled(LEVEL_DEBUG)) {
     log_write(LEVEL_DEBUG, "zim",
               "build_from_path stats: %zu files | resolved: %d redirects | "
               "skipped: %d unreadable, %d short-raw, %d redirect, "
-              "%d short-stripped, %d no-chunks | %d chunks produced",
-              text_files.size(), stats.resolved_redirects,
-              stats.skip_unreadable, stats.skip_short_raw,
-              stats.skip_redirect, stats.skip_short_stripped,
-              stats.skip_no_chunks, stats.total_chunks);
+              "%d short-stripped, %d no-chunks, %d duplicate | %d chunks produced",
+              text_files.size(), resolved_redirects,
+              skip_unreadable, skip_short_raw,
+              skip_redirect, skip_short_stripped,
+              skip_no_chunks, skip_duplicate, total_chunks);
   }
 
   if (progress) {
     progress(std::format(
                          "index stats: {} files | {} redirects resolved | "
                          "skipped: {} unreadable, {} short-raw, {} redirect, "
-                         "{} short-stripped, {} no-chunks | {} chunks produced",
-                         text_files.size(), stats.resolved_redirects,
-                         stats.skip_unreadable, stats.skip_short_raw,
-                         stats.skip_redirect, stats.skip_short_stripped,
-                         stats.skip_no_chunks, stats.total_chunks));
+                         "{} short-stripped, {} no-chunks, {} duplicate | {} chunks produced",
+                         text_files.size(), resolved_redirects,
+                         skip_unreadable, skip_short_raw,
+                         skip_redirect, skip_short_stripped,
+                         skip_no_chunks, skip_duplicate, total_chunks));
   }
 
-  // Clean up extraction directory
-  fs::remove_all(extract_dir);
-
-  if (stats.aborted) {
-    fail("embedding aborted by user");
-    return false;
-  }
-
-  if (db.empty()) {
-    fail("no chunks produced");
-    return false;
-  }
-
-  // Phase 3: Save + index
-  return zim_save_and_index(id, zim_path, db, stats.total_chunks, progress);
+  // Phase 3: Update index
+  BuildStats bstats;
+  bstats.total_files         = (int)text_files.size();
+  bstats.resolved_redirects  = resolved_redirects;
+  bstats.skip_unreadable     = skip_unreadable;
+  bstats.skip_short_raw      = skip_short_raw;
+  bstats.skip_redirect       = skip_redirect;
+  bstats.skip_short_stripped = skip_short_stripped;
+  bstats.skip_no_chunks      = skip_no_chunks;
+  bstats.skip_duplicate      = skip_duplicate;
+  return zim_save_and_index(id, zim_path, total_chunks, bstats, progress);
 }

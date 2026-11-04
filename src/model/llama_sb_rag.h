@@ -9,6 +9,7 @@
 #ifndef LLAMA_SB_RAG_H
 #define LLAMA_SB_RAG_H
 
+#include <cstdint>
 #include <map>
 #include <string>
 #include <vector>
@@ -43,6 +44,16 @@ struct RagDB {
 
   bool load(const std::string &path);
   bool save(const std::string &path) const;
+
+  //
+  // Incremental file I/O for batched indexing.
+  // init_file writes the 16-byte header with n_chunks=0.
+  // append_chunks writes current chunks to the file and clears them.
+  // finalize_file patches n_chunks in the header to the actual count.
+  //
+  bool init_file(const std::string &path) const;
+  bool append_chunks(const std::string &path);
+  static bool finalize_file(const std::string &path, uint32_t n_chunks);
 
   int  size()  const { return (int)chunks.size(); }
   bool empty() const { return chunks.empty(); }

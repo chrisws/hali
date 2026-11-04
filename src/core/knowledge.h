@@ -20,15 +20,30 @@ struct Llama;
 struct Tui;
 
 //
+// Build-time statistics for a ZIM index
+//
+struct BuildStats {
+  int total_files         = 0;
+  int resolved_redirects  = 0;
+  int skip_unreadable     = 0;
+  int skip_short_raw      = 0;
+  int skip_redirect       = 0;
+  int skip_short_stripped = 0;
+  int skip_no_chunks      = 0;
+  int skip_duplicate      = 0;
+};
+
+//
 // A single entry in the .hali/kiwix-index.json tracking file
 //
 struct IndexedSource {
-  std::string id;
-  std::string title;
-  std::string zim_path;
-  std::string rag_path;
-  int         chunks = 0;
-  std::string indexed_at;
+  std::string  id;
+  std::string  title;
+  std::string  zim_path;
+  std::string  rag_path;
+  int          chunks = 0;
+  std::string  indexed_at;
+  BuildStats   stats;
 };
 
 //
@@ -142,6 +157,13 @@ struct KnowledgeManager {
                        std::string *error = nullptr);
 
   //
+  // (private) save rag file reference and update index JSON with stats
+  //
+  bool zim_save_and_index(const std::string &id, const std::string &zim_path,
+                          int total_chunks, const BuildStats &stats,
+                          const ProgressFn &progress);
+
+  //
   // Load a built .rag file into the session library
   //
   bool load(const std::string &id);
@@ -232,18 +254,8 @@ struct KnowledgeManager {
 
 private:
   int zim_extract(const std::string &zim_path, const std::string &id,
-                  Tui &tui, const ProgressFn &progress,
+                  const ProgressFn &progress,
                   std::string &extract_dir);
-  std::vector<std::pair<std::string, std::string>>
-  zim_read_chunks(const std::vector<std::filesystem::path> &text_files,
-                  const std::string &extract_dir,
-                  const ProgressFn &progress);
-  int zim_embed_chunks(
-      const std::vector<std::pair<std::string, std::string>> &chunks,
-      Llama &llama, Tui &tui, RagDB &db);
-  bool zim_save_and_index(const std::string &id, const std::string &zim_path,
-                          RagDB &db, int total_chunks,
-                          const ProgressFn &progress);
 
   std::vector<IndexedSource> indexed_;
   RagLibrary                 library_;

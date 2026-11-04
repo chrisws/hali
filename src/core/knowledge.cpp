@@ -198,6 +198,28 @@ std::string KnowledgeManager::inspect(int top_k) const {
       if (db) {
         oss << "  • " << name << ": " << db->size()
             << " chunks, dim=" << db->embed_dim << "\n";
+        // Show build stats if available
+        const IndexedSource *src = find(name);
+        if (src && src->stats.total_files > 0) {
+          const auto &s = src->stats;
+          int skipped = s.skip_unreadable + s.skip_short_raw +
+                        s.skip_redirect + s.skip_short_stripped +
+                        s.skip_no_chunks;
+          oss << "      files: " << s.total_files
+              << " | redirects resolved: " << s.resolved_redirects
+              << " | skipped: " << skipped;
+          if (s.skip_short_raw > 0)
+            oss << " (" << s.skip_short_raw << " short)";
+          if (s.skip_redirect > 0)
+            oss << " (" << s.skip_redirect << " redirect)";
+          if (s.skip_short_stripped > 0)
+            oss << " (" << s.skip_short_stripped << " stripped)";
+          if (s.skip_no_chunks > 0)
+            oss << " (" << s.skip_no_chunks << " no-chunks)";
+          if (s.skip_unreadable > 0)
+            oss << " (" << s.skip_unreadable << " unreadable)";
+          oss << "\n";
+        }
       }
     }
   }
@@ -249,6 +271,16 @@ bool KnowledgeManager::load_index_json() {
     r.get_str("rag_path", src.rag_path);
     r.get_int("chunks", src.chunks);
     r.get_str("indexed_at", src.indexed_at);
+    auto st = r.get_child("stats");
+    if (st.is_object()) {
+      st.get_int("total_files",         src.stats.total_files);
+      st.get_int("resolved_redirects",  src.stats.resolved_redirects);
+      st.get_int("skip_unreadable",     src.stats.skip_unreadable);
+      st.get_int("skip_short_raw",      src.stats.skip_short_raw);
+      st.get_int("skip_redirect",       src.stats.skip_redirect);
+      st.get_int("skip_short_stripped", src.stats.skip_short_stripped);
+      st.get_int("skip_no_chunks",      src.stats.skip_no_chunks);
+    }
     if (!src.id.empty()) {
       indexed_.push_back(std::move(src));
     }
@@ -274,7 +306,16 @@ bool KnowledgeManager::save_index_json() const {
     out << "      \"zim_path\": \"" << s.zim_path << "\",\n";
     out << "      \"rag_path\": \"" << s.rag_path << "\",\n";
     out << "      \"chunks\": " << s.chunks << ",\n";
-    out << "      \"indexed_at\": \"" << s.indexed_at << "\"\n";
+    out << "      \"indexed_at\": \"" << s.indexed_at << "\",\n";
+    out << "      \"stats\": {\n";
+    out << "        \"total_files\": "         << s.stats.total_files         << ",\n";
+    out << "        \"resolved_redirects\": "  << s.stats.resolved_redirects  << ",\n";
+    out << "        \"skip_unreadable\": "     << s.stats.skip_unreadable     << ",\n";
+    out << "        \"skip_short_raw\": "      << s.stats.skip_short_raw      << ",\n";
+    out << "        \"skip_redirect\": "       << s.stats.skip_redirect       << ",\n";
+    out << "        \"skip_short_stripped\": " << s.stats.skip_short_stripped << ",\n";
+    out << "        \"skip_no_chunks\": "      << s.stats.skip_no_chunks      << "\n";
+    out << "      }\n";
     out << "    }";
   }
 

@@ -558,6 +558,62 @@ bool RagDB::save(const std::string &path) const {
   return f.good();
 }
 
+bool RagDB::init_file(const std::string &path) const {
+  std::ofstream f(path, std::ios::binary | std::ios::trunc);
+  if (!f) {
+    return false;
+  }
+  auto write32 = [&](uint32_t v) { f.write((char*)&v, 4); };
+  write32(MAGIC);
+  write32(2);
+  write32(0);  /* n_chunks = 0, patched by finalize_file */
+  write32((uint32_t)embed_dim);
+  return f.good();
+}
+
+bool RagDB::append_chunks(const std::string &path) {
+  if (chunks.empty()) {
+    return true;
+  }
+  std::ofstream f(path, std::ios::binary | std::ios::app);
+  if (!f) {
+    return false;
+  }
+  auto write32 = [&](uint32_t v) { f.write((char*)&v, 4); };
+  auto write16 = [&](uint16_t v) { f.write((char*)&v, 2); };
+  auto write8  = [&](uint8_t  v) { f.write((char*)&v, 1); };
+
+  for (const RagChunk &c : chunks) {
+    write32((uint32_t)c.text.size());
+    f.write(c.text.c_str(), (std::streamsize)c.text.size());
+
+    uint16_t src_len = (uint16_t)std::min(c.source.size(), (size_t)65535);
+    write16(src_len);
+    f.write(c.source.c_str(), (std::streamsize)src_len);
+
+    uint8_t type_len = (uint8_t)std::min(c.type.size(), (size_t)255);
+    write8(type_len);
+    f.write(c.type.c_str(), (std::streamsize)type_len);
+
+    f.write((char*)c.embedding.data(),
+            (std::streamsize)(embed_dim * sizeof(float)));
+  }
+
+  chunks.clear();
+  chunks.shrink_to_fit();
+  return f.good();
+}
+
+bool RagDB::finalize_file(const std::string &path, uint32_t n_chunks) {
+  std::fstream f(path, std::ios::binary | std::ios::in | std::ios::out);
+  if (!f) {
+    return false;
+  }
+  f.seekp(8);  /* offset of n_chunks field */
+  f.write((char*)&n_chunks, 4);
+  return f.good();
+}
+
 bool RagDB::load(const std::string &path) {
   std::ifstream f(path, std::ios::binary);
   if (!f) {
