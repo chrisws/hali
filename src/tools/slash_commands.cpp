@@ -898,8 +898,12 @@ static void slash_index(const std::string &rest, HaliConfig &cfg, Agent &agent, 
     std::string prompt;
     if (!topics.empty()) {
       prompt = "Please index the ZIM file at " + zim_path + ". "
-               "First, write the following topic keywords to .hali/topics.txt "
-               "(one keyword per line):\n" + topics + "\n"
+               "The user's topic request is: \"" + topics + "\". "
+               "Based on this, build a comprehensive list of related topic "
+               "keywords (e.g. if the user says \"cats\", include cat, cats, "
+               "tigers, lions, felines, domestic cat, wild cat, etc.). "
+               "Write the resulting keywords to .hali/topics.txt "
+               "(one keyword per line). "
                "Then call TOOL:RAGINDEX " + zim_path;
     } else {
       prompt = "Please index the ZIM file at " + zim_path +
