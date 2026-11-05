@@ -522,6 +522,38 @@ std::string Llama::rag_retrieve_multi(RagLibrary &lib,
   return out.str();
 }
 
+/*
+ * Write a single chunk's binary representation to a stream.
+ * Used by both save() and append_chunks() to avoid duplication.
+ * Returns false if the embedding pointer is null.
+ */
+static bool write_chunk_to_stream(std::ostream &f, const RagChunk &c, int embed_dim) {
+  auto write32 = [&](uint32_t v) { f.write((char*)&v, 4); };
+  auto write16 = [&](uint16_t v) { f.write((char*)&v, 2); };
+  auto write8  = [&](uint8_t  v) { f.write((char*)&v, 1); };
+
+  write32((uint32_t)c.text.size());
+  f.write(c.text.c_str(), (std::streamsize)c.text.size());
+
+  uint16_t src_len = (uint16_t)std::min(c.source.size(), (size_t)65535);
+  write16(src_len);
+  f.write(c.source.c_str(), (std::streamsize)src_len);
+
+  uint8_t type_len = (uint8_t)std::min(c.type.size(), (size_t)255);
+  write8(type_len);
+  f.write(c.type.c_str(), (std::streamsize)type_len);
+
+  /* get_embedding() resolves to embedding_ptr (mmap) or
+   * embedding.data() (heap), so this works in both modes. */
+  const float *emb = c.get_embedding();
+  if (!emb) {
+    return false;
+  }
+  f.write((const char*)emb,
+          (std::streamsize)(embed_dim * sizeof(float)));
+  return true;
+}
+
 bool RagDB::save(const std::string &path) const {
   std::ofstream f(path, std::ios::binary);
   if (!f) {
@@ -529,12 +561,6 @@ bool RagDB::save(const std::string &path) const {
   }
 
   auto write32 = [&](uint32_t v) { f.write((char*)&v, 4); };
-  auto write16 = [&](uint16_t v) { f.write((char*)&v, 2); };
-  auto write8  = [&](uint8_t  v) { f.write((char*)&v, 1); };
-  auto writestr = [&](const std::string &s, size_t max_len) {
-    size_t len = std::min(s.size(), max_len);
-    f.write(s.c_str(), (std::streamsize)len);
-  };
 
   write32(MAGIC);              /* magic "RAGD" */
   write32(2);                       /* version      */
@@ -542,25 +568,9 @@ bool RagDB::save(const std::string &path) const {
   write32((uint32_t)embed_dim);     /* embed_dim    */
 
   for (const RagChunk &c : chunks) {
-    write32((uint32_t)c.text.size());
-    f.write(c.text.c_str(), (std::streamsize)c.text.size());
-
-    uint16_t src_len = (uint16_t)std::min(c.source.size(), (size_t)65535);
-    write16(src_len);
-    writestr(c.source, src_len);
-
-    uint8_t type_len = (uint8_t)std::min(c.type.size(), (size_t)255);
-    write8(type_len);
-    writestr(c.type, type_len);
-
-    /* get_embedding() resolves to embedding_ptr (mmap) or
-     * embedding.data() (heap), so save works in both modes. */
-    const float *emb = c.get_embedding();
-    if (!emb) {
+    if (!write_chunk_to_stream(f, c, embed_dim)) {
       return false;
     }
-    f.write((const char*)emb,
-            (std::streamsize)(embed_dim * sizeof(float)));
   }
 
   return f.good();
@@ -587,24 +597,11 @@ bool RagDB::append_chunks(const std::string &path) {
   if (!f) {
     return false;
   }
-  auto write32 = [&](uint32_t v) { f.write((char*)&v, 4); };
-  auto write16 = [&](uint16_t v) { f.write((char*)&v, 2); };
-  auto write8  = [&](uint8_t  v) { f.write((char*)&v, 1); };
 
   for (const RagChunk &c : chunks) {
-    write32((uint32_t)c.text.size());
-    f.write(c.text.c_str(), (std::streamsize)c.text.size());
-
-    uint16_t src_len = (uint16_t)std::min(c.source.size(), (size_t)65535);
-    write16(src_len);
-    f.write(c.source.c_str(), (std::streamsize)src_len);
-
-    uint8_t type_len = (uint8_t)std::min(c.type.size(), (size_t)255);
-    write8(type_len);
-    f.write(c.type.c_str(), (std::streamsize)type_len);
-
-    f.write((char*)c.embedding.data(),
-            (std::streamsize)(embed_dim * sizeof(float)));
+    if (!write_chunk_to_stream(f, c, embed_dim)) {
+      return false;
+    }
   }
 
   chunks.clear();

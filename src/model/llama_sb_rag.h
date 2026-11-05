@@ -154,8 +154,8 @@ struct RagSession {
     tokens_used = 0;
   }
 
-  bool is_seen(int idx)  const { return idx < (int)seen.size() && seen[idx]; }
-  void mark(int idx)           { if (idx < (int)seen.size()) seen[idx] = true; }
+  bool is_seen(int idx)  const { return idx >= 0 && idx < (int)seen.size() && seen[idx]; }
+  void mark(int idx)           { if (idx >= 0 && idx < (int)seen.size()) seen[idx] = true; }
 
   /* rough token estimate: 1 token ≈ 4 chars */
   bool budget_ok(const std::string &text) const {

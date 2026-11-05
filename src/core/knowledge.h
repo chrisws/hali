@@ -53,6 +53,28 @@ struct IndexedSource {
 using ProgressFn = std::function<void(const std::string &)>;
 
 //
+// Shared state for the ZIM build pipeline
+//
+struct BuildContext {
+  std::string extract_dir;
+  std::string rag_file;
+  std::string id;
+  std::string zim_path;
+  bool        append = false;
+  uint32_t    existing_chunks = 0;
+  int         total_chunks = 0;
+  int         skip_unreadable = 0;
+  int         skip_short_raw = 0;
+  int         skip_redirect = 0;
+  int         skip_short_stripped = 0;
+  int         skip_no_chunks = 0;
+  int         skip_duplicate = 0;
+  int         resolved_redirects = 0;
+  int         skip_filtered = 0;
+  bool        aborted = false;
+};
+
+//
 // KnowledgeManager
 //
 // Owns the RagLibrary and the ZIM indexing pipeline.
@@ -259,6 +281,13 @@ private:
   int zim_extract(const std::string &zim_path, const std::string &id,
                   const ProgressFn &progress,
                   std::string &extract_dir);
+
+  bool batch_embed(const std::vector<std::filesystem::path> &files,
+                   Llama &llama,
+                   Tui &tui,
+                   const ProgressFn &progress,
+                   BuildContext &ctx,
+                   std::string *error) const;
 
   std::vector<IndexedSource> indexed_;
   RagLibrary                 library_;

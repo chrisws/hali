@@ -71,6 +71,7 @@ void sysinfo_test();
 void git_tool_test();
 void music_project_test();
 void rag_test();
+void zim_util_test();
 void knowledge_test();
 void gui_test();
 void tui_progress_test();
@@ -107,6 +108,7 @@ int main() {
   run_htp_test("git_tool", git_tool_test);
   run_htp_test("music_project", music_project_test);
   run_htp_test("rag", rag_test);
+  run_htp_test("zim_util", zim_util_test);
   run_htp_test("knowledge", knowledge_test);
   run_htp_test("tui_progress", tui_progress_test);
   run_htp_test("gui", gui_test);

@@ -557,6 +557,20 @@ static void test_km_inspect_skip_filtered() {
   std::cout << "test_km_inspect_skip_filtered passed" << std::endl;
 }
 
+//
+// test: zimdump_install_hint returns platform-specific guidance
+//
+static void test_km_zimdump_install_hint() {
+  auto hint = KnowledgeManager::zimdump_install_hint();
+  /* should always mention zim-tools and meson */
+  assert(hint.find("zim-tools") != string::npos);
+  assert(hint.find("meson") != string::npos);
+  /* should not be empty */
+  assert(!hint.empty());
+
+  cout << "test_km_zimdump_install_hint passed" << endl;
+}
+
 void knowledge_test() {
   test_km_paths();
   test_km_load_index_missing();
@@ -571,6 +585,7 @@ void knowledge_test() {
   test_km_remove();
   test_km_rag_exists();
   test_km_zimdump_available();
+  test_km_zimdump_install_hint();
   test_parallel_read_chunk();
   test_parallel_read_skips_small();
   test_strip_html();

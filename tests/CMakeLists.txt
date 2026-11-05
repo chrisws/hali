@@ -118,6 +118,7 @@ add_executable(hali_tests
   src/git_tool_test.cpp
   src/music_project_test.cpp
   src/rag_test.cpp
+  src/zim_util_test.cpp
   src/knowledge_test.cpp
   src/tui_progress_test.cpp
   src/gui_test.cpp

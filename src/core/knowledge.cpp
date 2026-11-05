@@ -26,7 +26,12 @@
 
 namespace fs = std::filesystem;
 
-KnowledgeManager::KnowledgeManager() = default;
+KnowledgeManager::KnowledgeManager() {
+  /* Safety cap: prevent unbounded RAM growth when loading many .rag files.
+   * 500K chunks with 384-dim embeddings ≈ 768 MB for floats alone,
+   * plus text/source/type strings. Adjust if needed. */
+  library_.max_total_chunks = 500000;
+}
 
 //
 // Load an embedding model
@@ -300,47 +305,42 @@ bool KnowledgeManager::load_index_json() {
 // Save the index JSON to index_json_path_
 //
 bool KnowledgeManager::save_index_json() const {
-  // Build JSON manually to avoid mutable doc complexity
-  std::ostringstream out;
-  out << "{\n  \"version\": \"1.0\",\n  \"sources\": [";
+  auto doc = json::JsonMutDoc::parse("{}");
+  if (!doc.is_valid()) {
+    return false;
+  }
+  auto root = doc.get_root();
+  root.set_str("version", "1.0");
+  auto sources = root.set_empty_arr("sources");
 
-  for (size_t i = 0; i < indexed_.size(); i++) {
-    const auto &s = indexed_[i];
-    if (i > 0) out << ",";
-    out << "\n    {\n";
-    out << "      \"id\": \"" << s.id << "\",\n";
-    out << "      \"title\": \"" << s.title << "\",\n";
-    out << "      \"zim_path\": \"" << s.zim_path << "\",\n";
-    out << "      \"rag_path\": \"" << s.rag_path << "\",\n";
-    out << "      \"chunks\": " << s.chunks << ",\n";
-    out << "      \"indexed_at\": \"" << s.indexed_at << "\",\n";
-    out << "      \"stats\": {\n";
-    out << "        \"total_files\": "         << s.stats.total_files         << ",\n";
-    out << "        \"resolved_redirects\": "  << s.stats.resolved_redirects  << ",\n";
-    out << "        \"skip_unreadable\": "     << s.stats.skip_unreadable     << ",\n";
-    out << "        \"skip_short_raw\": "      << s.stats.skip_short_raw      << ",\n";
-    out << "        \"skip_redirect\": "       << s.stats.skip_redirect       << ",\n";
-    out << "        \"skip_short_stripped\": " << s.stats.skip_short_stripped << ",\n";
-    out << "        \"skip_no_chunks\": "      << s.stats.skip_no_chunks      << ",\n";
-    out << "        \"skip_filtered\": "       << s.stats.skip_filtered       << "\n";
-    out << "      }\n";
-    out << "    }";
+  for (const auto &s : indexed_) {
+    auto src = sources.arr_append_obj();
+    src.set_str("id", s.id);
+    src.set_str("title", s.title);
+    src.set_str("zim_path", s.zim_path);
+    src.set_str("rag_path", s.rag_path);
+    src.set_int("chunks", s.chunks);
+    src.set_str("indexed_at", s.indexed_at);
+    src.set_empty_obj("stats");
+    auto stats = src.get_child("stats");
+    stats.set_int("total_files",         s.stats.total_files);
+    stats.set_int("resolved_redirects",  s.stats.resolved_redirects);
+    stats.set_int("skip_unreadable",     s.stats.skip_unreadable);
+    stats.set_int("skip_short_raw",      s.stats.skip_short_raw);
+    stats.set_int("skip_redirect",       s.stats.skip_redirect);
+    stats.set_int("skip_short_stripped", s.stats.skip_short_stripped);
+    stats.set_int("skip_no_chunks",      s.stats.skip_no_chunks);
+    stats.set_int("skip_filtered",       s.stats.skip_filtered);
   }
 
-  if (!indexed_.empty()) {
-    out << "\n  ";
-  }
-  out << "]\n}\n";
-
-  fs::create_directories(
-    fs::path(index_json_path_).parent_path());
-
+  fs::create_directories(fs::path(index_json_path_).parent_path());
+  std::string out = doc.to_string(json::WriteFlag::Pretty);
   std::ofstream f(index_json_path_);
   if (!f) {
     return false;
   }
-  f << out.str();
-  return true;
+  f << out;
+  return f.good();
 }
 
 const IndexedSource *KnowledgeManager::find(const std::string &id) const {

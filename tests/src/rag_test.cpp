@@ -9,6 +9,7 @@
 #include <iostream>
 #include <cassert>
 #include <filesystem>
+#include <fstream>
 #include <string>
 #include <vector>
 
@@ -359,6 +360,267 @@ static void test_retrieve_multi_empty() {
   cout << "test_retrieve_multi_empty passed" << endl;
 }
 
+//
+// test: RagDB incremental I/O: init_file, append_chunks, finalize_file
+//
+static void test_ragdb_incremental_io() {
+  const string path = "/tmp/hali_rag_incr_test.rag";
+  std::filesystem::remove(path);
+
+  /* Phase 1: init_file writes header with n_chunks=0 */
+  RagDB db;
+  db.embed_dim = 4;
+  assert(db.init_file(path));
+
+  /* Verify file exists and has 16-byte header */
+  assert(std::filesystem::exists(path));
+  assert(std::filesystem::file_size(path) == 16);
+
+  /* Phase 2: append first batch */
+  RagChunk c1;
+  c1.text = "first batch chunk with enough text to be valid";
+  c1.source = "a.cpp";
+  c1.type = "function";
+  c1.embedding = {0.1f, 0.2f, 0.3f, 0.4f};
+  db.chunks.push_back(c1);
+
+  RagChunk c2;
+  c2.text = "second batch chunk also has sufficient content";
+  c2.source = "b.cpp";
+  c2.type = "class";
+  c2.embedding = {0.5f, 0.6f, 0.7f, 0.8f};
+  db.chunks.push_back(c2);
+
+  assert(db.append_chunks(path));
+  /* chunks are cleared after append */
+  assert(db.empty());
+
+  /* Phase 3: append second batch */
+  RagChunk c3;
+  c3.text = "third chunk in the second batch of writes";
+  c3.source = "c.cpp";
+  c3.type = "other";
+  c3.embedding = {0.9f, 0.1f, 0.2f, 0.3f};
+  db.chunks.push_back(c3);
+
+  assert(db.append_chunks(path));
+  assert(db.empty());
+
+  /* Phase 4: finalize patches n_chunks in header */
+  assert(RagDB::finalize_file(path, 3));
+
+  /* Phase 5: load and verify */
+  RagDB loaded;
+  assert(loaded.load(path));
+  assert(loaded.size() == 3);
+  assert(loaded.embed_dim == 4);
+
+  assert(loaded.chunks[0].text == "first batch chunk with enough text to be valid");
+  assert(loaded.chunks[0].source == "a.cpp");
+  assert(loaded.chunks[0].type == "function");
+  assert(loaded.chunks[1].text == "second batch chunk also has sufficient content");
+  assert(loaded.chunks[1].source == "b.cpp");
+  assert(loaded.chunks[2].text == "third chunk in the second batch of writes");
+  assert(loaded.chunks[2].source == "c.cpp");
+
+  /* Verify embeddings survived the round-trip */
+  for (int i = 0; i < 4; i++) {
+    assert(loaded.chunks[0].embedding[i] == c1.embedding[i]);
+    assert(loaded.chunks[1].embedding[i] == c2.embedding[i]);
+    assert(loaded.chunks[2].embedding[i] == c3.embedding[i]);
+  }
+
+  std::filesystem::remove(path);
+  cout << "test_ragdb_incremental_io passed" << endl;
+}
+
+//
+// test: RagDB append_chunks with empty chunks is a no-op
+//
+static void test_ragdb_append_empty() {
+  const string path = "/tmp/hali_rag_empty_append.rag";
+  std::filesystem::remove(path);
+
+  RagDB db;
+  db.embed_dim = 2;
+  assert(db.init_file(path));
+
+  /* appending zero chunks should succeed and not change file size */
+  assert(db.append_chunks(path));
+  assert(std::filesystem::file_size(path) == 16);
+
+  std::filesystem::remove(path);
+  cout << "test_ragdb_append_empty passed" << endl;
+}
+
+//
+// test: RagDB init_file truncates existing file
+//
+static void test_ragdb_init_truncates() {
+  const string path = "/tmp/hali_rag_trunc_test.rag";
+
+  /* write some junk first */
+  {
+    std::ofstream f(path, std::ios::binary);
+    f.write("JUNKJUNKJUNKJUNKJUNK", 20);
+  }
+  assert(std::filesystem::file_size(path) == 20);
+
+  /* init_file should truncate to 16-byte header */
+  RagDB db;
+  db.embed_dim = 8;
+  assert(db.init_file(path));
+  assert(std::filesystem::file_size(path) == 16);
+
+  std::filesystem::remove(path);
+  cout << "test_ragdb_init_truncates passed" << endl;
+}
+
+//
+// test: RagSession init sets up seen vector and token budget
+//
+static void test_session_init() {
+  RagSession s;
+  s.init(10, 4096);
+
+  assert(s.seen.size() == 10);
+  assert(s.tokens_used == 0);
+  assert(s.tokens_max == 4096);
+
+  /* all entries start un-seen */
+  for (int i = 0; i < 10; i++) {
+    assert(!s.is_seen(i));
+  }
+
+  cout << "test_session_init passed" << endl;
+}
+
+//
+// test: RagSession reset clears seen flags and token count
+//
+static void test_session_reset() {
+  RagSession s;
+  s.init(5, 2048);
+
+  s.mark(0);
+  s.mark(2);
+  s.mark(4);
+  s.charge("hello world this is a test string");
+
+  assert(s.is_seen(0));
+  assert(s.is_seen(2));
+  assert(s.is_seen(4));
+  assert(s.tokens_used > 0);
+
+  s.reset();
+
+  assert(!s.is_seen(0));
+  assert(!s.is_seen(2));
+  assert(!s.is_seen(4));
+  assert(s.tokens_used == 0);
+  /* tokens_max is preserved */
+  assert(s.tokens_max == 2048);
+
+  cout << "test_session_reset passed" << endl;
+}
+
+//
+// test: RagSession mark and is_seen boundary safety
+//
+static void test_session_mark_bounds() {
+  RagSession s;
+  s.init(3, 1024);
+
+  /* valid indices */
+  s.mark(0);
+  s.mark(2);
+  assert(s.is_seen(0));
+  assert(s.is_seen(2));
+  assert(!s.is_seen(1));
+
+  /* out-of-range mark is a no-op (no crash) */
+  s.mark(99);
+  s.mark(-1);
+
+  /* out-of-range is_seen returns false */
+  assert(!s.is_seen(99));
+  assert(!s.is_seen(-1));
+
+  cout << "test_session_mark_bounds passed" << endl;
+}
+
+//
+// test: RagSession budget_ok with zero max (unlimited)
+//
+static void test_session_budget_unlimited() {
+  RagSession s;
+  s.init(5, 0);  /* tokens_max = 0 means unlimited */
+
+  /* any text should pass */
+  assert(s.budget_ok(string(10000, 'x')));
+
+  cout << "test_session_budget_unlimited passed" << endl;
+}
+
+//
+// test: RagSession budget_ok with finite max
+//
+static void test_session_budget_finite() {
+  RagSession s;
+  s.init(5, 100);  /* 100 token budget */
+
+  /* 400 chars / 4 = 100 tokens; threshold is 85% of 100 = 85 */
+  /* so 400 chars would be 100 tokens, which is NOT < 85 */
+  assert(!s.budget_ok(string(400, 'a')));
+
+  /* 100 chars / 4 = 25 tokens; 25 < 85, so OK */
+  assert(s.budget_ok(string(100, 'a')));
+
+  /* after charging, budget shrinks */
+  s.charge(string(300, 'a'));  /* 75 tokens used */
+  /* 75 + 25 = 100, NOT < 85 */
+  assert(!s.budget_ok(string(100, 'a')));
+
+  /* 75 + 0 = 75 < 85, empty string is OK */
+  assert(s.budget_ok(""));
+
+  cout << "test_session_budget_finite passed" << endl;
+}
+
+//
+// test: RagSession charge accumulates token estimates
+//
+static void test_session_charge() {
+  RagSession s;
+  s.init(5, 10000);
+
+  assert(s.tokens_used == 0);
+
+  s.charge(string(40, 'a'));   /* 40/4 = 10 tokens */
+  assert(s.tokens_used == 10);
+
+  s.charge(string(80, 'b'));   /* 80/4 = 20 tokens */
+  assert(s.tokens_used == 30);
+
+  s.charge(string(4, 'c'));    /* 4/4 = 1 token */
+  assert(s.tokens_used == 31);
+
+  cout << "test_session_charge passed" << endl;
+}
+
+//
+// test: RagSession score_threshold default
+//
+static void test_session_score_threshold() {
+  RagSession s;
+  assert(s.score_threshold == 0.60f);
+
+  s.score_threshold = 0.75f;
+  assert(s.score_threshold == 0.75f);
+
+  cout << "test_session_score_threshold passed" << endl;
+}
+
 void rag_test() {
   test_prose_empty();
   test_prose_too_short();
@@ -376,4 +638,14 @@ void rag_test() {
   test_library_save_load_dir();
   test_library_load_dir_missing();
   test_retrieve_multi_empty();
+  test_ragdb_incremental_io();
+  test_ragdb_append_empty();
+  test_ragdb_init_truncates();
+  test_session_init();
+  test_session_reset();
+  test_session_mark_bounds();
+  test_session_budget_unlimited();
+  test_session_budget_finite();
+  test_session_charge();
+  test_session_score_threshold();
 }
