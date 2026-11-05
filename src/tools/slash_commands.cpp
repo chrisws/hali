@@ -14,6 +14,7 @@
 #include <filesystem>
 #include <fstream>
 #include <functional>
+#include <set>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -755,6 +756,38 @@ static std::string pick_source(Tui &tui, const std::string &arg,
 }
 
 //
+// Discover .zim files from sandbox, sandbox/kiwix/, and extra_dirs.
+//
+static std::vector<std::string> discover_zim_files(const HaliConfig &cfg) {
+  std::vector<std::string> results;
+  std::set<std::string> seen;
+
+  auto scan_dir = [&](const std::string &dir) {
+    std::error_code ec;
+    if (!fs::exists(dir, ec) || !fs::is_directory(dir, ec)) {
+      return;
+    }
+    for (auto &entry : fs::directory_iterator(dir, ec)) {
+      if (entry.is_regular_file() && entry.path().extension() == ".zim") {
+        std::string p = entry.path().string();
+        if (seen.insert(p).second) {
+          results.push_back(p);
+        }
+      }
+    }
+  };
+
+  scan_dir(cfg.sandbox_);
+  scan_dir(cfg.sandbox_ + "/kiwix");
+  for (const auto &d : cfg.extra_dirs_) {
+    scan_dir(d);
+  }
+
+  std::sort(results.begin(), results.end());
+  return results;
+}
+
+//
 // /index [name|remove <name>|load|unload <name>|help]
 //
 static void slash_index(const std::string &rest, HaliConfig &cfg, Agent &agent, Tui &tui) {
@@ -819,27 +852,63 @@ static void slash_index(const std::string &rest, HaliConfig &cfg, Agent &agent, 
   if (sub == "load") {
     auto labels = km.indexed_labels();
     auto ids = km.indexed_ids();
-    labels.push_back("Pick a .zim file…");
-    int idx = tui.list_picker(labels, "Knowledge index");
+    auto zim_files = discover_zim_files(cfg);
+
+    // Build combined picker: indexed sources first, then .zim files
+    std::vector<std::string> picker_labels;
+    picker_labels.reserve(labels.size() + zim_files.size());
+    for (const auto &l : labels) {
+      picker_labels.push_back(l);
+    }
+    for (const auto &z : zim_files) {
+      picker_labels.push_back(z);
+    }
+
+    if (picker_labels.empty()) {
+      tui.append_line(ICON_SYS + "No indexed sources or .zim files found.");
+      tui.redraw_all();
+      return;
+    }
+
+    int idx = tui.list_picker(picker_labels, "Knowledge index");
     if (idx < 0) {
       tui.redraw_all();
       return;
     }
-    if (idx == (int)ids.size()) {
-      std::string zim_path = tui.file_picker(cfg.sandbox_, "Select .zim file");
-      if (zim_path.empty()) {
-        tui.redraw_all();
-        return;
+
+    if (idx < (int)ids.size()) {
+      // Picked an already-indexed source
+      sub = ids[idx];
+      if (km.load(sub)) {
+        tui.append_line(ICON_SYS + "Loaded: " + sub);
+      } else {
+        tui.append_line(ICON_ERR + "Failed to load: " + sub);
       }
-      index_zim_file(zim_path, agent, tui, progress, km);
+      tui.redraw_all();
       return;
     }
-    sub = ids[idx];
-    if (km.load(sub)) {
-      tui.append_line(ICON_SYS + "Loaded: " + sub);
+
+    // Picked a .zim file to index
+    std::string zim_path = zim_files[idx - (int)ids.size()];
+
+    // Ask for optional topic filter
+    std::string topics = tui.text_editor("Topics (optional)", "");
+
+    // Hand off to agent
+    std::string prompt;
+    if (!topics.empty()) {
+      prompt = "Please index the ZIM file at " + zim_path + ". "
+               "First, write the following topic keywords to .hali/topics.txt "
+               "(one keyword per line):\n" + topics + "\n"
+               "Then call TOOL:RAGINDEX " + zim_path;
     } else {
-      tui.append_line(ICON_ERR + "Failed to load: " + sub);
+      prompt = "Please index the ZIM file at " + zim_path +
+               " by calling TOOL:RAGINDEX " + zim_path;
     }
+
+    tui.append_line(ICON_SYS + "Submitting to agent…");
+    tui.redraw_all();
+    agent.run_turn(prompt);
     tui.redraw_all();
     return;
   }

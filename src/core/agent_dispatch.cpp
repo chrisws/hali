@@ -612,6 +612,9 @@ ToolMap Agent::build_tool_dispatch() {
     tui_.show_tool("raginfo");
     return rag_inspect();
   };
+  tools["TOOL:RAGINDEX"] = [this](const std::string &a1, const std::string &a2) -> std::string {
+    return handle_ragindex(utils::trim(a1));
+  };
   tools["TOOL:LIST"] = [this](const std::string &a1, const std::string &a2) -> std::string {
     std::string dir = utils::resolve_path(cfg_.sandbox_, a1);
     if (!utils::path_allowed(cfg_.sandbox_, cfg_.extra_dirs_, dir)) {

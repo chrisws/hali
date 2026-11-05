@@ -129,6 +129,7 @@ struct Agent {
   std::string handle_gui(const std::string &a1, const std::string &a2);
   std::string rag_tool(const std::string &agent_query);
   std::string rag_inspect() const;
+  std::string handle_ragindex(const std::string &zim_path);
   std::string restart();
   double elapsed_seconds() const;
   float tokens_per_sec() const;

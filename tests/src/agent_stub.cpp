@@ -53,6 +53,10 @@ std::string Agent::rag_tool(const std::string &query) {
   return "";
 }
 
+std::string Agent::handle_ragindex(const std::string &zim_path) {
+  return "";
+}
+
 std::string Agent::restart() {
   return "";
 }std::string Agent::rag_inspect() const {

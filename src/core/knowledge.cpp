@@ -44,6 +44,10 @@ bool KnowledgeManager::setup_embed(const std::string &path, Tui &tui) {
   }
   tui.dismiss_modal_popup();
   tui.append_line(ICON_SYS + "Embedding model ready.");
+  int loaded = load_all();
+  if (loaded > 0) {
+    tui.append_line(ICON_SYS + std::to_string(loaded) + " index(es) loaded from disk.");
+  }
   tui.redraw_all();
   return true;
 }
@@ -204,7 +208,7 @@ std::string KnowledgeManager::inspect(int top_k) const {
           const auto &s = src->stats;
           int skipped = s.skip_unreadable + s.skip_short_raw +
                         s.skip_redirect + s.skip_short_stripped +
-                        s.skip_no_chunks;
+                        s.skip_no_chunks + s.skip_filtered;
           oss << "      files: " << s.total_files
               << " | redirects resolved: " << s.resolved_redirects
               << " | skipped: " << skipped;
@@ -218,6 +222,8 @@ std::string KnowledgeManager::inspect(int top_k) const {
             oss << " (" << s.skip_no_chunks << " no-chunks)";
           if (s.skip_unreadable > 0)
             oss << " (" << s.skip_unreadable << " unreadable)";
+          if (s.skip_filtered > 0)
+            oss << " (" << s.skip_filtered << " filtered)";
           oss << "\n";
         }
       }
@@ -280,6 +286,7 @@ bool KnowledgeManager::load_index_json() {
       st.get_int("skip_redirect",       src.stats.skip_redirect);
       st.get_int("skip_short_stripped", src.stats.skip_short_stripped);
       st.get_int("skip_no_chunks",      src.stats.skip_no_chunks);
+      st.get_int("skip_filtered",       src.stats.skip_filtered);
     }
     if (!src.id.empty()) {
       indexed_.push_back(std::move(src));
@@ -314,7 +321,8 @@ bool KnowledgeManager::save_index_json() const {
     out << "        \"skip_short_raw\": "      << s.stats.skip_short_raw      << ",\n";
     out << "        \"skip_redirect\": "       << s.stats.skip_redirect       << ",\n";
     out << "        \"skip_short_stripped\": " << s.stats.skip_short_stripped << ",\n";
-    out << "        \"skip_no_chunks\": "      << s.stats.skip_no_chunks      << "\n";
+    out << "        \"skip_no_chunks\": "      << s.stats.skip_no_chunks      << ",\n";
+    out << "        \"skip_filtered\": "       << s.stats.skip_filtered       << "\n";
     out << "      }\n";
     out << "    }";
   }

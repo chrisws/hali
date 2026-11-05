@@ -31,6 +31,7 @@ struct BuildStats {
   int skip_short_stripped = 0;
   int skip_no_chunks      = 0;
   int skip_duplicate      = 0;
+  int skip_filtered       = 0;
 };
 
 //
@@ -154,7 +155,9 @@ struct KnowledgeManager {
                        Llama &llama,
                        Tui &tui,
                        const ProgressFn &progress,
-                       std::string *error = nullptr);
+                       std::string *error = nullptr,
+                       const std::string &filter_path = "",
+                       bool append = false);
 
   //
   // (private) save rag file reference and update index JSON with stats

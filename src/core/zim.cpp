@@ -286,6 +286,75 @@ static std::vector<fs::path> collect_text_files(const std::string &dir) {
   return files;
 }
 
+//
+// Load a topic filter file. One keyword per line or comma-separated.
+// Skips blank lines and # comments. Returns empty vector if file missing.
+//
+static std::vector<std::string> load_filter_file(const std::string &path) {
+  std::vector<std::string> keywords;
+  std::ifstream f(path);
+  if (!f) {
+    return keywords;
+  }
+  std::string line;
+  while (std::getline(f, line)) {
+    line = utils::trim(line);
+    if (line.empty() || line[0] == '#') {
+      continue;
+    }
+    size_t pos = 0;
+    while ((pos = line.find(',')) != std::string::npos) {
+      auto kw = utils::trim(line.substr(0, pos));
+      if (!kw.empty()) {
+        keywords.push_back(kw);
+      }
+      line.erase(0, pos + 1);
+    }
+    auto kw = utils::trim(line);
+    if (!kw.empty()) {
+      keywords.push_back(kw);
+    }
+  }
+  return keywords;
+}
+
+//
+// Check if an article title matches any keyword in the filter list.
+// Matching: case-insensitive word-prefix on underscore-delimited words.
+// "health" matches "Health", "Healthcare", "Public_health" but not "Unhealthy".
+//
+static bool title_matches_filter(const std::string &filename,
+                                  const std::vector<std::string> &keywords) {
+  std::string title = filename;
+  auto dot = title.rfind('.');
+  if (dot != std::string::npos) {
+    title.erase(dot);
+  }
+  for (auto &c : title) {
+    c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+  }
+
+  std::vector<std::string> words;
+  size_t start = 0;
+  for (size_t i = 0; i <= title.size(); i++) {
+    if (i == title.size() || title[i] == '_') {
+      if (i > start) {
+        words.push_back(title.substr(start, i - start));
+      }
+      start = i + 1;
+    }
+  }
+
+  for (const auto &kw : keywords) {
+    for (const auto &w : words) {
+      if (w == kw || w.rfind(kw, 0) == 0) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
 bool KnowledgeManager::zim_save_and_index(const std::string &id,
                                           const std::string &zim_path,
                                           int total_chunks,
@@ -353,7 +422,9 @@ bool KnowledgeManager::build_from_path(const std::string &zim_path,
                                        Llama &llama,
                                        Tui &tui,
                                        const ProgressFn &progress,
-                                       std::string *error) {
+                                       std::string *error,
+                                       const std::string &filter_path,
+                                       bool append) {
   auto fail = [progress, error](const std::string &msg) {
     if (progress) {
       progress(msg);
@@ -376,11 +447,25 @@ bool KnowledgeManager::build_from_path(const std::string &zim_path,
   fs::path zp(zim_path);
   const std::string id = zp.stem().string();
 
+  uint32_t existing_chunks = 0;
   if (rag_exists(id)) {
-    if (progress) {
-      progress("already indexed: " + id);
+    if (!append) {
+      if (progress) {
+        progress("already indexed: " + id);
+      }
+      return true;
     }
-    return true;
+    // Append mode: read existing chunk count from header
+    {
+      std::ifstream hf(rag_path(id), std::ios::binary);
+      if (hf) {
+        hf.seekg(8);
+        hf.read((char*)&existing_chunks, 4);
+      }
+      if (progress) {
+        progress(std::format("appending to existing index ({} chunks)", existing_chunks));
+      }
+    }
   }
 
   // Phase 1: Extract
@@ -389,7 +474,7 @@ bool KnowledgeManager::build_from_path(const std::string &zim_path,
   run_with_spinner(tui, [&]() -> std::string {
     disk_count = zim_extract(zim_path, id, progress, extract_dir);
     return "";
-  }, "extracting " + zim_path);
+  }, "extracting");
   if (disk_count == 0) {
     fail("zimdump produced no files");
     return false;
@@ -402,14 +487,43 @@ bool KnowledgeManager::build_from_path(const std::string &zim_path,
     return false;
   }
 
+  // Topic filter: match article titles against keyword list
+  int skip_filtered = 0;
+  if (!filter_path.empty()) {
+    auto keywords = load_filter_file(filter_path);
+    if (!keywords.empty()) {
+      std::vector<fs::path> filtered;
+      filtered.reserve(text_files.size());
+      for (const auto &f : text_files) {
+        if (title_matches_filter(f.filename().string(), keywords)) {
+          filtered.push_back(f);
+        } else {
+          skip_filtered++;
+        }
+      }
+      text_files = std::move(filtered);
+      if (log_is_enabled(LEVEL_DEBUG)) {
+        log_write(LEVEL_DEBUG, "zim", "topic filter: %zu keywords, %d files skipped",
+                  keywords.size(), skip_filtered);
+      }
+    }
+  }
+
+  if (text_files.empty()) {
+    fail("no files matched topic filter");
+    fs::remove_all(extract_dir);
+    return false;
+  }
+
   if (log_is_enabled(LEVEL_DEBUG)) {
     log_write(LEVEL_DEBUG, "zim", "build_from_path: %zu text files found in %s",
               text_files.size(), extract_dir.c_str());
   }
 
   if (progress) {
-    progress(std::format("found {} text files, embedding in batches ...",
-                         text_files.size()));
+    progress(std::format("found {} text files{} embedding in batches ...",
+                         text_files.size(),
+                         skip_filtered > 0 ? std::format(" ({} filtered)", skip_filtered) : ""));
   }
 
   // Clear case-insensitive cache from any previous build
@@ -422,10 +536,12 @@ bool KnowledgeManager::build_from_path(const std::string &zim_path,
 
   RagDB batch_db;
   batch_db.embed_dim = llama.get_embed_dim();
-  if (!batch_db.init_file(rag_file)) {
-    fail("failed to init " + rag_file);
-    fs::remove_all(extract_dir);
-    return false;
+  if (!append) {
+    if (!batch_db.init_file(rag_file)) {
+      fail("failed to init " + rag_file);
+      fs::remove_all(extract_dir);
+      return false;
+    }
   }
 
   int total_chunks = 0;
@@ -531,7 +647,7 @@ bool KnowledgeManager::build_from_path(const std::string &zim_path,
   tui.dismiss_progress_modal();
 
   // Finalize the .rag file header with the real chunk count
-  RagDB::finalize_file(rag_file, (uint32_t)total_chunks);
+  RagDB::finalize_file(rag_file, existing_chunks + (uint32_t)total_chunks);
 
   // Clean up extraction directory and cache
   fs::remove_all(extract_dir);
@@ -581,5 +697,6 @@ bool KnowledgeManager::build_from_path(const std::string &zim_path,
   bstats.skip_short_stripped = skip_short_stripped;
   bstats.skip_no_chunks      = skip_no_chunks;
   bstats.skip_duplicate      = skip_duplicate;
-  return zim_save_and_index(id, zim_path, total_chunks, bstats, progress);
+  bstats.skip_filtered       = skip_filtered;
+  return zim_save_and_index(id, zim_path, (int)(existing_chunks + (uint32_t)total_chunks), bstats, progress);
 }

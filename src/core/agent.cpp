@@ -226,6 +226,32 @@ std::string Agent::rag_inspect() const {
   return knowledge_.inspect(cfg_.rag_top_k_);
 }
 
+std::string Agent::handle_ragindex(const std::string &zim_path) {
+  if (zim_path.empty()) {
+    return "ERROR: usage: TOOL:RAGINDEX <zim_file_path>";
+  }
+  tui_.show_tool("ragindex: " + zim_path);
+  if (!embed_model()) {
+    return "ERROR: no embedding model loaded. Use /embed first.";
+  }
+  const std::string filter_path = cfg_.sandbox_ + "/.hali/topics.txt";
+  std::string err;
+  auto progress = [this](const std::string &msg) {
+    tui_.show_tool(msg);
+  };
+  bool ok = knowledge_.build_from_path(zim_path, *embed_model(), tui_,
+                                        progress, &err, filter_path, true);
+  if (ok) {
+    fs::path zp(zim_path);
+    std::string id = zp.stem().string();
+    if (!knowledge_.load(id)) {
+      return "ERROR: indexed but failed to load " + id;
+    }
+    return "OK: indexed and loaded " + id;
+  }
+  return "ERROR: " + err;
+}
+
 bool Agent::rag_load_index(const std::string &path) {
   return knowledge_.load_bin(path, tui_);
 }

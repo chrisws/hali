@@ -500,6 +500,52 @@ static void test_strip_html() {
   std::cout << "test_strip_html passed" << std::endl;
 }
 
+//
+// test: inspect() includes skip_filtered in stats output
+//
+static void test_km_inspect_skip_filtered() {
+  const std::string dir = "/tmp/hali_km_test_inspect";
+  fs::remove_all(dir);
+  fs::create_directories(dir);
+  const std::string json_path = dir + "/kiwix-index.json";
+
+  /* Write a JSON index with skip_filtered > 0 */
+  {
+    std::ofstream f(json_path);
+    f << "{\n  \"version\": \"1.0\",\n  \"sources\": [\n    {\n"
+      << "      \"id\": \"testzim\",\n"
+      << "      \"title\": \"Test ZIM\",\n"
+      << "      \"zim_path\": \"/tmp/test.zim\",\n"
+      << "      \"rag_path\": \"/tmp/test.rag\",\n"
+      << "      \"chunks\": 100,\n"
+      << "      \"indexed_at\": \"2026-01-01\",\n"
+      << "      \"stats\": {\n"
+      << "        \"total_files\": 200,\n"
+      << "        \"resolved_redirects\": 10,\n"
+      << "        \"skip_unreadable\": 0,\n"
+      << "        \"skip_short_raw\": 0,\n"
+      << "        \"skip_redirect\": 0,\n"
+      << "        \"skip_short_stripped\": 0,\n"
+      << "        \"skip_no_chunks\": 0,\n"
+      << "        \"skip_filtered\": 5\n"
+      << "      }\n    }\n  ]\n}\n";
+  }
+
+  KnowledgeManager km;
+  km.set_index_json_path(json_path);
+  assert(km.load_index_json());
+
+  /* Verify skip_filtered was loaded from JSON */
+  const IndexedSource *src = km.find("testzim");
+  assert(src != nullptr);
+  assert(src->stats.skip_filtered == 5);
+
+  /* Cleanup */
+  fs::remove_all(dir);
+
+  std::cout << "test_km_inspect_skip_filtered passed" << std::endl;
+}
+
 void knowledge_test() {
   test_km_paths();
   test_km_load_index_missing();
@@ -517,4 +563,5 @@ void knowledge_test() {
   test_parallel_read_chunk();
   test_parallel_read_skips_small();
   test_strip_html();
+  test_km_inspect_skip_filtered();
 }
