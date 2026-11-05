@@ -19,8 +19,7 @@ struct Tui;
 // Run a callable in a background thread, ticking the TUI spinner while waiting.
 // Use for any tool operation that may block for >2 seconds.
 //
-std::string run_with_spinner(Tui &tui, const std::function<std::string()> &fn,
-                             const std::string &label = "");
+std::string run_with_spinner(Tui &tui, const std::function<std::string()> &fn);
 
 bool hasDangerousPatterns(const std::string &command, const std::vector<std::string> &run_allowed);
 

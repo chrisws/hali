@@ -31,16 +31,11 @@ namespace fs = std::filesystem;
 //
 // Run a callable in a background thread, ticking the TUI spinner while waiting.
 //
-std::string run_with_spinner(Tui &tui, const std::function<std::string()> &fn,
-                             const std::string &label) {
-  if (!label.empty()) {
-    tui.set_spinner_label(label);
-  }
+std::string run_with_spinner(Tui &tui, const std::function<std::string()> &fn) {
   auto fut = std::async(std::launch::async, fn);
   while (fut.wait_for(std::chrono::milliseconds(100)) == std::future_status::timeout) {
     tui.tick_spinner();
   }
-  tui.set_spinner_label("");
   return fut.get();
 }
 

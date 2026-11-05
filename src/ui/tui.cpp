@@ -253,13 +253,12 @@ void Tui::redraw_header() const {
 
   static const char *const SPIN[] = { "⣾","⣽","⣻","⢿","⡿","⣟","⣯","⣷" };
   const char *spin_str = thinking_ ? SPIN[spinner_frame_ % 8] : " ";
-  const char *label_str = (thinking_ && !spinner_label_.empty()) ? spinner_label_.c_str() : "";
   char buf[512];
   int n = std::snprintf(buf, sizeof(buf),
-                        " 🪶 HALI │ %-32s │ %5.1f tok/s │ KV %4.1f%% │ VRAM %4.1f%% %s  %s %s",
+                        " 🪶 HALI │ %-32s │ %5.1f tok/s │ KV %4.1f%% │ VRAM %4.1f%% %s  %s",
                         current_model_.c_str(), static_cast<double>(tokens_per_sec_),
                         static_cast<double>(kv_pct), static_cast<double>(vram_pct),
-                        mode_str_.c_str(), spin_str, label_str);
+                        mode_str_.c_str(), spin_str);
   if (n > term_cols_) buf[term_cols_] = '\0';
 
   // Apply header text color from theme
@@ -438,15 +437,10 @@ void Tui::set_thinking(bool on) {
   thinking_ = on;
   if (!on) {
     spinner_frame_ = 0;
-    spinner_label_.clear();
   }
   redraw_header();
   redraw_input();
   notcurses_render(nc_);
-}
-
-void Tui::set_spinner_label(const std::string &label) {
-  spinner_label_ = label;
 }
 
 void Tui::update_usage(float tokens_sec, const LlamaMemoryInfo &mem) {
