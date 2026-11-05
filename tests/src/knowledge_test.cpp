@@ -441,60 +441,71 @@ static void test_strip_html() {
   /* <style> block removal */
   {
     std::string in = "Hello <style>body { color: red; }</style> World";
-    assert(strip_html(in) == "Hello World");
+    strip_html(in);
+    assert(in == "Hello World");
   }
 
   /* <script> block removal */
   {
     std::string in = "Foo <script>var x = 1;</script> Bar";
-    assert(strip_html(in) == "Foo Bar");
+    strip_html(in);
+    assert(in == "Foo Bar");
   }
 
   /* <table> block removal */
   {
     std::string in = "A <table><tr><td>1</td></tr></table> B";
-    assert(strip_html(in) == "A B");
+    strip_html(in);
+    assert(in == "A B");
   }
 
   /* Generic tag stripping */
   {
     std::string in = "<p>Hello <b>world</b></p>";
-    assert(strip_html(in) == "Hello world");
+    strip_html(in);
+    assert(in == "Hello world");
   }
 
   /* Entity decoding */
   {
     std::string in = "R&amp;D &lt;tag&gt; &quot;quoted&quot; &#39;single&#39;";
-    assert(strip_html(in) == "R&D <tag> \"quoted\" 'single'");
+    strip_html(in);
+    assert(in == "R&D <tag> \"quoted\" 'single'");
   }
 
   /* &nbsp; decodes to space */
   {
     std::string in = "a&nbsp;b";
-    assert(strip_html(in) == "a b");
+    strip_html(in);
+    assert(in == "a b");
   }
 
   /* Whitespace collapsing */
   {
     std::string in = "Hello\n\n   World\t\t!";
-    assert(strip_html(in) == "Hello World !");
+    strip_html(in);
+    assert(in == "Hello World !");
   }
 
   /* Empty input */
   {
-    assert(strip_html("") == "");
+    std::string in = "";
+    strip_html(in);
+    assert(in == "");
   }
 
   /* Clean text passthrough */
   {
     std::string in = "Just plain text here";
-    assert(strip_html(in) == "Just plain text here");
+    strip_html(in);
+    assert(in == "Just plain text here");
   }
 
   /* Multiple blocks combined */
   {
     std::string in = "<style>a{}</style>Text<script>x()</script>More<table><td>z</td></table>End";
-    assert(strip_html(in) == "TextMoreEnd");
+    strip_html(in);
+    assert(in == "TextMoreEnd");
   }
 
   std::cout << "test_strip_html passed" << std::endl;

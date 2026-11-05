@@ -131,10 +131,13 @@ struct CaseInsensitiveCache {
   std::mutex mutex;
   std::unordered_map<std::string,
                      std::unordered_map<std::string, fs::path>> dirs;
+  size_t total_entries = 0;
+  static constexpr size_t MAX_ENTRIES = 200000;
 
   void clear() {
     std::lock_guard<std::mutex> lock(mutex);
     dirs.clear();
+    total_entries = 0;
   }
 
   static std::string to_lower(const std::string &s) {
@@ -163,6 +166,27 @@ struct CaseInsensitiveCache {
           if (entry.is_regular_file()) {
             dir_map[to_lower(entry.path().filename().string())] =
               entry.path();
+            total_entries++;
+          }
+        }
+      }
+      // If cache has grown too large, clear it to bound memory.
+      // The next lookup will re-scan the directory.
+      if (total_entries > MAX_ENTRIES) {
+        dirs.clear();
+        total_entries = 0;
+        // Re-insert just this directory so the current lookup succeeds
+        dir_map = dirs[key];
+        // Re-scan this one directory
+        dir_map.clear();
+        std::error_code ec2;
+        if (fs::is_directory(parent, ec2)) {
+          for (const auto &entry : fs::directory_iterator(parent, ec2)) {
+            if (entry.is_regular_file()) {
+              dir_map[to_lower(entry.path().filename().string())] =
+                entry.path();
+              total_entries++;
+            }
           }
         }
       }
@@ -474,7 +498,7 @@ bool KnowledgeManager::build_from_path(const std::string &zim_path,
   run_with_spinner(tui, [&]() -> std::string {
     disk_count = zim_extract(zim_path, id, progress, extract_dir);
     return "";
-  }, "extracting");
+  });
   if (disk_count == 0) {
     fail("zimdump produced no files");
     return false;
@@ -502,6 +526,9 @@ bool KnowledgeManager::build_from_path(const std::string &zim_path,
         }
       }
       text_files = std::move(filtered);
+      /* Release excess capacity from the pre-filter vector so we
+       * don't hold RAM for files we just excluded. */
+      text_files.shrink_to_fit();
       if (log_is_enabled(LEVEL_DEBUG)) {
         log_write(LEVEL_DEBUG, "zim", "topic filter: %zu keywords, %d files skipped",
                   keywords.size(), skip_filtered);
@@ -609,7 +636,7 @@ bool KnowledgeManager::build_from_path(const std::string &zim_path,
         continue;
       }
 
-      content = utils::strip_html(content);
+      utils::strip_html(content);
       if (content.size() < 80) {
         skip_short_stripped++;
         continue;

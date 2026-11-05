@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <numeric>
@@ -361,12 +362,12 @@ static bool chunk_prose(const std::string &text,
 }
 
 //
-// cosine similarity (vectors already L2-normalized)
+// cosine similarity (vectors already L2-normalized).
+// Takes raw pointers so it works with both heap vectors
+// (embedding.data()) and mmap pointers (embedding_ptr).
 //
-static float rag_cosine(const std::vector<float> &a,
-                        const std::vector<float> &b) {
+static float rag_cosine(const float *a, const float *b, size_t n) {
   float dot = 0.0f;
-  size_t n = std::min(a.size(), b.size());
   for (size_t i = 0; i < n; i++) {
     dot += a[i] * b[i];
   }
@@ -465,7 +466,8 @@ std::string Llama::rag_retrieve(const RagDB &db,
   std::iota(order.begin(), order.end(), 0);
   std::vector<float> scores(db.size());
   for (int i = 0; i < db.size(); i++) {
-    scores[i] = rag_cosine(qvec, db.chunks[i].embedding);
+    scores[i] = rag_cosine(qvec.data(), db.chunks[i].get_embedding(),
+                           (size_t)db.embed_dim);
   }
   ranges::sort(order, [&](int a, int b){ return scores[a] > scores[b]; });
 
@@ -551,7 +553,13 @@ bool RagDB::save(const std::string &path) const {
     write8(type_len);
     writestr(c.type, type_len);
 
-    f.write((char*)c.embedding.data(),
+    /* get_embedding() resolves to embedding_ptr (mmap) or
+     * embedding.data() (heap), so save works in both modes. */
+    const float *emb = c.get_embedding();
+    if (!emb) {
+      return false;
+    }
+    f.write((const char*)emb,
             (std::streamsize)(embed_dim * sizeof(float)));
   }
 
@@ -669,10 +677,106 @@ bool RagDB::load(const std::string &path) {
   return true;
 }
 
+//
+// Load a .rag file using mmap for embeddings.
+// Text/source/type are copied to RAM (small); embeddings are
+// accessed through the memory mapping so the OS can page them.
+//
+bool RagDB::load_mmap(const std::string &path) {
+#if defined(_WIN32)
+  return false; /* mmap not implemented for Windows yet */
+#else
+  int fd = ::open(path.c_str(), O_RDONLY);
+  if (fd < 0) {
+    return false;
+  }
+  struct stat st;
+  if (fstat(fd, &st) != 0) {
+    ::close(fd);
+    return false;
+  }
+  size_t fsize = (size_t)st.st_size;
+  if (fsize < 16) {
+    ::close(fd);
+    return false;
+  }
+
+  void *ptr = mmap(nullptr, fsize, PROT_READ, MAP_PRIVATE, fd, 0);
+  ::close(fd);
+  if (ptr == MAP_FAILED) {
+    return false;
+  }
+
+  const char *base = (const char *)ptr;
+
+  // Parse header
+  uint32_t magic, version, n, edim;
+  std::memcpy(&magic,   base + 0, 4);
+  std::memcpy(&version, base + 4, 4);
+  std::memcpy(&n,       base + 8, 4);
+  std::memcpy(&edim,    base + 12, 4);
+
+  if (magic != MAGIC || version != 2) {
+    munmap(ptr, fsize);
+    return false;
+  }
+
+  embed_dim = (int)edim;
+  chunks.reserve(n);
+
+  // Walk chunks, copying text/source/type, pointing embedding into mmap
+  size_t off = 16;
+  for (uint32_t i = 0; i < n; i++) {
+    if (off + 4 > fsize) break;
+    uint32_t text_len;
+    std::memcpy(&text_len, base + off, 4);
+    off += 4;
+
+    if (off + text_len > fsize) break;
+    RagChunk c;
+    c.text.assign(base + off, text_len);
+    off += text_len;
+
+    if (off + 2 > fsize) break;
+    uint16_t src_len;
+    std::memcpy(&src_len, base + off, 2);
+    off += 2;
+
+    if (off + src_len > fsize) break;
+    c.source.assign(base + off, src_len);
+    off += src_len;
+
+    if (off + 1 > fsize) break;
+    uint8_t type_len = (uint8_t)base[off];
+    off += 1;
+
+    if (off + type_len > fsize) break;
+    c.type.assign(base + off, type_len);
+    off += type_len;
+
+    size_t emb_bytes = edim * sizeof(float);
+    if (off + emb_bytes > fsize) break;
+    c.embedding_ptr = (const float *)(base + off);
+    off += emb_bytes;
+
+    chunks.push_back(std::move(c));
+  }
+
+  mmap_ptr  = ptr;
+  mmap_size = fsize;
+  mmap_path = path;
+  return true;
+#endif
+}
+
 /* ── RagLibrary ────────────────────────────────────────────── */
 
-bool RagLibrary::add(const std::string &name, RagDB db) {
+bool RagLibrary::add(const std::string &name, RagDB &&db) {
   if (name.empty()) {
+    return false;
+  }
+  if (max_total_chunks > 0 &&
+      total_chunks() + db.size() > max_total_chunks) {
     return false;
   }
   dbs[name] = std::move(db);
@@ -721,10 +825,21 @@ int RagLibrary::load_dir(const std::string &dir) {
 
     std::string name = entry.path().stem().string();
     RagDB db;
-    if (db.load(entry.path().string())) {
-      dbs[name] = std::move(db);
-      count++;
+    /* Prefer mmap: embeddings stay in the OS page cache instead of
+     * being copied to heap RAM. Falls back to heap load on failure
+     * (e.g. Windows, or I/O error). */
+    if (!db.load_mmap(entry.path().string())) {
+      if (!db.load(entry.path().string())) {
+        continue;
+      }
     }
+    /* respect total chunk cap */
+    if (max_total_chunks > 0 &&
+        total_chunks() + db.size() > max_total_chunks) {
+      continue;
+    }
+    dbs[name] = std::move(db);
+    count++;
   }
   return count;
 }

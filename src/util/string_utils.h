@@ -62,8 +62,9 @@ namespace utils {
   // Strip HTML markup, decode basic entities, collapse whitespace.
   // Removes <style>, <script>, <table> blocks entirely,
   // then all remaining tags, then decodes entities.
+  // Operates in-place on the provided string.
   //
-  std::string strip_html(const std::string &html);
+  void strip_html(std::string &html);
 
   //
   // Join two path strings with a '/' separator.

@@ -182,7 +182,7 @@ static void test_library_add_get() {
   c.embedding = {0.1f, 0.2f, 0.3f, 0.4f};
   db.chunks.push_back(c);
 
-  assert(lib.add("testdb", db));
+  assert(lib.add("testdb", std::move(db)));
   assert(lib.size() == 1);
   assert(!lib.empty());
   assert(lib.total_chunks() == 1);
@@ -213,7 +213,7 @@ static void test_library_remove() {
   c.embedding = {0.5f, 0.5f};
   db.chunks.push_back(c);
 
-  lib.add("toremove", db);
+  lib.add("toremove", std::move(db));
   assert(lib.size() == 1);
 
   assert(lib.remove("toremove"));
@@ -300,7 +300,7 @@ static void test_library_save_load_dir() {
   c.embedding = {0.1f, 0.2f, 0.3f};
   db.chunks.push_back(c);
 
-  lib.add("roundtrip", db);
+  lib.add("roundtrip", std::move(db));
 
   const string dir = "/tmp/hali_rag_test";
   /* clean up from previous runs */
@@ -352,7 +352,7 @@ static void test_retrieve_multi_empty() {
 
   /* library with only empty DBs */
   RagDB empty_db;
-  lib.add("empty", empty_db);
+  lib.add("empty", std::move(empty_db));
   assert(lib.size() == 1);
   assert(lib.total_chunks() == 0);
 

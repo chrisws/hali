@@ -194,64 +194,72 @@ static void remove_blocks(std::string &text,
 //
 // Strip HTML markup, decode basic entities, collapse whitespace
 //
-std::string strip_html(const std::string &html) {
-  std::string text = html;
+void strip_html(std::string &html) {
+  remove_blocks(html, "<style", "</style>");
+  remove_blocks(html, "<script", "</script>");
+  remove_blocks(html, "<table", "</table>");
 
-  remove_blocks(text, "<style", "</style>");
-  remove_blocks(text, "<script", "</script>");
-  remove_blocks(text, "<table", "</table>");
-
-  std::string result;
-  result.reserve(text.size() / 2);
-  for (size_t i = 0; i < text.size(); i++) {
-    if (text[i] == '<') {
-      size_t end = text.find('>', i);
-      if (end == std::string::npos) {
-        break;
+  // Strip tags in-place using write index
+  {
+    size_t w = 0;
+    for (size_t i = 0; i < html.size(); i++) {
+      if (html[i] == '<') {
+        size_t end = html.find('>', i);
+        if (end == std::string::npos) {
+          html.resize(w);
+          return;
+        }
+        i = end;
+        continue;
       }
-      i = end;
-      continue;
+      html[w++] = html[i];
     }
-    result += text[i];
+    html.resize(w);
   }
 
-  std::string decoded;
-  decoded.reserve(result.size());
-  for (size_t i = 0; i < result.size(); i++) {
-    if (result[i] == '&') {
-      if (result.compare(i, 5, "&amp;") == 0)   { decoded += '&';    i += 4; continue; }
-      if (result.compare(i, 4, "&lt;") == 0)    { decoded += '<';    i += 3; continue; }
-      if (result.compare(i, 4, "&gt;") == 0)    { decoded += '>';    i += 3; continue; }
-      if (result.compare(i, 6, "&quot;") == 0)  { decoded += '"';    i += 5; continue; }
-      if (result.compare(i, 5, "&#39;") == 0)   { decoded += '\'';   i += 4; continue; }
-      if (result.compare(i, 6, "&nbsp;") == 0)  { decoded += ' ';    i += 5; continue; }
-    }
-    decoded += result[i];
-  }
-
-  std::string out;
-  out.reserve(decoded.size());
-  bool in_space = false;
-  for (char c : decoded) {
-    if (isspace((unsigned char)c)) {
-      if (!in_space && !out.empty()) {
-        out += ' ';
+  // Decode entities in-place
+  {
+    size_t w = 0;
+    for (size_t i = 0; i < html.size(); i++) {
+      if (html[i] == '&') {
+        if (html.compare(i, 5, "&amp;") == 0)   { html[w++] = '&';    i += 4; continue; }
+        if (html.compare(i, 4, "&lt;") == 0)    { html[w++] = '<';    i += 3; continue; }
+        if (html.compare(i, 4, "&gt;") == 0)    { html[w++] = '>';    i += 3; continue; }
+        if (html.compare(i, 6, "&quot;") == 0)  { html[w++] = '"';    i += 5; continue; }
+        if (html.compare(i, 5, "&#39;") == 0)   { html[w++] = '\'';   i += 4; continue; }
+        if (html.compare(i, 6, "&nbsp;") == 0)  { html[w++] = ' ';    i += 5; continue; }
       }
-      in_space = true;
-    } else {
-      out += c;
-      in_space = false;
+      html[w++] = html[i];
     }
+    html.resize(w);
   }
 
-  while (!out.empty() && isspace((unsigned char)out.front())) {
-    out.erase(0, 1);
-  }
-  while (!out.empty() && isspace((unsigned char)out.back())) {
-    out.pop_back();
+  // Collapse whitespace in-place
+  {
+    size_t w = 0;
+    bool in_space = false;
+    for (size_t i = 0; i < html.size(); i++) {
+      char c = html[i];
+      if (isspace((unsigned char)c)) {
+        if (!in_space && w > 0) {
+          html[w++] = ' ';
+        }
+        in_space = true;
+      } else {
+        html[w++] = c;
+        in_space = false;
+      }
+    }
+    html.resize(w);
   }
 
-  return out;
+  // Trim leading/trailing whitespace
+  while (!html.empty() && isspace((unsigned char)html.front())) {
+    html.erase(0, 1);
+  }
+  while (!html.empty() && isspace((unsigned char)html.back())) {
+    html.pop_back();
+  }
 }
 
 //

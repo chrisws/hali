@@ -149,7 +149,7 @@ bool KnowledgeManager::index_path(const std::string &path, Tui &tui, const std::
   }
 
   std::string name = rp.stem().string();
-  library_.add(name, db);
+  library_.add(name, std::move(db));
 
   if (log_is_enabled(LEVEL_DEBUG)) {
     log_write(LEVEL_DEBUG, "zim", "index_path: %s -> %d chunks",

@@ -14,11 +14,28 @@
 #include <string>
 #include <vector>
 
+#if !defined(_WIN32)
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <unistd.h>
+#endif
+
 struct RagChunk {
   std::string        text;
   std::string        source;
   std::string        type;
   std::vector<float> embedding;
+  /* mmap mode: points into the memory-mapped file, avoiding a
+   * heap copy of the (potentially large) embedding vector. */
+  const float*       embedding_ptr = nullptr;
+
+  /* Unified accessor: returns the embedding from either the
+   * heap vector (normal load) or the mmap pointer (mmap load).
+   * This lets callers use one code path for both modes. */
+  const float* get_embedding() const {
+    return embedding_ptr ? embedding_ptr : embedding.data();
+  }
 };
 
 /* ── on-disk chunk (variable-length text) ──────────────────── */
@@ -42,7 +59,59 @@ struct RagDB {
   std::vector<RagChunk> chunks;
   int embed_dim = 0;
 
+  // mmap backend (set when loaded via load_mmap)
+  void*        mmap_ptr    = nullptr;
+  size_t       mmap_size   = 0;
+  std::string  mmap_path;
+
+  ~RagDB() {
+    if (mmap_ptr) {
+      #if defined(_WIN32)
+      UnmapViewOfFile(mmap_ptr);
+      #else
+      munmap(mmap_ptr, mmap_size);
+      #endif
+      mmap_ptr = nullptr;
+    }
+  }
+
+  /* Non-copyable: the mmap pointer must not be shared between
+   * two objects (double-munmap would crash). Movable so it can
+   * live in std::map<std::string, RagDB> via operator[] + move-assign. */
+  RagDB() = default;
+  RagDB(const RagDB &) = delete;
+  RagDB &operator=(const RagDB &) = delete;
+  RagDB(RagDB &&other) noexcept
+    : chunks(std::move(other.chunks)), embed_dim(other.embed_dim),
+      mmap_ptr(other.mmap_ptr), mmap_size(other.mmap_size),
+      mmap_path(std::move(other.mmap_path)) {
+    other.mmap_ptr = nullptr;
+    other.mmap_size = 0;
+  }
+  RagDB &operator=(RagDB &&other) noexcept {
+    if (this != &other) {
+      if (mmap_ptr) {
+        #if defined(_WIN32)
+        UnmapViewOfFile(mmap_ptr);
+        #else
+        munmap(mmap_ptr, mmap_size);
+        #endif
+      }
+      chunks = std::move(other.chunks);
+      embed_dim = other.embed_dim;
+      mmap_ptr = other.mmap_ptr;
+      mmap_size = other.mmap_size;
+      mmap_path = std::move(other.mmap_path);
+      other.mmap_ptr = nullptr;
+      other.mmap_size = 0;
+    }
+    return *this;
+  }
+
+  bool is_mmap() const { return mmap_ptr != nullptr; }
+
   bool load(const std::string &path);
+  bool load_mmap(const std::string &path);
   bool save(const std::string &path) const;
 
   //
@@ -105,8 +174,13 @@ struct RagSession {
  */
 struct RagLibrary {
   std::map<std::string, RagDB> dbs;
+  /* Memory cap: reject DBs that would push total chunks past this
+   * limit. Prevents unbounded RAM growth when loading many .rag
+   * files. 0 = unlimited (default). */
+  int max_total_chunks = 0;
 
-  bool add(const std::string &name, RagDB db);
+  /* Takes rvalue ref because RagDB is non-copyable (mmap pointer). */
+  bool add(const std::string &name, RagDB &&db);
   bool remove(const std::string &name);
   RagDB *get(const std::string &name);
   const RagDB *get(const std::string &name) const;
