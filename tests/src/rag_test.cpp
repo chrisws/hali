@@ -477,6 +477,59 @@ static void test_ragdb_init_truncates() {
 }
 
 //
+// test: init_file writes correct "RAGD" magic and version header
+// Regression: RAGINDEX was passing append=true, skipping init_file,
+// producing .rag files with no magic header that failed to load.
+//
+static void test_ragdb_magic_header() {
+  const string path = "/tmp/hali_rag_magic_test.rag";
+  std::filesystem::remove(path);
+
+  RagDB db;
+  db.embed_dim = 4;
+  assert(db.init_file(path));
+
+  /* Read back the 16-byte header and verify fields */
+  uint32_t magic = 0, version = 0, n_chunks = 0, dim = 0;
+  {
+    std::ifstream f(path, std::ios::binary);
+    f.read((char*)&magic, 4);
+    f.read((char*)&version, 4);
+    f.read((char*)&n_chunks, 4);
+    f.read((char*)&dim, 4);
+  }
+
+  assert(magic == 0x52414744u);   /* "RAGD" */
+  assert(version == 2);
+  assert(n_chunks == 0);
+  assert(dim == 4);
+
+  std::filesystem::remove(path);
+  cout << "test_ragdb_magic_header passed" << endl;
+}
+
+//
+// test: load() rejects a file with no magic header
+// Simulates the corrupted-file scenario where init_file was skipped.
+//
+static void test_ragdb_load_rejects_no_magic() {
+  const string path = "/tmp/hali_rag_no_magic.rag";
+  std::filesystem::remove(path);
+
+  /* Write a file that starts with raw text (no RAGD header) */
+  {
+    std::ofstream f(path, std::ios::binary);
+    f.write("this is not a valid rag file at all", 34);
+  }
+
+  RagDB db;
+  assert(!db.load(path));
+
+  std::filesystem::remove(path);
+  cout << "test_ragdb_load_rejects_no_magic passed" << endl;
+}
+
+//
 // test: RagSession init sets up seen vector and token budget
 //
 static void test_session_init() {
@@ -641,6 +694,8 @@ void rag_test() {
   test_ragdb_incremental_io();
   test_ragdb_append_empty();
   test_ragdb_init_truncates();
+  test_ragdb_magic_header();
+  test_ragdb_load_rejects_no_magic();
   test_session_init();
   test_session_reset();
   test_session_mark_bounds();

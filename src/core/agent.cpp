@@ -240,7 +240,7 @@ std::string Agent::handle_ragindex(const std::string &zim_path) {
     tui_.show_tool(msg);
   };
   bool ok = knowledge_.build_from_path(zim_path, *embed_model(), tui_,
-                                       progress, &err, filter_path, true);
+                                       progress, &err, filter_path, false);
   if (ok) {
     fs::path zp(zim_path);
     std::string id = zp.stem().string();
