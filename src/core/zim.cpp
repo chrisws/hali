@@ -277,35 +277,80 @@ std::vector<std::string> load_filter_file(const std::string &path) {
 }
 
 //
+// Normalize a string into a vector of lowercase alphanumeric word tokens.
+// All non-alphanumeric bytes (underscores, hyphens, dots, colons, commas,
+// parentheses, Unicode multi-byte sequences, etc.) act as delimiters.
+//
+//   "Half-Life_2:_Episode_One"  -> ["half","life","2","episode","one"]
+//   "Broad_Street_(England)"    -> ["broad","street","england"]
+//   "F*_(programming_language)" -> ["f","programming","language"]
+//   "Made_in_the_A.M."          -> ["made","in","the","a","m"]
+//   "house cat"                 -> ["house","cat"]
+//
+static std::vector<std::string> normalize_to_words(const std::string &s) {
+  std::vector<std::string> tokens;
+  std::string current;
+  for (unsigned char c : s) {
+    if (std::isalnum(c)) {
+      current += static_cast<char>(std::tolower(c));
+    } else {
+      if (!current.empty()) {
+        tokens.push_back(current);
+        current.clear();
+      }
+    }
+  }
+  if (!current.empty()) {
+    tokens.push_back(current);
+  }
+  return tokens;
+}
+
+//
+// Check if a single title word matches a keyword part:
+// exact match or prefix match.
+//
+static bool word_matches(const std::string &word, const std::string &part) {
+  return word == part;
+}
+
+//
 // Check if an article title matches any keyword in the filter list.
-// Matching: case-insensitive word-prefix on underscore-delimited words.
-// "health" matches "Health", "Healthcare", "Public_health" but not "Unhealthy".
+// Both the title and each keyword are normalised to lowercase alphanumeric
+// word tokens (all punctuation, underscores, Unicode, etc. are delimiters).
+// A keyword matches when its word tokens appear as a contiguous subsequence
+// in the title's word tokens, with per-word prefix matching.
+//
+//   "health"       matches "Health", "Healthcare", "Public_health_systems"
+//   "house cat"    matches "House_cat", "The_house_cat_of_Maine"
+//   "half-life"    matches "Half-Life_2:_Episode_One"
+//   "cat breed"    matches "Cat_breeds"
+//   "unhealthy"    does NOT match "Health"
 //
 bool title_matches_filter(const std::string &filename,
-                                 const std::vector<std::string> &keywords) {
-  std::string title = filename;
-  auto dot = title.rfind('.');
-  if (dot != std::string::npos) {
-    title.erase(dot);
-  }
-  for (auto &c : title) {
-    c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-  }
-
-  std::vector<std::string> words;
-  size_t start = 0;
-  for (size_t i = 0; i <= title.size(); i++) {
-    if (i == title.size() || title[i] == '_') {
-      if (i > start) {
-        words.push_back(title.substr(start, i - start));
-      }
-      start = i + 1;
-    }
+                          const std::vector<std::string> &keywords) {
+  std::vector<std::string> words = normalize_to_words(filename);
+  if (words.empty()) {
+    return false;
   }
 
   for (const auto &kw : keywords) {
-    for (const auto &w : words) {
-      if (w == kw || w.rfind(kw, 0) == 0) {
+    std::vector<std::string> kw_parts = normalize_to_words(kw);
+    if (kw_parts.empty()) {
+      continue;
+    }
+    if (kw_parts.size() > words.size()) {
+      continue;
+    }
+    for (size_t i = 0; i + kw_parts.size() <= words.size(); i++) {
+      bool all_match = true;
+      for (size_t j = 0; j < kw_parts.size(); j++) {
+        if (!word_matches(words[i + j], kw_parts[j])) {
+          all_match = false;
+          break;
+        }
+      }
+      if (all_match) {
         return true;
       }
     }
@@ -498,8 +543,7 @@ int KnowledgeManager::extract_zim_files(const std::string &zim_path,
         progress(std::format("found {} existing files in {}",
                              existing_files, extract_dir));
       }
-      bool overwrite = tui.confirm_dialog(
-        std::format("Extracted files exist for '{}'. Overwrite?", id));
+      bool overwrite = tui.confirm_dialog(std::format("Extracted files exist for '{}'. Overwrite?", id));
       if (!overwrite) {
         reuse_existing = true;
       }
@@ -576,15 +620,12 @@ bool KnowledgeManager::finalize_build(BuildContext &ctx,
     log_write(LEVEL_DEBUG, "zim", "finalize_build: id=%s files=%d chunks=%d",
               id.c_str(), disk_count, ctx.total_chunks);
   }
-  RagDB::finalize_file(ctx.rag_file,
-                       ctx.existing_chunks + (uint32_t)ctx.total_chunks);
+  RagDB::finalize_file(ctx.rag_file, ctx.existing_chunks + (uint32_t)ctx.total_chunks);
   g_case_cache.clear();
 
   // Prompt user to clear extracted files
   if (!ctx.extract_dir.empty() && fs::is_directory(ctx.extract_dir)) {
-    bool clear = tui.confirm_dialog(
-      std::format("Clear extracted files for '{}'? ({} files)",
-                  id, disk_count));
+    bool clear = tui.confirm_dialog(std::format("Clear extracted files for '{}'? ({} files)", id, disk_count));
     if (clear) {
       shell_remove_all(ctx.extract_dir);
     }
@@ -634,8 +675,7 @@ void KnowledgeManager::report_build_stats(const std::vector<fs::path> &text_file
   }
 
   if (progress) {
-    progress(std::format(
-                         "index stats: {} files | {} redirects resolved | "
+    progress(std::format("index stats: {} files | {} redirects resolved | "
                          "skipped: {} unreadable, {} short-raw, {} redirect, "
                          "{} short-stripped, {} no-chunks, {} duplicate | "
                          "{} chunks produced",
@@ -666,6 +706,7 @@ bool KnowledgeManager::build_from_path(const std::string &zim_path,
     if (error) {
       *error = msg;
     }
+    log_write(LEVEL_ERROR, "zim", msg.c_str());
   };
 
   if (!fs::exists(zim_path)) {
@@ -698,8 +739,16 @@ bool KnowledgeManager::build_from_path(const std::string &zim_path,
     {
       std::ifstream hf(ctx.rag_file, std::ios::binary);
       if (hf) {
-        hf.seekg(8);
-        hf.read((char*)&ctx.existing_chunks, 4);
+        /* Validate magic before trusting the chunk count */
+        uint32_t magic = 0;
+        hf.seekg(0);
+        hf.read((char*)&magic, 4);
+        if (magic == 0x52414744u) {
+          hf.seekg(8);
+          hf.read((char*)&ctx.existing_chunks, 4);
+        } else {
+          ctx.existing_chunks = 0;
+        }
       }
       if (progress) {
         progress(std::format("appending to existing index ({} chunks)",
@@ -740,8 +789,8 @@ bool KnowledgeManager::build_from_path(const std::string &zim_path,
     progress(std::format("found {} text files{} embedding in batches ...",
                          text_files.size(),
                          ctx.skip_filtered > 0
-                           ? std::format(" ({} filtered)", ctx.skip_filtered)
-                           : ""));
+                         ? std::format(" ({} filtered)", ctx.skip_filtered)
+                         : ""));
   }
 
   // Clear case-insensitive cache from any previous build
@@ -795,6 +844,7 @@ bool KnowledgeManager::batch_embed(const std::vector<fs::path> &files,
     if (error) {
       *error = msg;
     }
+    log_write(LEVEL_ERROR, "zim", msg.c_str());  
   };
 
   constexpr int BATCH_SIZE = 50;
@@ -821,7 +871,6 @@ bool KnowledgeManager::batch_embed(const std::vector<fs::path> &files,
 
   for (size_t i = 0; i < files.size(); i += BATCH_SIZE) {
     const size_t end = std::min(i + (size_t)BATCH_SIZE, files.size());
-
     for (size_t j = i; j < end; j++) {
       if (tui.poll_escape()) {
         ctx.aborted = true;
@@ -877,6 +926,8 @@ bool KnowledgeManager::batch_embed(const std::vector<fs::path> &files,
         ctx.skip_no_chunks++;
       }
     }
+
+    log_write(LEVEL_INFO, "zim", "completed next batch");
 
     // Append this batch's chunks to disk, then free memory
     if (!batch_db.chunks.empty()) {

@@ -240,16 +240,19 @@ std::string Agent::handle_ragindex(const std::string &zim_path) {
     tui_.show_tool(msg);
   };
   bool ok = knowledge_.build_from_path(zim_path, *embed_model(), tui_,
-                                        progress, &err, filter_path, true);
+                                       progress, &err, filter_path, true);
   if (ok) {
     fs::path zp(zim_path);
     std::string id = zp.stem().string();
     if (!knowledge_.load(id)) {
-      return "ERROR: indexed but failed to load " + id;
+      tui_.append_line(ICON_ERR + "ERROR: indexed but failed to load " + id);
+    } else {
+      tui_.append_line(ICON_TOOL + "OK: indexed and loaded " + id);
     }
-    return "OK: indexed and loaded " + id;
+  } else {
+    tui_.append_line(ICON_ERR + "ERROR: " + err);
   }
-  return "ERROR: " + err;
+  return "OK";
 }
 
 bool Agent::rag_load_index(const std::string &path) {
@@ -546,8 +549,8 @@ bool Agent::handle_memory_flush() {
     tui_.append_line(ICON_ERR + "Warning! - memory has been flushed!");
     reset_conversation(cfg_.build_system_prompt() + "\n" + format_session_md(tui_.get_chat()));
     bool flushed = llama_->add_message(*iter_, "user",
-        "The session context was restored after a memory flush. "
-        "Continue with the pending actions from the session state.");
+                                       "The session context was restored after a memory flush. "
+                                       "Continue with the pending actions from the session state.");
     if (!flushed) {
       tui_.redraw_all();
       return false;

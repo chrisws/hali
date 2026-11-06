@@ -645,10 +645,25 @@ bool RagDB::load(const std::string &path) {
   uint32_t n       = read32();
   uint32_t edim    = read32();
 
+  if (!f.good()) {
+    return false;
+  }
   if (magic != MAGIC) {
     return false;
   }
   if (version != 2) {
+    return false;
+  }
+
+  /* Sanity check: the file must be large enough to hold n chunks.
+   * Minimum per-chunk bytes: 4 (text_len) + 2 (src_len) + 1 (type_len)
+   * + edim*4 (embedding). Reject headers that claim more chunks than
+   * the file can possibly contain. */
+  f.seekg(0, std::ios::end);
+  std::streamoff file_size = f.tellg();
+  f.seekg(16, std::ios::beg);
+  size_t min_chunk_bytes = 4 + 2 + 1 + (size_t)edim * sizeof(float);
+  if (file_size < 16 || (size_t)n * min_chunk_bytes > (size_t)file_size - 16) {
     return false;
   }
 
@@ -659,16 +674,20 @@ bool RagDB::load(const std::string &path) {
     RagChunk &c = chunks[i];
 
     uint32_t text_len = read32();
+    if (!f.good()) { return false; }
     c.text = readstr(text_len);
 
     uint16_t src_len = read16();
+    if (!f.good()) { return false; }
     c.source = readstr(src_len);
 
     uint8_t type_len = read8();
+    if (!f.good()) { return false; }
     c.type = readstr(type_len);
 
     c.embedding.resize(edim);
     f.read((char*)c.embedding.data(), (std::streamsize)(edim * sizeof(float)));
+    if (!f.good()) { return false; }
   }
 
   return true;
@@ -714,6 +733,15 @@ bool RagDB::load_mmap(const std::string &path) {
   std::memcpy(&edim,    base + 12, 4);
 
   if (magic != MAGIC || version != 2) {
+    munmap(ptr, fsize);
+    return false;
+  }
+
+  /* Sanity check: reject headers claiming more chunks than the
+   * file can possibly contain (prevents huge allocations from
+   * corrupted headers). */
+  size_t min_chunk_bytes = 4 + 2 + 1 + (size_t)edim * sizeof(float);
+  if ((size_t)n * min_chunk_bytes > fsize - 16) {
     munmap(ptr, fsize);
     return false;
   }

@@ -40,13 +40,12 @@ namespace fs = std::filesystem;
 // Encapsulates: show_tool, path resolution, sandbox check, optional
 // permission prompt, optional validation, backup, execute, result handling.
 //
-std::string Agent::handle_file_write(
-    const std::string &tool_name,
-    const std::string &path_arg,
-    const std::string &data,
-    bool do_permission,
-    const ValidateFn &validate,
-    const ExecuteFn &execute) {
+std::string Agent::handle_file_write(const std::string &tool_name,
+                                     const std::string &path_arg,
+                                     const std::string &data,
+                                     bool do_permission,
+                                     const ValidateFn &validate,
+                                     const ExecuteFn &execute) {
   tui_.show_tool(tool_name + ": " + path_arg);
   turn_.files_written++;
   const auto path = utils::resolve_path(cfg_.sandbox_, path_arg);
@@ -91,8 +90,8 @@ std::string Agent::handle_build(const std::string &a1, const std::string &a2) {
       for (int i = 0; i < show; i++) {
         const auto &w = result.lint_details_[i];
         data += std::to_string(i + 1) + "|" +
-                w.file + ":" + std::to_string(w.line) + "|" +
-                w.check + "|" + w.description + "\n";
+          w.file + ":" + std::to_string(w.line) + "|" +
+          w.check + "|" + w.description + "\n";
       }
       auto table = tool_table(dims, data);
       if (table.error.empty()) {
@@ -143,8 +142,8 @@ std::string Agent::handle_tune(const std::string &a1, const std::string &a2) {
       val = std::to_string(i);
     } else {
       return "ERROR: unknown key '" + key +
-             "'. Valid: temperature, top_p, min_p, top_k, "
-             "penalty_repeat, penalty_freq, penalty_present, penalty_last_n";
+        "'. Valid: temperature, top_p, min_p, top_k, "
+        "penalty_repeat, penalty_freq, penalty_present, penalty_last_n";
     }
     bool needs_reparam = false;
     std::string msg;
@@ -227,7 +226,7 @@ std::string Agent::handle_choice(const std::string &a1, const std::string &a2) {
 
   if (parts.size() < 3) {
     return "ERROR: need a question and at least 2 options (got " +
-           std::to_string(parts.size()) + " field(s))";
+      std::to_string(parts.size()) + " field(s))";
   }
 
   const std::string question = parts[0];
@@ -288,7 +287,7 @@ std::string Agent::music_handle_set(const std::string &arg,
   }
   if (idx > static_cast<int>(proj.tracks.size())) {
     return "ERROR: track " + idx_str + " out of range (1-" +
-           std::to_string(proj.tracks.size()) + ")";
+      std::to_string(proj.tracks.size()) + ")";
   }
   auto &track = proj.tracks[idx - 1];
   if (field == "volume") {
@@ -346,7 +345,7 @@ std::string Agent::music_handle_add(const std::string &arg,
   }
   proj.save_to(proj_dir + "/_current.json");
   return "OK: added track \"" + track_name + "\" (" +
-         std::to_string(proj.tracks.size()) + " tracks total)";
+    std::to_string(proj.tracks.size()) + " tracks total)";
 }
 
 std::string Agent::handle_music(const std::string &a1, const std::string &a2) {
@@ -406,8 +405,8 @@ std::string Agent::handle_music(const std::string &a1, const std::string &a2) {
     }
     proj.save_to(proj_dir + "/_current.json");
     return "OK: loaded project \"" + proj.name + "\" (" +
-           std::to_string(proj.tracks.size()) + " tracks, tempo " +
-           std::to_string(proj.tempo) + " BPM)";
+      std::to_string(proj.tracks.size()) + " tracks, tempo " +
+      std::to_string(proj.tempo) + " BPM)";
   }
 
   if (cmd == "add") {
@@ -434,7 +433,7 @@ std::string Agent::handle_music(const std::string &a1, const std::string &a2) {
     proj.save(proj_dir);
     proj.save_to(proj_dir + "/_current.json");
     return "OK: removed track " + arg + " (" +
-           std::to_string(proj.tracks.size()) + " remaining)";
+      std::to_string(proj.tracks.size()) + " remaining)";
   }
 
   if (cmd == "tempo") {
@@ -483,8 +482,8 @@ std::string Agent::handle_music(const std::string &a1, const std::string &a2) {
     for (size_t i = 0; i < proj.tracks.size(); i++) {
       const auto &t = proj.tracks[i];
       out += "  " + std::to_string(i + 1) + ". " + t.name +
-             "  [vol=" + std::to_string(t.volume) +
-             " pan=" + std::to_string(t.pan) + "]\n";
+        "  [vol=" + std::to_string(t.volume) +
+        " pan=" + std::to_string(t.pan) + "]\n";
       out += "     " + t.script + "\n";
     }
     return out;
@@ -539,7 +538,7 @@ std::string Agent::handle_music(const std::string &a1, const std::string &a2) {
   }
 
   return "ERROR: unknown music command: " + cmd +
-         " (use: create, load, list, add, set, remove, tempo, play, show, save, export, clear)";
+    " (use: create, load, list, add, set, remove, tempo, play, show, save, export, clear)";
 }
 
 std::string Agent::handle_gui(const std::string &a1, const std::string &a2) {
@@ -670,30 +669,30 @@ ToolMap Agent::build_tool_dispatch() {
     const auto data = strip_code_fences(a1, a2);
     const bool skip_validate = utils::ends_with(utils::resolve_path(cfg_.sandbox_, a1), SESSION_MD);
     return handle_file_write("writing", a1, data, true,
-      [this, &data, skip_validate](const std::string &path, const std::string &) -> std::string {
-        if (skip_validate || cfg_.disable_write_validate_) { return ""; }
-        return tool_write_validate(path, data, cfg_.val_write_size_warn_);
-      },
-      [this, &data](const std::string &path) -> std::string {
-        return tool_write(path, data);
-      });
+                             [this, &data, skip_validate](const std::string &path, const std::string &) -> std::string {
+                               if (skip_validate || cfg_.disable_write_validate_) { return ""; }
+                               return tool_write_validate(path, data, cfg_.val_write_size_warn_);
+                             },
+                             [this, &data](const std::string &path) -> std::string {
+                               return tool_write(path, data);
+                             });
   };
   tools["TOOL:PATCH"] = [this](const std::string &a1, const std::string &a2) -> std::string {
     return handle_file_write("patch", a1, a2, false,
-      [this](const std::string &path, const std::string &data) -> std::string {
-        if (cfg_.disable_patch_validate_) { return ""; }
-        return tool_patch_validate(path, data);
-      },
-      [this, &a2](const std::string &path) -> std::string {
-        return tool_patch(path, a2);
-      });
+                             [this](const std::string &path, const std::string &data) -> std::string {
+                               if (cfg_.disable_patch_validate_) { return ""; }
+                               return tool_patch_validate(path, data);
+                             },
+                             [this, &a2](const std::string &path) -> std::string {
+                               return tool_patch(path, a2);
+                             });
   };
   tools["TOOL:APPEND"] = [this](const std::string &a1, const std::string &a2) -> std::string {
     return handle_file_write("append", a1, a2, false,
-      nullptr,
-      [this, &a2](const std::string &path) -> std::string {
-        return tool_append(path, a2);
-      });
+                             nullptr,
+                             [this, &a2](const std::string &path) -> std::string {
+                               return tool_append(path, a2);
+                             });
   };
   tools["TOOL:MKDIR"] = [this](const std::string &a1, const std::string &a2) -> std::string {
     std::string p = utils::resolve_path(cfg_.sandbox_, a1);
@@ -764,10 +763,10 @@ ToolMap Agent::build_tool_dispatch() {
   };
   tools["TOOL:REPLACE"] = [this](const std::string &a1, const std::string &a2) -> std::string {
     return handle_file_write("replace", a1, a2, true,
-      nullptr,
-      [this, &a1, &a2](const std::string &path) -> std::string {
-        return tool_replace(cfg_.sandbox_, a1, a2);
-      });
+                             nullptr,
+                             [this, &a1, &a2](const std::string &path) -> std::string {
+                               return tool_replace(cfg_.sandbox_, a1, a2);
+                             });
   };
   tools["TOOL:MCP"] = [this](const std::string &a1, const std::string &a2) -> std::string {
     tui_.show_tool("mcp: " + a1);
@@ -799,7 +798,7 @@ ToolMap Agent::build_tool_dispatch() {
     size_t total = 0;
     for (const auto &ev : result.events) { total += ev.size(); }
     return "OK: played " + std::to_string(total) + " notes in "
-           + std::to_string(result.events.size()) + " events";
+      + std::to_string(result.events.size()) + " events";
   };
   if (cfg_.audio_multi_track_) {
     tools["TOOL:MUSIC"] = [this](const std::string &a1, const std::string &a2) -> std::string {

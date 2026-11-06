@@ -292,8 +292,8 @@ static void slash_revoke(const std::string &rest, HaliConfig &cfg, Tui &tui) {
   }
   if (cfg.user_run_allowed_.remove(rest)) {
     cfg.run_allowed_.erase(
-      std::remove(cfg.run_allowed_.begin(), cfg.run_allowed_.end(), rest),
-      cfg.run_allowed_.end());
+                           std::remove(cfg.run_allowed_.begin(), cfg.run_allowed_.end(), rest),
+                           cfg.run_allowed_.end());
     cfg.user_run_allowed_.save(RunAllowed::default_path(cfg.sandbox_));
     tui.append_line(ICON_SYS + "Revoked: " + rest);
   } else {
@@ -450,7 +450,7 @@ static void slash_audit(const std::string &rest, HaliConfig &cfg, Tui &tui, Agen
   }
 
   tui.append_line(ICON_SYS + std::to_string(r.total_files) + " files, " +
-                   std::to_string(r.total_lines) + " lines");
+                  std::to_string(r.total_lines) + " lines");
   tui.append_line(ICON_SYS + "Difficulty score: " + std::to_string(r.score) + "/100");
 
   if (r.issues.empty()) {
@@ -493,7 +493,7 @@ static void slash_audit(const std::string &rest, HaliConfig &cfg, Tui &tui, Agen
       }
       save_false_positives(fp_path, fps);
       tui.append_line(ICON_SYS + std::to_string(new_fps.size()) +
-                       " false positive(s) recorded to " + fp_path);
+                      " false positive(s) recorded to " + fp_path);
       tui.redraw_all();
     }
   }
@@ -652,9 +652,9 @@ static void slash_plan(const std::string &rest, HaliConfig &cfg, Agent &agent, T
 
   // Submit to the agent with a prompt referencing the saved file.
   std::string prompt = "I have written a plan saved to " + filename +
-                       " in the .hali/plans/ directory. Please review it and let me know "
-                       "if you have any questions, suggestions, or if you are ready "
-                       "to proceed. Here is the content:\n\n" + text;
+    " in the .hali/plans/ directory. Please review it and let me know "
+    "if you have any questions, suggestions, or if you are ready "
+    "to proceed. Here is the content:\n\n" + text;
   tui.append_line(ICON_SYS + "Submitting to agent…");
   tui.redraw_all();
   agent.run_turn(prompt);
@@ -788,7 +788,121 @@ static std::vector<std::string> discover_zim_files(const HaliConfig &cfg) {
 }
 
 //
-// /index [name|remove <name>|load|unload <name>|help]
+// /index helpers
+//
+
+static void index_help(Tui &tui) {
+  tui.append_line(ICON_SYS + "/index [name|remove <name>|create|load|unload <name>|help]");
+  tui.append_line(ICON_SYS + "  (no arg)       show this help");
+  tui.append_line(ICON_SYS + "  <name>         load a source by name");
+  tui.append_line(ICON_SYS + "  <path>         index a .zim file from disk");
+  tui.append_line(ICON_SYS + "  create         create a new index from a .zim file");
+  tui.append_line(ICON_SYS + "  load           load a previously built index");
+  tui.append_line(ICON_SYS + "  remove <name>  remove an indexed source");
+  tui.append_line(ICON_SYS + "  unload <name>  unload a loaded source");
+  tui.append_line(ICON_SYS + "  help           show this help");
+  tui.redraw_all();
+}
+
+static void index_remove(KnowledgeManager &km, std::string &arg, Tui &tui) {
+  arg = pick_source(tui, arg, km.indexed_labels(), km.indexed_ids(),
+                    "Select a source to remove", "No sources to remove.");
+  if (arg.empty()) {
+    return;
+  }
+  if (km.remove(arg)) {
+    tui.append_line(ICON_SYS + "Removed: " + arg);
+  } else {
+    tui.append_line(ICON_ERR + "Not found: " + arg);
+  }
+  tui.redraw_all();
+}
+
+static void index_create(const HaliConfig &cfg, Agent &agent, Tui &tui) {
+  auto zim_files = discover_zim_files(cfg);
+
+  if (zim_files.empty()) {
+    tui.append_line(ICON_SYS + "No .zim files found to index.");
+    tui.redraw_all();
+    return;
+  }
+
+  int idx = tui.list_picker(zim_files, "Create index from .zim file");
+  if (idx < 0) {
+    tui.redraw_all();
+    return;
+  }
+
+  std::string zim_path = zim_files[idx];
+
+  // Ask for optional topic filter
+  std::string topics = tui.text_editor("Topics (optional)", "");
+
+  // Hand off to agent
+  std::string prompt;
+  if (!topics.empty()) {
+    prompt = "Please index the ZIM file at " + zim_path + ". "
+      "The user's topic request is: \"" + topics + "\". "
+      "Based on this, build a list of related topic "
+      "keywords (e.g. if the user says \"cats\", include cat, cats, "
+      "tigers, lions, felines, domestic cat, wild cat, etc.). "
+      "Write the resulting keywords to .hali/topics.txt "
+      "(one keyword per line, at most 20 keywords). "
+      "If TOOL:RAGINFO shows this index is already loaded, then "
+      "use TOOL:RAG to confirm the words are not already indexed. "
+      "Then call TOOL:RAGINDEX " + zim_path + "\", ";
+  } else {
+    prompt = "Please index the ZIM file at " + zim_path +
+      " by calling TOOL:RAGINDEX " + zim_path;
+  }
+
+  tui.append_line(ICON_SYS + "Submitting to agent…");
+  tui.redraw_all();
+  agent.run_turn(prompt);
+  tui.redraw_all();
+}
+
+static void index_load(KnowledgeManager &km, Tui &tui) {
+  auto labels = km.indexed_labels();
+  auto ids = km.indexed_ids();
+
+  if (ids.empty()) {
+    tui.append_line(ICON_ERR + "No indexes found. Use /index create to build one.");
+    tui.redraw_all();
+    return;
+  }
+
+  int idx = tui.list_picker(labels, "Load index");
+  if (idx < 0) {
+    tui.redraw_all();
+    return;
+  }
+
+  std::string id = ids[idx];
+  if (km.load(id)) {
+    tui.append_line(ICON_SYS + "Loaded: " + id);
+  } else {
+    tui.append_line(ICON_ERR + "Failed to load: " + id);
+  }
+  tui.redraw_all();
+}
+
+static void index_unload(KnowledgeManager &km, std::string &arg, Tui &tui) {
+  arg = pick_source(tui, arg, km.loaded_labels(), km.loaded_ids(),
+                    "Select a source to unload", "No sources currently loaded.");
+  if (arg.empty()) {
+    return;
+  }
+  if (km.unload(arg)) {
+    tui.append_line(ICON_SYS + "Unloaded: " + arg);
+  } else {
+    tui.append_line(ICON_ERR + "Not loaded: " + arg);
+  }
+  tui.redraw_all();
+}
+
+//
+// /index [name|remove <name>|create|load|unload <name>|help]
 //
 static void slash_index(const std::string &rest, HaliConfig &cfg, Agent &agent, Tui &tui) {
   KnowledgeManager &km = agent.knowledge();
@@ -822,113 +936,27 @@ static void slash_index(const std::string &rest, HaliConfig &cfg, Agent &agent, 
   }
 
   if (sub == "help") {
-    tui.append_line(ICON_SYS + "/index [name|remove <name>|load|unload <name>|help]");
-    tui.append_line(ICON_SYS + "  (no arg)       show this help");
-    tui.append_line(ICON_SYS + "  <name>         load a source by name");
-    tui.append_line(ICON_SYS + "  <path>         index a .zim file from disk");
-    tui.append_line(ICON_SYS + "  remove <name>  remove an indexed source");
-    tui.append_line(ICON_SYS + "  load           show picker of indexed sources / .zim files");
-    tui.append_line(ICON_SYS + "  unload <name>  unload a loaded source");
-    tui.append_line(ICON_SYS + "  help           show this help");
-    tui.redraw_all();
+    index_help(tui);
     return;
   }
 
   if (sub == "remove") {
-    arg = pick_source(tui, arg, km.indexed_labels(), km.indexed_ids(),
-                      "Select a source to remove", "No sources to remove.");
-    if (arg.empty()) {
-      return;
-    }
-    if (km.remove(arg)) {
-      tui.append_line(ICON_SYS + "Removed: " + arg);
-    } else {
-      tui.append_line(ICON_ERR + "Not found: " + arg);
-    }
-    tui.redraw_all();
+    index_remove(km, arg, tui);
+    return;
+  }
+
+  if (sub == "create") {
+    index_create(cfg, agent, tui);
     return;
   }
 
   if (sub == "load") {
-    auto labels = km.indexed_labels();
-    auto ids = km.indexed_ids();
-    auto zim_files = discover_zim_files(cfg);
-
-    // Build combined picker: indexed sources first, then .zim files
-    std::vector<std::string> picker_labels;
-    picker_labels.reserve(labels.size() + zim_files.size());
-    for (const auto &l : labels) {
-      picker_labels.push_back(l);
-    }
-    for (const auto &z : zim_files) {
-      picker_labels.push_back(z);
-    }
-
-    if (picker_labels.empty()) {
-      tui.append_line(ICON_SYS + "No indexed sources or .zim files found.");
-      tui.redraw_all();
-      return;
-    }
-
-    int idx = tui.list_picker(picker_labels, "Knowledge index");
-    if (idx < 0) {
-      tui.redraw_all();
-      return;
-    }
-
-    if (idx < (int)ids.size()) {
-      // Picked an already-indexed source
-      sub = ids[idx];
-      if (km.load(sub)) {
-        tui.append_line(ICON_SYS + "Loaded: " + sub);
-      } else {
-        tui.append_line(ICON_ERR + "Failed to load: " + sub);
-      }
-      tui.redraw_all();
-      return;
-    }
-
-    // Picked a .zim file to index
-    std::string zim_path = zim_files[idx - (int)ids.size()];
-
-    // Ask for optional topic filter
-    std::string topics = tui.text_editor("Topics (optional)", "");
-
-    // Hand off to agent
-    std::string prompt;
-    if (!topics.empty()) {
-      prompt = "Please index the ZIM file at " + zim_path + ". "
-               "The user's topic request is: \"" + topics + "\". "
-               "Based on this, build a list of related topic "
-               "keywords (e.g. if the user says \"cats\", include cat, cats, "
-               "tigers, lions, felines, domestic cat, wild cat, etc.). "
-               "Write the resulting keywords to .hali/topics.txt "
-               "(one keyword per line, at most 20 keywords). "
-               "Then call TOOL:RAGINDEX " + zim_path;
-    } else {
-      prompt = "Please index the ZIM file at " + zim_path +
-               " by calling TOOL:RAGINDEX " + zim_path;
-    }
-
-    tui.append_line(ICON_SYS + "Submitting to agent…");
-    tui.redraw_all();
-    agent.run_turn(prompt);
-    tui.redraw_all();
+    index_load(km, tui);
     return;
   }
 
   if (sub == "unload") {
-    arg = pick_source(tui, arg, km.loaded_labels(), km.loaded_ids(),
-                      "Select a source to unload", "No sources currently loaded.");
-    if (arg.empty()) {
-      return;
-    }
-    if (km.unload(arg)) {
-      tui.append_line(ICON_SYS + "Unloaded: " + arg);
-    } else {
-      tui.append_line(ICON_ERR + "Not loaded: " + arg);
-    }
-    tui.redraw_all();
+    index_unload(km, arg, tui);
     return;
   }
 
@@ -1196,7 +1224,7 @@ const std::vector<SlashCommand> &slash_commands() {
     {"/task",     "[name]",            "direct agent behavior (web, music, audio, knowledge)", "Tools"},
     {"/tool",     "[TOOL:NAME [args]]","invoke a tool (no args lists all tools)", "Tools"},
     {"/plan",     "[text]",            "open a multiline text editor for a plan", "Tools"},
-    {"/index",    "[name|remove|load|unload|help]", "manage knowledge sources (ZIM/Wikipedia)", "Knowledge"},
+    {"/index",    "[name|create|load|remove|unload|help]", "manage knowledge sources (ZIM/Wikipedia)", "Knowledge"},
     {"/audio",    "[test|volume <v>]", "enable/disable audio, test tone, set volume", "Audio"},
     {"/help",     "",                  "this message", "Help"},
   };
