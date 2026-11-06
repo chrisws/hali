@@ -31,96 +31,43 @@
 
 namespace fs = std::filesystem;
 
-bool KnowledgeManager::zimdump_available() {
-  const std::string result = run_shell_command("which zimdump 2>/dev/null");
-  // run_shell_command appends "[exit code: N]" on failure,
-  // so a non-empty result does NOT mean the binary was found.
-  if (result.find("[exit code:") != std::string::npos) {
-    return false;
-  }
-  return !utils::trim(result).empty();
-}
+// ============================================================================
+// Static / free helpers
+// ============================================================================
 
 //
-// Return a platform-specific install hint for zimdump
+// Fast platform-aware directory removal.
+// Significantly faster than fs::remove_all for large trees of small
+// files (e.g. ZIM extractions with thousands of articles).
+// Safety: only removes paths under .hali/tmp/.
 //
-std::string KnowledgeManager::zimdump_install_hint() {
+static void shell_remove_all(const std::string &path) {
+  if (path.empty() || !fs::exists(path)) {
+    return;
+  }
+  // Guard: refuse to remove anything outside .hali/tmp/
+  if (path.rfind(".hali/tmp/", 0) != 0) {
+    log_write(LEVEL_WARNING, "zim",
+              "shell_remove_all: refusing path outside .hali/tmp/: %s",
+              path.c_str());
+    return;
+  }
   switch (current_platform()) {
     case Platform::Linux:
-      return "Install: sudo apt install zim-tools (Debian/Ubuntu)\n"
-        "  or build: cd zim-tools && meson setup build && meson compile -C build";
     case Platform::macOS:
-      return "Install: brew install zim-tools\n"
-        "  or build: cd zim-tools && meson setup build && meson compile -C build";
+      run_shell_command(std::format("rm -rf '{}'", path));
+      break;
     case Platform::Windows:
-      return "Build from source: cd zim-tools && meson setup build && meson compile -C build\n"
-        "  (requires Meson + Ninja, see https://mesonbuild.com/)";
+      run_shell_command(std::format("rmdir /s /q \"{}\"", path));
+      break;
     default:
-      return "Build from source: cd zim-tools && meson setup build && meson compile -C build";
+      fs::remove_all(path);
+      break;
   }
 }
 
-int KnowledgeManager::zim_extract(const std::string &zim_path,
-                                  const std::string &id,
-                                  const ProgressFn &progress,
-                                  std::string &extract_dir) {
-  extract_dir = ".hali/tmp/hali_zim_" + id;
-  if (fs::exists(extract_dir)) {
-    fs::remove_all(extract_dir);
-  }
-  fs::create_directories(extract_dir);
-
-  const std::string cmd = std::format("zimdump dump --dir='{}' --ns=A '{}'", extract_dir, zim_path);
-  const std::string result = run_shell_command(cmd);
-
-  if (log_is_enabled(LEVEL_DEBUG)) {
-    log_write(LEVEL_DEBUG, "zim", "zimdump cmd: %s", cmd.c_str());
-    log_write(LEVEL_DEBUG, "zim", "zimdump output: %s", result.c_str());
-  }
-
-  const bool had_error = result.find("[exit code:") != std::string::npos;
-
-  int disk_count = 0;
-  if (fs::is_directory(extract_dir)) {
-    for (const auto &entry : fs::recursive_directory_iterator(extract_dir)) {
-      if (entry.is_regular_file()) {
-        disk_count++;
-      }
-    }
-  }
-
-  if (disk_count == 0) {
-    if (progress) {
-      progress("zimdump produced no files" +
-               (had_error ? ": " + utils::trim(result) : ""));
-    }
-    fs::remove_all(extract_dir);
-    extract_dir.clear();
-    return 0;
-  }
-
-  if (log_is_enabled(LEVEL_DEBUG)) {
-    log_write(LEVEL_DEBUG, "zim", "extracted %d files from %s",
-              disk_count, zim_path.c_str());
-  }
-
-  if (had_error) {
-    if (log_is_enabled(LEVEL_DEBUG)) {
-      log_write(LEVEL_DEBUG, "zim",
-                "zimdump exited with error but %d files extracted, proceeding",
-                disk_count);
-    }
-    if (progress) {
-      progress(std::format("warning: zimdump exited with error, "
-                           "but {} files extracted — continuing",
-                           disk_count));
-    }
-  }
-
-  if (progress) {
-    progress(std::format("extracted {} files, building index ...", disk_count));
-  }
-  return disk_count;
+static std::string zim_extract_dir(const std::string &id) {
+  return ".hali/tmp/hali_zim_" + id;
 }
 
 //
@@ -158,6 +105,13 @@ struct CaseInsensitiveCache {
     std::string filename_lower = to_lower(path.filename().string());
 
     std::lock_guard<std::mutex> lock(mutex);
+
+    // Clear cache before obtaining reference to avoid dangling ref
+    if (total_entries > MAX_ENTRIES) {
+      dirs.clear();
+      total_entries = 0;
+    }
+
     auto &dir_map = dirs[key];
     if (dir_map.empty()) {
       std::error_code ec;
@@ -167,26 +121,6 @@ struct CaseInsensitiveCache {
             dir_map[to_lower(entry.path().filename().string())] =
               entry.path();
             total_entries++;
-          }
-        }
-      }
-      // If cache has grown too large, clear it to bound memory.
-      // The next lookup will re-scan the directory.
-      if (total_entries > MAX_ENTRIES) {
-        dirs.clear();
-        total_entries = 0;
-        // Re-insert just this directory so the current lookup succeeds
-        dir_map = dirs[key];
-        // Re-scan this one directory
-        dir_map.clear();
-        std::error_code ec2;
-        if (fs::is_directory(parent, ec2)) {
-          for (const auto &entry : fs::directory_iterator(parent, ec2)) {
-            if (entry.is_regular_file()) {
-              dir_map[to_lower(entry.path().filename().string())] =
-                entry.path();
-              total_entries++;
-            }
           }
         }
       }
@@ -348,7 +282,7 @@ std::vector<std::string> load_filter_file(const std::string &path) {
 // "health" matches "Health", "Healthcare", "Public_health" but not "Unhealthy".
 //
 bool title_matches_filter(const std::string &filename,
-                          const std::vector<std::string> &keywords) {
+                                 const std::vector<std::string> &keywords) {
   std::string title = filename;
   auto dot = title.rfind('.');
   if (dot != std::string::npos) {
@@ -377,6 +311,102 @@ bool title_matches_filter(const std::string &filename,
     }
   }
   return false;
+}
+
+// ============================================================================
+// KnowledgeManager methods
+// ============================================================================
+
+bool KnowledgeManager::zimdump_available() {
+  const std::string result = run_shell_command("which zimdump 2>/dev/null");
+  // run_shell_command appends "[exit code: N]" on failure,
+  // so a non-empty result does NOT mean the binary was found.
+  if (result.find("[exit code:") != std::string::npos) {
+    return false;
+  }
+  return !utils::trim(result).empty();
+}
+
+//
+// Return a platform-specific install hint for zimdump
+//
+std::string KnowledgeManager::zimdump_install_hint() {
+  switch (current_platform()) {
+    case Platform::Linux:
+      return "Install: sudo apt install zim-tools (Debian/Ubuntu)\n"
+        "  or build: cd zim-tools && meson setup build && meson compile -C build";
+    case Platform::macOS:
+      return "Install: brew install zim-tools\n"
+        "  or build: cd zim-tools && meson setup build && meson compile -C build";
+    case Platform::Windows:
+      return "Build from source: cd zim-tools && meson setup build && meson compile -C build\n"
+        "  (requires Meson + Ninja, see https://mesonbuild.com/)";
+    default:
+      return "Build from source: cd zim-tools && meson setup build && meson compile -C build";
+  }
+}
+
+int KnowledgeManager::zim_extract(const std::string &zim_path,
+                                  const std::string &id,
+                                  const ProgressFn &progress,
+                                  std::string &extract_dir) {
+  extract_dir = zim_extract_dir(id);
+  if (fs::exists(extract_dir)) {
+    shell_remove_all(extract_dir);
+  }
+  fs::create_directories(extract_dir);
+
+  const std::string cmd = std::format("zimdump dump --dir='{}' --ns=A '{}'", extract_dir, zim_path);
+  const std::string result = run_shell_command(cmd);
+
+  if (log_is_enabled(LEVEL_DEBUG)) {
+    log_write(LEVEL_DEBUG, "zim", "zimdump cmd: %s", cmd.c_str());
+    log_write(LEVEL_DEBUG, "zim", "zimdump output: %s", result.c_str());
+  }
+
+  const bool had_error = result.find("[exit code:") != std::string::npos;
+
+  int disk_count = 0;
+  if (fs::is_directory(extract_dir)) {
+    for (const auto &entry : fs::recursive_directory_iterator(extract_dir)) {
+      if (entry.is_regular_file()) {
+        disk_count++;
+      }
+    }
+  }
+
+  if (disk_count == 0) {
+    if (progress) {
+      progress("zimdump produced no files" +
+               (had_error ? ": " + utils::trim(result) : ""));
+    }
+    shell_remove_all(extract_dir);
+    extract_dir.clear();
+    return 0;
+  }
+
+  if (log_is_enabled(LEVEL_DEBUG)) {
+    log_write(LEVEL_DEBUG, "zim", "extracted %d files from %s",
+              disk_count, zim_path.c_str());
+  }
+
+  if (had_error) {
+    if (log_is_enabled(LEVEL_DEBUG)) {
+      log_write(LEVEL_DEBUG, "zim",
+                "zimdump exited with error but %d files extracted, proceeding",
+                disk_count);
+    }
+    if (progress) {
+      progress(std::format("warning: zimdump exited with error, "
+                           "but {} files extracted — continuing",
+                           disk_count));
+    }
+  }
+
+  if (progress) {
+    progress(std::format("extracted {} files, building index ...", disk_count));
+  }
+  return disk_count;
 }
 
 bool KnowledgeManager::zim_save_and_index(const std::string &id,
@@ -435,6 +465,186 @@ bool KnowledgeManager::zim_save_and_index(const std::string &id,
                          id, total_chunks, rag_file));
   }
   return true;
+}
+
+//
+// Phase 1: Extract ZIM files, reusing a previous extraction if the
+// user declines to overwrite.
+// Returns the number of files on disk (0 on failure).
+//
+int KnowledgeManager::extract_zim_files(const std::string &zim_path,
+                                        const std::string &id,
+                                        Tui &tui,
+                                        const ProgressFn &progress,
+                                        BuildContext &ctx) {
+  if (log_is_enabled(LEVEL_DEBUG)) {
+    log_write(LEVEL_DEBUG, "zim", "extract_zim_files: id=%s path=%s",
+              id.c_str(), zim_path.c_str());
+  }
+  const std::string extract_dir = zim_extract_dir(id);
+  int disk_count = 0;
+
+  // Check if a previous extraction already exists on disk
+  bool reuse_existing = false;
+  if (fs::is_directory(extract_dir)) {
+    int existing_files = 0;
+    for (const auto &entry : fs::recursive_directory_iterator(extract_dir)) {
+      if (entry.is_regular_file()) {
+        existing_files++;
+      }
+    }
+    if (existing_files > 0) {
+      if (progress) {
+        progress(std::format("found {} existing files in {}",
+                             existing_files, extract_dir));
+      }
+      bool overwrite = tui.confirm_dialog(
+        std::format("Extracted files exist for '{}'. Overwrite?", id));
+      if (!overwrite) {
+        reuse_existing = true;
+      }
+    }
+  }
+
+  if (reuse_existing) {
+    ctx.extract_dir = extract_dir;
+    for (const auto &entry : fs::recursive_directory_iterator(extract_dir)) {
+      if (entry.is_regular_file()) {
+        disk_count++;
+      }
+    }
+    if (progress) {
+      progress(std::format("reusing {} existing files", disk_count));
+    }
+  } else {
+    run_with_spinner(tui, [&]() -> std::string {
+      disk_count = zim_extract(zim_path, id, progress, ctx.extract_dir);
+      return "";
+    });
+  }
+  return disk_count;
+}
+
+//
+// Phase 2: Filter text files by topic keywords.
+// Modifies text_files in place and updates ctx.skip_filtered.
+//
+void KnowledgeManager::apply_topic_filter(std::vector<fs::path> &text_files,
+                                          const std::string &filter_path,
+                                          BuildContext &ctx) const {
+  if (log_is_enabled(LEVEL_DEBUG)) {
+    log_write(LEVEL_DEBUG, "zim", "apply_topic_filter: %zu files, filter=%s",
+              text_files.size(), filter_path.c_str());
+  }
+  if (filter_path.empty()) {
+    return;
+  }
+  auto keywords = load_filter_file(filter_path);
+  if (keywords.empty()) {
+    return;
+  }
+  std::vector<fs::path> filtered;
+  filtered.reserve(text_files.size());
+  for (const auto &f : text_files) {
+    if (title_matches_filter(f.filename().string(), keywords)) {
+      filtered.push_back(f);
+    } else {
+      ctx.skip_filtered++;
+    }
+  }
+  text_files = std::move(filtered);
+  text_files.shrink_to_fit();
+  if (log_is_enabled(LEVEL_DEBUG)) {
+    log_write(LEVEL_DEBUG, "zim",
+              "topic filter: %zu keywords, %d files skipped",
+              keywords.size(), ctx.skip_filtered);
+  }
+}
+
+//
+// Phase 4: Finalize the rag file, prompt to clear extracted files,
+// and check for abort / empty result.
+// Returns false if the build should be aborted.
+//
+bool KnowledgeManager::finalize_build(BuildContext &ctx,
+                                      Tui &tui,
+                                      const std::string &id,
+                                      int disk_count,
+                                      const ProgressFn &progress,
+                                      std::string *error) const {
+  if (log_is_enabled(LEVEL_DEBUG)) {
+    log_write(LEVEL_DEBUG, "zim", "finalize_build: id=%s files=%d chunks=%d",
+              id.c_str(), disk_count, ctx.total_chunks);
+  }
+  RagDB::finalize_file(ctx.rag_file,
+                       ctx.existing_chunks + (uint32_t)ctx.total_chunks);
+  g_case_cache.clear();
+
+  // Prompt user to clear extracted files
+  if (!ctx.extract_dir.empty() && fs::is_directory(ctx.extract_dir)) {
+    bool clear = tui.confirm_dialog(
+      std::format("Clear extracted files for '{}'? ({} files)",
+                  id, disk_count));
+    if (clear) {
+      shell_remove_all(ctx.extract_dir);
+    }
+  }
+
+  if (ctx.aborted) {
+    fs::remove(ctx.rag_file);
+    if (progress) {
+      progress("embedding aborted by user");
+    }
+    if (error) {
+      *error = "embedding aborted by user";
+    }
+    return false;
+  }
+
+  if (ctx.total_chunks == 0) {
+    fs::remove(ctx.rag_file);
+    if (progress) {
+      progress("no chunks produced");
+    }
+    if (error) {
+      *error = "no chunks produced";
+    }
+    return false;
+  }
+  return true;
+}
+
+//
+// Report build statistics via debug log and progress callback.
+//
+void KnowledgeManager::report_build_stats(const std::vector<fs::path> &text_files,
+                                          const BuildContext &ctx,
+                                          const ProgressFn &progress) const {
+  if (log_is_enabled(LEVEL_DEBUG)) {
+    log_write(LEVEL_DEBUG, "zim", "report_build_stats: %zu files, %d chunks",
+              text_files.size(), ctx.total_chunks);
+    log_write(LEVEL_DEBUG, "zim",
+              "build_from_path stats: %zu files | resolved: %d redirects | "
+              "skipped: %d unreadable, %d short-raw, %d redirect, "
+              "%d short-stripped, %d no-chunks, %d duplicate | %d chunks produced",
+              text_files.size(), ctx.resolved_redirects,
+              ctx.skip_unreadable, ctx.skip_short_raw,
+              ctx.skip_redirect, ctx.skip_short_stripped,
+              ctx.skip_no_chunks, ctx.skip_duplicate, ctx.total_chunks);
+  }
+
+  if (progress) {
+    progress(std::format(
+                         "index stats: {} files | {} redirects resolved | "
+                         "skipped: {} unreadable, {} short-raw, {} redirect, "
+                         "{} short-stripped, {} no-chunks, {} duplicate | "
+                         "{} chunks produced",
+                         text_files.size(), ctx.resolved_redirects,
+                         ctx.skip_unreadable, ctx.skip_short_raw,
+                         ctx.skip_redirect, ctx.skip_short_stripped,
+                         ctx.skip_no_chunks, ctx.skip_duplicate,
+                         ctx.total_chunks));
+  }
 }
 
 //
@@ -499,11 +709,7 @@ bool KnowledgeManager::build_from_path(const std::string &zim_path,
   }
 
   // Phase 1: Extract
-  int disk_count = 0;
-  run_with_spinner(tui, [&]() -> std::string {
-    disk_count = zim_extract(zim_path, id, progress, ctx.extract_dir);
-    return "";
-  });
+  int disk_count = extract_zim_files(zim_path, id, tui, progress, ctx);
   if (disk_count == 0) {
     fail("zimdump produced no files");
     return false;
@@ -512,36 +718,15 @@ bool KnowledgeManager::build_from_path(const std::string &zim_path,
   auto text_files = collect_text_files(ctx.extract_dir);
   if (text_files.empty()) {
     fail("no text files extracted from ZIM");
-    fs::remove_all(ctx.extract_dir);
+    shell_remove_all(ctx.extract_dir);
     return false;
   }
 
   // Phase 2: Topic filter
-  if (!filter_path.empty()) {
-    auto keywords = load_filter_file(filter_path);
-    if (!keywords.empty()) {
-      std::vector<fs::path> filtered;
-      filtered.reserve(text_files.size());
-      for (const auto &f : text_files) {
-        if (title_matches_filter(f.filename().string(), keywords)) {
-          filtered.push_back(f);
-        } else {
-          ctx.skip_filtered++;
-        }
-      }
-      text_files = std::move(filtered);
-      text_files.shrink_to_fit();
-      if (log_is_enabled(LEVEL_DEBUG)) {
-        log_write(LEVEL_DEBUG, "zim",
-                  "topic filter: %zu keywords, %d files skipped",
-                  keywords.size(), ctx.skip_filtered);
-      }
-    }
-  }
-
+  apply_topic_filter(text_files, filter_path, ctx);
   if (text_files.empty()) {
     fail("no files matched topic filter");
-    fs::remove_all(ctx.extract_dir);
+    shell_remove_all(ctx.extract_dir);
     return false;
   }
 
@@ -564,52 +749,18 @@ bool KnowledgeManager::build_from_path(const std::string &zim_path,
 
   // Phase 3: Batch embed with incremental disk writes
   if (!batch_embed(text_files, llama, tui, progress, ctx, error)) {
-    fs::remove_all(ctx.extract_dir);
+    shell_remove_all(ctx.extract_dir);
     fs::remove(ctx.rag_file);
     return false;
   }
 
   // Phase 4: Finalize
-  RagDB::finalize_file(ctx.rag_file,
-                       ctx.existing_chunks + (uint32_t)ctx.total_chunks);
-  fs::remove_all(ctx.extract_dir);
-  g_case_cache.clear();
-
-  if (ctx.aborted) {
-    fs::remove(ctx.rag_file);
-    fail("embedding aborted by user");
+  if (!finalize_build(ctx, tui, id, disk_count, progress, error)) {
     return false;
   }
 
-  if (ctx.total_chunks == 0) {
-    fs::remove(ctx.rag_file);
-    fail("no chunks produced");
-    return false;
-  }
-
-  if (log_is_enabled(LEVEL_DEBUG)) {
-    log_write(LEVEL_DEBUG, "zim",
-              "build_from_path stats: %zu files | resolved: %d redirects | "
-              "skipped: %d unreadable, %d short-raw, %d redirect, "
-              "%d short-stripped, %d no-chunks, %d duplicate | %d chunks produced",
-              text_files.size(), ctx.resolved_redirects,
-              ctx.skip_unreadable, ctx.skip_short_raw,
-              ctx.skip_redirect, ctx.skip_short_stripped,
-              ctx.skip_no_chunks, ctx.skip_duplicate, ctx.total_chunks);
-  }
-
-  if (progress) {
-    progress(std::format(
-                         "index stats: {} files | {} redirects resolved | "
-                         "skipped: {} unreadable, {} short-raw, {} redirect, "
-                         "{} short-stripped, {} no-chunks, {} duplicate | "
-                         "{} chunks produced",
-                         text_files.size(), ctx.resolved_redirects,
-                         ctx.skip_unreadable, ctx.skip_short_raw,
-                         ctx.skip_redirect, ctx.skip_short_stripped,
-                         ctx.skip_no_chunks, ctx.skip_duplicate,
-                         ctx.total_chunks));
-  }
+  // Report stats
+  report_build_stats(text_files, ctx, progress);
 
   // Phase 5: Update index
   BuildStats bstats;

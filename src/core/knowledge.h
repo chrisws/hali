@@ -289,6 +289,22 @@ private:
                    BuildContext &ctx,
                    std::string *error) const;
 
+  int extract_zim_files(const std::string &zim_path, const std::string &id,
+                        Tui &tui, const ProgressFn &progress,
+                        BuildContext &ctx);
+
+  void apply_topic_filter(std::vector<std::filesystem::path> &text_files,
+                          const std::string &filter_path,
+                          BuildContext &ctx) const;
+
+  bool finalize_build(BuildContext &ctx, Tui &tui, const std::string &id,
+                      int disk_count, const ProgressFn &progress,
+                      std::string *error) const;
+
+  void report_build_stats(const std::vector<std::filesystem::path> &text_files,
+                          const BuildContext &ctx,
+                          const ProgressFn &progress) const;
+
   std::vector<IndexedSource> indexed_;
   RagLibrary                 library_;
   std::string                rag_dir_ = ".hali/rag";
