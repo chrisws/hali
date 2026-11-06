@@ -134,16 +134,17 @@ std::string Agent::handle_tune(const std::string &a1, const std::string &a2) {
       if (f < lo) f = lo;
       if (f > hi) f = hi;
       val = std::to_string(f);
-    } else if (key == "top_k" || key == "penalty_last_n") {
+    } else if (key == "top_k" || key == "penalty_last_n" || key == "rag_top_k") {
       int i = 0;
       try { i = std::stoi(val); } catch (...) { return "ERROR: '" + val + "' is not an integer"; }
       if (key == "top_k") { if (i < 1) i = 1; if (i > 200) i = 200; }
       if (key == "penalty_last_n") { if (i < 0) i = 0; if (i > 2048) i = 2048; }
+      if (key == "rag_top_k") { if (i < 1) i = 1; if (i > 100) i = 100; }
       val = std::to_string(i);
     } else {
       return "ERROR: unknown key '" + key +
         "'. Valid: temperature, top_p, min_p, top_k, "
-        "penalty_repeat, penalty_freq, penalty_present, penalty_last_n";
+        "penalty_repeat, penalty_freq, penalty_present, penalty_last_n, rag_top_k";
     }
     bool needs_reparam = false;
     std::string msg;
@@ -612,7 +613,11 @@ ToolMap Agent::build_tool_dispatch() {
     return rag_inspect();
   };
   tools["TOOL:RAGINDEX"] = [this](const std::string &a1, const std::string &a2) -> std::string {
-    return handle_ragindex(utils::trim(a1));
+    std::string combined = utils::trim(a1);
+    if (!a2.empty()) {
+      combined += " " + utils::trim(a2);
+    }
+    return handle_ragindex(combined);
   };
   tools["TOOL:LIST"] = [this](const std::string &a1, const std::string &a2) -> std::string {
     std::string dir = utils::resolve_path(cfg_.sandbox_, a1);

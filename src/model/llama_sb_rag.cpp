@@ -593,6 +593,19 @@ bool RagDB::append_chunks(const std::string &path) {
   if (chunks.empty()) {
     return true;
   }
+
+  /* Read current chunk count from header so we can update it
+   * after appending. This keeps the header in sync even if the
+   * process crashes before finalize_file is called. */
+  uint32_t current_count = 0;
+  {
+    std::ifstream hf(path, std::ios::binary);
+    if (hf) {
+      hf.seekg(8);
+      hf.read((char *)&current_count, 4);
+    }
+  }
+
   std::ofstream f(path, std::ios::binary | std::ios::app);
   if (!f) {
     return false;
@@ -603,10 +616,22 @@ bool RagDB::append_chunks(const std::string &path) {
       return false;
     }
   }
+  f.flush();
+
+  /* Patch the header with the updated chunk count so the file
+   * is always consistent, even if we crash before finalize_file. */
+  uint32_t new_count = current_count + (uint32_t)chunks.size();
+  {
+    std::fstream hf(path, std::ios::binary | std::ios::in | std::ios::out);
+    if (hf) {
+      hf.seekp(8);
+      hf.write((char *)&new_count, 4);
+    }
+  }
 
   chunks.clear();
   chunks.shrink_to_fit();
-  return f.good();
+  return true;
 }
 
 bool RagDB::finalize_file(const std::string &path, uint32_t n_chunks) {
@@ -617,6 +642,103 @@ bool RagDB::finalize_file(const std::string &path, uint32_t n_chunks) {
   f.seekp(8);  /* offset of n_chunks field */
   f.write((char*)&n_chunks, 4);
   return f.good();
+}
+
+/*
+ * Walk a .rag file from the start, counting chunks by following
+ * the binary layout. If the header's n_chunks field doesn't match
+ * the actual count, patch it. Returns the actual chunk count,
+ * or -1 on error.
+ */
+int RagDB::repair(const std::string &path) {
+  std::ifstream f(path, std::ios::binary);
+  if (!f) {
+    return -1;
+  }
+
+  auto read32 = [&]() -> uint32_t {
+    uint32_t v = 0; f.read((char*)&v, 4); return v;
+  };
+  auto read16 = [&]() -> uint16_t {
+    uint16_t v = 0; f.read((char*)&v, 2); return v;
+  };
+  auto read8 = [&]() -> uint8_t {
+    uint8_t v = 0; f.read((char*)&v, 1); return v;
+  };
+
+  uint32_t magic   = read32();
+  uint32_t version = read32();
+  uint32_t n_hdr   = read32();
+  uint32_t edim    = read32();
+
+  if (magic != MAGIC || version != 2) {
+    return -1;
+  }
+
+  uint32_t actual = 0;
+  while (f.good()) {
+    uint32_t text_len = read32();
+    if (!f.good()) break;
+    f.seekg(text_len, std::ios::cur);
+
+    uint16_t src_len = read16();
+    if (!f.good()) break;
+    f.seekg(src_len, std::ios::cur);
+
+    uint8_t type_len = read8();
+    if (!f.good()) break;
+    f.seekg(type_len, std::ios::cur);
+
+    f.seekg((std::streamoff)(edim * sizeof(float)), std::ios::cur);
+    actual++;
+  }
+
+  if (actual != n_hdr) {
+    std::fstream hf(path, std::ios::binary | std::ios::in | std::ios::out);
+    if (hf) {
+      hf.seekp(8);
+      hf.write((char *)&actual, 4);
+    }
+  }
+
+  return (int)actual;
+}
+
+std::vector<RagValidationIssue> RagDB::validate() const {
+  std::vector<RagValidationIssue> issues;
+  for (int i = 0; i < (int)chunks.size(); i++) {
+    const RagChunk &c = chunks[i];
+
+    if (c.text.empty()) {
+      issues.push_back({i, "empty text"});
+    }
+
+    const float *emb = c.get_embedding();
+    if (!emb) {
+      issues.push_back({i, "null embedding pointer"});
+      continue;
+    }
+
+    if ((int)c.embedding.size() != embed_dim && !c.embedding_ptr) {
+      issues.push_back({i, "embedding size mismatch: " +
+                        std::to_string(c.embedding.size()) +
+                        " != " + std::to_string(embed_dim)});
+      continue;
+    }
+
+    /* check for all-zero embedding */
+    bool all_zero = true;
+    for (int d = 0; d < embed_dim; d++) {
+      if (emb[d] != 0.0f) {
+        all_zero = false;
+        break;
+      }
+    }
+    if (all_zero) {
+      issues.push_back({i, "all-zero embedding (cosine will always be 0)"});
+    }
+  }
+  return issues;
 }
 
 bool RagDB::load(const std::string &path) {

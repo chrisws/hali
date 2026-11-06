@@ -17,6 +17,10 @@
 
 using namespace std;
 
+static void test_ragdb_repair();
+static void test_ragdb_repair_missing_file();
+static void test_ragdb_repair_bad_magic();
+
 //
 // test: empty input produces no chunks
 //
@@ -674,6 +678,240 @@ static void test_session_score_threshold() {
   cout << "test_session_score_threshold passed" << endl;
 }
 
+//
+// test: validate() passes on a healthy DB
+//
+static void test_ragdb_validate_ok() {
+  RagDB db;
+  db.embed_dim = 4;
+
+  RagChunk c;
+  c.text = "a valid chunk with enough text content";
+  c.source = "ok.cpp";
+  c.type = "function";
+  c.embedding = {0.1f, 0.2f, 0.3f, 0.4f};
+  db.chunks.push_back(c);
+
+  auto issues = db.validate();
+  assert(issues.empty());
+
+  cout << "test_ragdb_validate_ok passed" << endl;
+}
+
+//
+// test: validate() detects all-zero embeddings
+// This is the suspected cause of the second-indexing bug:
+// appended chunks have text but zeroed float vectors,
+// so cosine similarity is always 0 and they never rank.
+//
+static void test_ragdb_validate_zero_embedding() {
+  RagDB db;
+  db.embed_dim = 4;
+
+  /* good chunk */
+  RagChunk good;
+  good.text = "a good chunk with valid embedding data";
+  good.source = "good.cpp";
+  good.type = "function";
+  good.embedding = {0.5f, 0.5f, 0.5f, 0.5f};
+  db.chunks.push_back(good);
+
+  /* zeroed chunk - the bug scenario */
+  RagChunk bad;
+  bad.text = "this chunk has text but zeroed embedding";
+  bad.source = "bad.cpp";
+  bad.type = "function";
+  bad.embedding = {0.0f, 0.0f, 0.0f, 0.0f};
+  db.chunks.push_back(bad);
+
+  auto issues = db.validate();
+  assert(issues.size() == 1);
+  assert(issues[0].chunk_index == 1);
+  assert(issues[0].reason.find("all-zero") != string::npos);
+
+  cout << "test_ragdb_validate_zero_embedding passed" << endl;
+}
+
+//
+// test: validate() detects empty text
+//
+static void test_ragdb_validate_empty_text() {
+  RagDB db;
+  db.embed_dim = 2;
+
+  RagChunk c;
+  c.text = "";
+  c.source = "empty.cpp";
+  c.type = "other";
+  c.embedding = {0.1f, 0.2f};
+  db.chunks.push_back(c);
+
+  auto issues = db.validate();
+  assert(issues.size() == 1);
+  assert(issues[0].chunk_index == 0);
+  assert(issues[0].reason == "empty text");
+
+  cout << "test_ragdb_validate_empty_text passed" << endl;
+}
+
+//
+// test: validate() detects embedding size mismatch
+//
+static void test_ragdb_validate_size_mismatch() {
+  RagDB db;
+  db.embed_dim = 4;
+
+  RagChunk c;
+  c.text = "chunk with wrong embedding dimension";
+  c.source = "mismatch.cpp";
+  c.type = "other";
+  c.embedding = {0.1f, 0.2f};  /* only 2 floats, should be 4 */
+  db.chunks.push_back(c);
+
+  auto issues = db.validate();
+  assert(issues.size() == 1);
+  assert(issues[0].chunk_index == 0);
+  assert(issues[0].reason.find("mismatch") != string::npos);
+
+  cout << "test_ragdb_validate_size_mismatch passed" << endl;
+}
+
+//
+// test: mmap round-trip with appended chunks (second-indexing scenario)
+// This simulates the exact flow: init_file → append batch 1 →
+// append batch 2 → finalize → load_mmap. Verifies that all
+// chunks are readable with correct text AND non-zero embeddings.
+//
+static void test_ragdb_mmap_append_roundtrip() {
+  const string path = "/tmp/hali_rag_mmap_test.rag";
+  std::filesystem::remove(path);
+
+  /* Phase 1: init */
+  RagDB db;
+  db.embed_dim = 4;
+  assert(db.init_file(path));
+
+  /* Phase 2: first batch (simulates initial indexing) */
+  RagChunk c1;
+  c1.text = "first batch: calico cat has orange and white patches";
+  c1.source = "cats.md";
+  c1.type = "prose";
+  c1.embedding = {0.1f, 0.2f, 0.3f, 0.4f};
+  db.chunks.push_back(c1);
+
+  RagChunk c2;
+  c2.text = "second entry in the first batch of indexed content";
+  c2.source = "dogs.md";
+  c2.type = "prose";
+  c2.embedding = {0.5f, 0.6f, 0.7f, 0.8f};
+  db.chunks.push_back(c2);
+
+  assert(db.append_chunks(path));
+  assert(db.empty());
+
+  /* Phase 3: second batch (simulates RAGINDEX append) */
+  RagChunk c3;
+  c3.text = "third entry appended in the second indexing pass";
+  c3.source = "birds.md";
+  c3.type = "prose";
+  c3.embedding = {0.9f, 0.1f, 0.2f, 0.3f};
+  db.chunks.push_back(c3);
+
+  RagChunk c4;
+  c4.text = "fourth entry also appended during second pass";
+  c4.source = "fish.md";
+  c4.type = "prose";
+  c4.embedding = {0.4f, 0.5f, 0.6f, 0.7f};
+  db.chunks.push_back(c4);
+
+  assert(db.append_chunks(path));
+  assert(db.empty());
+
+  /* Phase 4: finalize with total count */
+  assert(RagDB::finalize_file(path, 4));
+
+  /* Phase 5: load via mmap and verify */
+  RagDB loaded;
+  assert(loaded.load_mmap(path));
+  assert(loaded.is_mmap());
+  assert(loaded.size() == 4);
+  assert(loaded.embed_dim == 4);
+
+  /* Verify text survived */
+  assert(loaded.chunks[0].text == "first batch: calico cat has orange and white patches");
+  assert(loaded.chunks[1].text == "second entry in the first batch of indexed content");
+  assert(loaded.chunks[2].text == "third entry appended in the second indexing pass");
+  assert(loaded.chunks[3].text == "fourth entry also appended during second pass");
+
+  /* Verify embeddings are non-zero and correct */
+  for (int i = 0; i < 4; i++) {
+    const float *emb = loaded.chunks[i].get_embedding();
+    assert(emb != nullptr);
+    for (int d = 0; d < 4; d++) {
+      assert(emb[d] != 0.0f);
+    }
+  }
+
+  /* Verify specific values */
+  assert(loaded.chunks[0].get_embedding()[0] == 0.1f);
+  assert(loaded.chunks[0].get_embedding()[3] == 0.4f);
+  assert(loaded.chunks[2].get_embedding()[0] == 0.9f);
+  assert(loaded.chunks[3].get_embedding()[1] == 0.5f);
+
+  /* validate() should find no issues */
+  auto issues = loaded.validate();
+  assert(issues.empty());
+
+  std::filesystem::remove(path);
+  cout << "test_ragdb_mmap_append_roundtrip passed" << endl;
+}
+
+//
+// test: mmap load detects zeroed embeddings via validate()
+// Simulates the bug: text is present but embedding is all zeros.
+//
+static void test_ragdb_mmap_validate_zero() {
+  const string path = "/tmp/hali_rag_mmap_zero.rag";
+  std::filesystem::remove(path);
+
+  RagDB db;
+  db.embed_dim = 4;
+  assert(db.init_file(path));
+
+  /* good chunk */
+  RagChunk good;
+  good.text = "a valid chunk with proper embedding values";
+  good.source = "ok.md";
+  good.type = "prose";
+  good.embedding = {0.3f, 0.4f, 0.5f, 0.6f};
+  db.chunks.push_back(good);
+
+  /* zeroed chunk - simulates the bug */
+  RagChunk zeroed;
+  zeroed.text = "this chunk has text but zeroed embedding vector";
+  zeroed.source = "bug.md";
+  zeroed.type = "prose";
+  zeroed.embedding = {0.0f, 0.0f, 0.0f, 0.0f};
+  db.chunks.push_back(zeroed);
+
+  assert(db.append_chunks(path));
+  assert(RagDB::finalize_file(path, 2));
+
+  /* load via mmap */
+  RagDB loaded;
+  assert(loaded.load_mmap(path));
+  assert(loaded.size() == 2);
+
+  /* validate should flag chunk 1 */
+  auto issues = loaded.validate();
+  assert(issues.size() == 1);
+  assert(issues[0].chunk_index == 1);
+  assert(issues[0].reason.find("all-zero") != string::npos);
+
+  std::filesystem::remove(path);
+  cout << "test_ragdb_mmap_validate_zero passed" << endl;
+}
+
 void rag_test() {
   test_prose_empty();
   test_prose_too_short();
@@ -703,4 +941,87 @@ void rag_test() {
   test_session_budget_finite();
   test_session_charge();
   test_session_score_threshold();
+  test_ragdb_validate_ok();
+  test_ragdb_validate_zero_embedding();
+  test_ragdb_validate_empty_text();
+  test_ragdb_validate_size_mismatch();
+  test_ragdb_mmap_append_roundtrip();
+  test_ragdb_mmap_validate_zero();
+  test_ragdb_repair();
+  test_ragdb_repair_missing_file();
+  test_ragdb_repair_bad_magic();
+}
+
+//
+// test: repair fixes a stale n_chunks header
+//
+static void test_ragdb_repair() {
+  string path = "/tmp/hali_test_repair.rag";
+
+  /* Create a file with 3 chunks */
+  RagDB db;
+  db.embed_dim = 4;
+  db.init_file(path);
+
+  for (int i = 0; i < 3; i++) {
+    RagChunk c;
+    c.text = "test chunk number " + to_string(i) +
+             " with enough text to be valid";
+    c.source = "test";
+    c.type = "other";
+    c.embedding.assign(4, 0.5f);
+    db.chunks.push_back(std::move(c));
+  }
+  assert(db.append_chunks(path));
+  db.chunks.clear();
+
+  /* Now corrupt the header: set n_chunks to 1 */
+  RagDB::finalize_file(path, 1);
+
+  /* Verify the header is wrong */
+  {
+    RagDB check;
+    assert(check.load(path));
+    assert(check.size() == 1);  /* only reads 1 due to stale header */
+  }
+
+  /* Repair should find 3 actual chunks and fix the header */
+  int count = RagDB::repair(path);
+  assert(count == 3);
+
+  /* Verify the file now loads all 3 chunks */
+  {
+    RagDB check;
+    assert(check.load(path));
+    assert(check.size() == 3);
+  }
+
+  std::filesystem::remove(path);
+  cout << "test_ragdb_repair passed" << endl;
+}
+
+//
+// test: repair returns -1 for missing file
+//
+static void test_ragdb_repair_missing_file() {
+  int count = RagDB::repair("/tmp/hali_nonexistent_file.rag");
+  assert(count == -1);
+  cout << "test_ragdb_repair_missing_file passed" << endl;
+}
+
+//
+// test: repair returns -1 for file with bad magic
+//
+static void test_ragdb_repair_bad_magic() {
+  string path = "/tmp/hali_test_repair_badmagic.rag";
+  {
+    std::ofstream f(path, std::ios::binary);
+    f.write("NOTMAGIC", 8);
+    f.write("\x00\x00\x00\x00", 4);
+    f.write("\x00\x00\x00\x00", 4);
+  }
+  int count = RagDB::repair(path);
+  assert(count == -1);
+  std::filesystem::remove(path);
+  cout << "test_ragdb_repair_bad_magic passed" << endl;
 }

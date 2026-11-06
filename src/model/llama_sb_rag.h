@@ -38,6 +38,12 @@ struct RagChunk {
   }
 };
 
+/* ── validation issue (returned by RagDB::validate) ─────────── */
+struct RagValidationIssue {
+  int           chunk_index;
+  std::string   reason;
+};
+
 /* ── on-disk chunk (variable-length text) ──────────────────── */
 /*
  * db header  (16 bytes):
@@ -123,9 +129,17 @@ struct RagDB {
   bool init_file(const std::string &path) const;
   bool append_chunks(const std::string &path);
   static bool finalize_file(const std::string &path, uint32_t n_chunks);
+  /* Walk a .rag file, count actual chunks, and patch the header
+   * if it's stale. Returns actual count or -1 on error. */
+  static int repair(const std::string &path);
 
   int  size()  const { return (int)chunks.size(); }
   bool empty() const { return chunks.empty(); }
+
+  /* Walk all chunks and report issues: empty text, wrong embedding
+   * size, or all-zero embeddings (which would score 0 on cosine
+   * and never rank in retrieval). Returns one entry per problem. */
+  std::vector<RagValidationIssue> validate() const;
 };
 
 //

@@ -228,8 +228,60 @@ std::string Agent::rag_inspect() const {
 
 std::string Agent::handle_ragindex(const std::string &zim_path) {
   if (zim_path.empty()) {
-    return "ERROR: usage: TOOL:RAGINDEX <zim_file_path>";
+    return "ERROR: usage: TOOL:RAGINDEX <zim_file_path> | --validate <rag_file> | --repair <rag_file>";
   }
+
+  /* --repair mode: walk a .rag file, fix stale n_chunks header */
+  if (utils::starts_with(zim_path, "--repair")) {
+    std::string rag_path = utils::trim(zim_path.substr(8));
+    if (rag_path.empty()) {
+      return "ERROR: usage: TOOL:RAGINDEX --repair <rag_file_path>";
+    }
+    tui_.show_tool("ragrepair: " + rag_path);
+    int count = RagDB::repair(rag_path);
+    if (count < 0) {
+      return "ERROR: failed to repair " + rag_path;
+    }
+    std::string msg = "OK: repaired " + rag_path + " (" +
+                      std::to_string(count) + " chunks)";
+    tui_.append_line(ICON_TOOL + msg);
+    return msg;
+  }
+
+  /* --validate mode: load an existing .rag file and report issues */
+  if (utils::starts_with(zim_path, "--validate")) {
+    std::string rag_path = utils::trim(zim_path.substr(10));
+    if (rag_path.empty()) {
+      return "ERROR: usage: TOOL:RAGINDEX --validate <rag_file_path>";
+    }
+    tui_.show_tool("ragvalidate: " + rag_path);
+
+    RagDB db;
+    if (!db.load_mmap(rag_path)) {
+      if (!db.load(rag_path)) {
+        return "ERROR: failed to load " + rag_path;
+      }
+    }
+
+    auto issues = db.validate();
+    if (issues.empty()) {
+      std::string msg = "OK: " + std::to_string(db.size()) +
+                        " chunks, no issues found";
+      tui_.append_line(ICON_TOOL + msg);
+      return msg;
+    }
+
+    std::ostringstream out;
+    out << "VALIDATION: " << db.size() << " chunks, "
+        << issues.size() << " issue(s) found:\n";
+    for (const auto &i : issues) {
+      out << "  chunk " << i.chunk_index << ": " << i.reason << "\n";
+      tui_.append_line("  [" + std::to_string(i.chunk_index) + "] " + i.reason);
+    }
+    return out.str();
+  }
+
+  /* normal indexing mode */
   tui_.show_tool("ragindex: " + zim_path);
   if (!embed_model()) {
     return "ERROR: no embedding model loaded. Use /embed first.";
