@@ -697,8 +697,7 @@ bool KnowledgeManager::build_from_path(const std::string &zim_path,
                                        Tui &tui,
                                        const ProgressFn &progress,
                                        std::string *error,
-                                       const std::string &filter_path,
-                                       bool append) {
+                                       const std::string &filter_path) {
   auto fail = [progress, error](const std::string &msg) {
     if (progress) {
       progress(msg);
@@ -725,35 +724,27 @@ bool KnowledgeManager::build_from_path(const std::string &zim_path,
   BuildContext ctx;
   ctx.id = id;
   ctx.zim_path = zim_path;
-  ctx.append = append;
   ctx.rag_file = rag_path(id);
+  ctx.append = false;
 
   // Check for existing index
   if (rag_exists(id)) {
-    if (!append) {
-      if (progress) {
-        progress("already indexed: " + id);
+    std::ifstream hf(ctx.rag_file, std::ios::binary);
+    if (hf) {
+      // Validate magic before trusting the chunk count
+      uint32_t magic = 0;
+      hf.seekg(0);
+      hf.read((char *)&magic, 4);
+      if (magic == 0x52414744u) {
+        hf.seekg(8);
+        hf.read((char *)&ctx.existing_chunks, 4);
+        ctx.append = true;
+      } else {
+        ctx.existing_chunks = 0;
       }
-      return true;
     }
-    {
-      std::ifstream hf(ctx.rag_file, std::ios::binary);
-      if (hf) {
-        /* Validate magic before trusting the chunk count */
-        uint32_t magic = 0;
-        hf.seekg(0);
-        hf.read((char*)&magic, 4);
-        if (magic == 0x52414744u) {
-          hf.seekg(8);
-          hf.read((char*)&ctx.existing_chunks, 4);
-        } else {
-          ctx.existing_chunks = 0;
-        }
-      }
-      if (progress) {
-        progress(std::format("appending to existing index ({} chunks)",
-                             ctx.existing_chunks));
-      }
+    if (progress) {
+      progress(std::format("appending to existing index ({} chunks)", ctx.existing_chunks));
     }
   }
 

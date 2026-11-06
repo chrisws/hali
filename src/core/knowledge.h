@@ -178,8 +178,7 @@ struct KnowledgeManager {
                        Tui &tui,
                        const ProgressFn &progress,
                        std::string *error = nullptr,
-                       const std::string &filter_path = "",
-                       bool append = false);
+                       const std::string &filter_path = "");
 
   //
   // (private) save rag file reference and update index JSON with stats
