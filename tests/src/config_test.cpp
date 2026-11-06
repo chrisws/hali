@@ -79,6 +79,63 @@ static void test_set_value_bool() {
   cout << "test_set_value_bool passed" << endl;
 }
 
+static void test_rag_enabled_default() {
+  HaliConfig cfg;
+  assert(cfg.rag_enabled_ == true);
+  cout << "test_rag_enabled_default passed" << endl;
+}
+
+static void test_rag_enabled_set_value() {
+  HaliConfig cfg;
+  bool reparam = false;
+  string msg;
+
+  int rc = cfg.set_value("rag_enabled", "false", reparam, msg);
+  assert(rc == 0);
+  assert(cfg.rag_enabled_ == false);
+
+  rc = cfg.set_value("rag_enabled", "true", reparam, msg);
+  assert(rc == 0);
+  assert(cfg.rag_enabled_ == true);
+
+  cout << "test_rag_enabled_set_value passed" << endl;
+}
+
+static void test_rag_enabled_load() {
+  const string path = "/tmp/hali_test_rag_enabled.json";
+  const string content =
+    "{\n"
+    "  \"rag\": { \"embed_path\": \"/tmp/bert.gguf\", \"top_k\": 5, \"enabled\": false }\n"
+    "}\n";
+  {
+    ofstream f(path);
+    f << content;
+  }
+
+  HaliConfig cfg;
+  cfg.set_config(path);
+  cfg.load_settings();
+
+  assert(cfg.rag_enabled_ == false);
+  assert(cfg.embed_path_ == "/tmp/bert.gguf");
+  assert(cfg.rag_top_k_ == 5);
+
+  // Verify introspect round-trips the value
+  string json = cfg.introspect();
+  auto doc = json::parse(json);
+  assert(doc.is_valid());
+  auto root = doc.get_root();
+  auto rag = root.get_child("rag");
+  bool enabled = true;
+  assert(rag.get_bool("enabled", enabled));
+  assert(enabled == false);
+
+  std::error_code ec;
+  std::filesystem::remove(path, ec);
+
+  cout << "test_rag_enabled_load passed" << endl;
+}
+
 static void test_set_value_unknown_key() {
   HaliConfig cfg;
   bool reparam = false;
@@ -419,6 +476,9 @@ void config_test() {
   test_set_value_float();
   test_set_value_int();
   test_set_value_bool();
+  test_rag_enabled_default();
+  test_rag_enabled_set_value();
+  test_rag_enabled_load();
   test_set_value_unknown_key();
   test_set_value_parse_error();
   test_set_value_run_allowed();

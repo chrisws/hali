@@ -143,6 +143,7 @@ void HaliConfig::load_settings() {
   if (rag.is_object()) {
     rag.get_str("embed_path", embed_path_);
     rag.get_int("top_k", rag_top_k_);
+    rag.get_bool("enabled", rag_enabled_);
   }
 
   // ── mtp section ────────────────────────────────────────────────
@@ -592,6 +593,7 @@ std::string HaliConfig::introspect() const {
   auto rag = root.get_child("rag");
   rag.set_str("embed_path", embed_path_);
   rag.set_int("top_k", rag_top_k_);
+  rag.set_bool("enabled", rag_enabled_);
 
   // mtp
   auto mtp = root.get_child("mtp");
@@ -698,6 +700,8 @@ int HaliConfig::set_value(const std::string &key, const std::string &val,
       penalty_last_n_ = std::stoi(val); needs_reparam = true;
     } else if (key == "rag_top_k") {
       rag_top_k_ = std::stoi(val);
+    } else if (key == "rag_enabled") {
+      rag_enabled_ = (val == "true");
     } else if (key == "offload_kqv") {
       offload_kqv_ = (val == "true");
     } else if (key == "n_ubatch") {

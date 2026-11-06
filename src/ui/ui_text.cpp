@@ -138,6 +138,7 @@ void settings(Tui &tui, HaliConfig &cfg) {
   tui.append_line(ICON_SYS + "  suffix_max_draft: " + std::to_string(cfg.suffix_max_draft_));
 
   tui.append_line(ICON_SYS + "── RAG ────────────────────────────────────────");
+  tui.append_line(ICON_SYS + "  rag_enabled     : " + bool_str(cfg.rag_enabled_));
   tui.append_line(ICON_SYS + "  rag_top_k       : " + std::to_string(cfg.rag_top_k_));
 
   tui.append_line(ICON_SYS + "── Audio ──────────────────────────────────────");

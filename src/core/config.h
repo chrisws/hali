@@ -74,6 +74,7 @@ struct HaliConfig {
   int   n_threads_batch_= 0;
   int   penalty_last_n_ = 256;
   int   rag_top_k_      = 5;
+  bool  rag_enabled_    = true;
   int   top_k_          = 20;
   bool  web_enabled_    = false;
   int   web_port_       = 8080;

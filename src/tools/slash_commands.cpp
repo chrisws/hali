@@ -1031,20 +1031,37 @@ static void slash_task(const std::string &rest, HaliConfig &cfg, Agent &agent, T
       tui.append_line(ICON_SYS + "  audio.enable_multi_track → " + (new_state ? "true" : "false"));
     } else if (name == "knowledge") {
       bool new_state = !cfg.modes_.knowledge;
-      if (new_state && agent.embed_model() == nullptr) {
-        tui.append_line(ICON_ERR + "Knowledge mode requires an embedding model.");
-        tui.append_line(ICON_ERR + "Load one first: /embed <path>");
-      } else if (new_state && !KnowledgeManager::zimdump_available()) {
-        tui.append_line(ICON_ERR + "Knowledge mode requires zimdump.");
-        tui.append_line(ICON_ERR + KnowledgeManager::zimdump_install_hint());
-      } else {
-        cfg.modes_.knowledge = new_state;
-        tui.append_line(ICON_SYS + "Task: knowledge");
-        tui.append_line(ICON_SYS + "  RAG active, top_k → " + std::to_string(cfg.rag_top_k_));
-        if (new_state) {
-          tui.append_line(ICON_SYS + "Use /index load to select a source.");
-          slash_index("load", cfg, agent, tui);
+      if (new_state) {
+        cfg.rag_enabled_ = true;
+        if (agent.embed_model() == nullptr && !cfg.embed_path_.empty()) {
+          tui.append_line(ICON_SYS + "Loading embedding model…");
+          tui.redraw_all();
+          if (!agent.setup_embed(cfg.embed_path_)) {
+            tui.append_line(ICON_ERR + "Failed to load embedding model.");
+            tui.redraw_all();
+            return;
+          }
         }
+        if (agent.embed_model() == nullptr) {
+          tui.append_line(ICON_ERR + "Knowledge mode requires an embedding model.");
+          tui.append_line(ICON_ERR + "Load one first: /embed <path>");
+          return;
+        }
+        if (!KnowledgeManager::zimdump_available()) {
+          tui.append_line(ICON_ERR + "Knowledge mode requires zimdump.");
+          tui.append_line(ICON_ERR + KnowledgeManager::zimdump_install_hint());
+          return;
+        }
+      } else {
+        cfg.rag_enabled_ = false;
+      }
+      cfg.modes_.knowledge = new_state;
+      tui.append_line(ICON_SYS + "Task: knowledge");
+      tui.append_line(ICON_SYS + "  rag_enabled  → " + (new_state ? "true" : "false"));
+      tui.append_line(ICON_SYS + "  RAG active, top_k → " + std::to_string(cfg.rag_top_k_));
+      if (new_state) {
+        tui.append_line(ICON_SYS + "Use /index load to select a source.");
+        slash_index("load", cfg, agent, tui);
       }
     } else {
       tui.append_line(ICON_ERR + "Unknown mode: " + name);
