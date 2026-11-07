@@ -282,6 +282,8 @@ bool KnowledgeManager::load_index_json() {
     r.get_str("rag_path", src.rag_path);
     r.get_int("chunks", src.chunks);
     r.get_str("indexed_at", src.indexed_at);
+    r.get_str("topics", src.topics);
+    r.get_str("description", src.description);
     auto st = r.get_child("stats");
     if (st.is_object()) {
       st.get_int("total_files",         src.stats.total_files);
@@ -321,6 +323,8 @@ bool KnowledgeManager::save_index_json() const {
     src.set_str("rag_path", s.rag_path);
     src.set_int("chunks", s.chunks);
     src.set_str("indexed_at", s.indexed_at);
+    src.set_str("topics", s.topics);
+    src.set_str("description", s.description);
     src.set_empty_obj("stats");
     auto stats = src.get_child("stats");
     stats.set_int("total_files",         s.stats.total_files);
@@ -421,10 +425,31 @@ bool KnowledgeManager::remove(const std::string &id) {
 }
 
 //
-// Load all .rag files from rag_dir_
+// Load .rag files from rag_dir_
+// If names is non-empty, only load those specific files.
 //
-int KnowledgeManager::load_all() {
-  return library_.load_dir(rag_dir_);
+int KnowledgeManager::load_all(const std::vector<std::string> &names) {
+  const auto &use = names.empty() ? active_rag_files_ : names;
+  if (use.empty()) {
+    return library_.load_dir(rag_dir_);
+  }
+  int count = 0;
+  for (const auto &name : use) {
+    std::string path = rag_path(name);
+    if (!fs::exists(path)) {
+      continue;
+    }
+    RagDB db;
+    if (!db.load_mmap(path)) {
+      if (!db.load(path)) {
+        continue;
+      }
+    }
+    if (library_.add(name, std::move(db))) {
+      count++;
+    }
+  }
+  return count;
 }
 
 //

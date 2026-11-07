@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <ctime>
 #include <cstddef>
 #include <cstdio>
 #include <filesystem>
@@ -282,23 +283,99 @@ std::string Agent::handle_ragindex(const std::string &zim_path) {
   }
 
   /* normal indexing mode */
-  tui_.show_tool("ragindex: " + zim_path);
   if (!embed_model()) {
     return "ERROR: no embedding model loaded. Use /embed first.";
   }
+
+  // Work on a local copy since zim_path is const ref
+  std::string path = zim_path;
+
+  // Parse --new / --append flags
+  std::string target_name;
+  bool force_new = false;
+  if (utils::starts_with(path, "--new ")) {
+    force_new = true;
+    path = utils::trim(path.substr(6));
+  } else if (utils::starts_with(path, "--append ")) {
+    std::string rest = utils::trim(path.substr(9));
+    if (rest.empty()) {
+      return "ERROR: usage: TOOL:RAGINDEX --append <name> <zim_file>";
+    }
+    // The ZIM path follows the name
+    auto sp = rest.find(' ');
+    if (sp != std::string::npos) {
+      path = utils::trim(rest.substr(sp + 1));
+      target_name = rest.substr(0, sp);
+    } else {
+      return "ERROR: --append requires a ZIM file path after the name";
+    }
+  }
+
+  tui_.show_tool("ragindex: " + path);
+
+  // If no explicit flag, check for existing .rag files and offer picker
+  if (!force_new && target_name.empty()) {
+    std::vector<std::string> existing;
+    const std::string &rd = knowledge_.rag_dir();
+    if (fs::exists(rd)) {
+      for (auto &e : fs::directory_iterator(rd)) {
+        if (e.path().extension() == ".rag") {
+          existing.emplace_back(e.path().stem().string());
+        }
+      }
+    }
+    if (!existing.empty()) {
+      std::vector<std::string> options;
+      fs::path zp(path);
+      options.emplace_back("Create new: " + zp.stem().string() + ".rag");
+      for (const auto &name : existing) {
+        options.emplace_back("Append to: " + name + ".rag");
+      }
+      int sel = tui_.list_picker(options, "RAG index target");
+      if (sel < 0) {
+        tui_.append_line(ICON_ERR + "RAG index cancelled");
+        return "CANCELLED";
+      }
+      if (sel == 0) {
+        // Create new — use ZIM stem, but make unique if it collides
+        fs::path zp(path);
+        std::string stem = zp.stem().string();
+        bool collides = std::find(existing.begin(), existing.end(), stem)
+                        != existing.end();
+        if (collides) {
+          auto now = std::chrono::system_clock::now();
+          auto t = std::chrono::system_clock::to_time_t(now);
+          std::tm tm_buf {};
+          localtime_r(&t, &tm_buf);
+          char ts[16];
+          std::strftime(ts, sizeof(ts), "%Y%m%d_%H%M%S", &tm_buf);
+          target_name = stem + "_" + ts;
+        }
+      } else {
+        target_name = existing[sel - 1];
+      }
+    }
+  }
+
   const std::string filter_path = cfg_.sandbox_ + "/.hali/topics.txt";
   std::string err;
   auto progress = [this](const std::string &msg) {
     tui_.show_tool(msg);
   };
-  bool ok = knowledge_.build_from_path(zim_path, *embed_model(), tui_, progress, &err, filter_path);
+  bool ok = knowledge_.build_from_path(path, *embed_model(), tui_, progress, &err, filter_path, target_name);
   if (ok) {
-    fs::path zp(zim_path);
-    std::string id = zp.stem().string();
+    fs::path zp(path);
+    std::string id = target_name.empty() ? zp.stem().string() : target_name;
     if (!knowledge_.load(id)) {
       tui_.append_line(ICON_ERR + "ERROR: indexed but failed to load " + id);
     } else {
       tui_.append_line(ICON_TOOL + "OK: indexed and loaded " + id);
+      // Track active .rag files in config
+      if (std::find(cfg_.rag_files_.begin(), cfg_.rag_files_.end(), id)
+          == cfg_.rag_files_.end()) {
+        cfg_.rag_files_.emplace_back(id);
+        cfg_.save_settings();
+      }
     }
   } else {
     tui_.append_line(ICON_ERR + "ERROR: " + err);

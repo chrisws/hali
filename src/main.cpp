@@ -206,8 +206,9 @@ int main(int argc, char **argv) {
       std::string sysp = cfg.build_system_prompt();
       agent.reset_conversation(sysp);
     }
-    if (!cfg.embed_path_.empty()) {
+    if (!cfg.embed_path_.empty() && cfg.rag_enabled_) {
       agent.setup_embed(cfg.embed_path_);
+      agent.knowledge().set_active_files(cfg.rag_files_);
     }
     tui.append_line(ICON_SYS + "System ready 🚀");
     tui.redraw_all();

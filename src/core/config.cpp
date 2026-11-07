@@ -234,6 +234,14 @@ void HaliConfig::load_settings() {
       knowledge_files_.emplace_back(k.get_str());
     }
   }
+
+  std::vector<json::JsonValue> rfs;
+  if (root.get_array("rag_files", rfs)) {
+    rag_files_.clear();
+    for (const auto &r : rfs) {
+      rag_files_.emplace_back(r.get_str());
+    }
+  }
 }
 
 // Persist the current cfg to ~/.config/hali/settings.json.
@@ -346,6 +354,15 @@ std::string HaliConfig::prompt_knowledge() const {
   return p;
 }
 
+std::string HaliConfig::prompt_rag() const {
+  return
+    "  TOOL:RAG    <query>        query the RAG index for additional context\n"
+    "  TOOL:RAGINFO               inspect RAG subsystem state (loaded DBs, chunks, config)\n"
+    "  TOOL:RAGINDEX <zim_file>   index a ZIM file into the RAG knowledge base\n"
+    "  TOOL:RAGINDEX --validate <rag_file>  validate an existing .rag file\n"
+    "  TOOL:RAGINDEX --repair <rag_file>    repair stale chunk count in .rag header\n";
+}
+
 std::string HaliConfig::prompt_core() const {
   std::string p;
   p +=
@@ -413,11 +430,6 @@ std::string HaliConfig::prompt_core() const {
     "  TOOL:TIME                  current time\n"
     "  TOOL:RND                   random float 0..1\n"
     "  TOOL:TUNE  <key=val ...>   adjust sampling settings (temperature, top_p, min_p, top_k, penalties)\n"
-    "  TOOL:RAG    <query>        query the RAG index for additional context\n"
-    "  TOOL:RAGINFO               inspect RAG subsystem state (loaded DBs, chunks, config)\n"
-    "  TOOL:RAGINDEX <zim_file>   index a ZIM file into the RAG knowledge base\n"
-    "  TOOL:RAGINDEX --validate <rag_file>  validate an existing .rag file\n"
-    "  TOOL:RAGINDEX --repair <rag_file>    repair stale chunk count in .rag header\n"
     "  TOOL:ASK    <query>        ask the user for clarification or additional context\n"
     "  TOOL:CHOICE <question>|<opt1>|<opt2>|...  multiple-choice popup (pipe-delimited)\n"
     "  TOOL:TABLE  <R>x<C> <rows>  format pipe-delimited rows into an aligned table\n"
@@ -555,6 +567,9 @@ std::string HaliConfig::build_system_prompt() const {
   p += prompt_audio();
   p += prompt_web();
   p += prompt_knowledge();
+  if (rag_enabled_) {
+    p += prompt_rag();
+  }
   return p;
 }
 
@@ -659,6 +674,7 @@ std::string HaliConfig::introspect() const {
     }
   }
   root.set_arr("knowledge_files", user_kf);
+  root.set_arr("rag_files", rag_files_);
 
   return doc.to_string(json::WriteFlag::Pretty);
 }

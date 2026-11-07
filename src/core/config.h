@@ -122,6 +122,7 @@ struct HaliConfig {
   // Empty means "allow anything inside the sandbox" (original behaviour).
   std::vector<std::string> run_allowed_;
   std::vector<std::string> knowledge_files_;
+  std::vector<std::string> rag_files_;
 
   // Files auto-discovered at startup; excluded from config.json persistence.
   static const std::vector<std::string> AUTO_KNOWLEDGE_FILES;
@@ -153,6 +154,7 @@ private:
   std::string prompt_audio() const;
   std::string prompt_web() const;
   std::string prompt_knowledge() const;
+  std::string prompt_rag() const;
 };
 
 

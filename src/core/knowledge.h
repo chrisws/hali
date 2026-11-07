@@ -44,6 +44,8 @@ struct IndexedSource {
   std::string  rag_path;
   int          chunks = 0;
   std::string  indexed_at;
+  std::string  topics;
+  std::string  description;
   BuildStats   stats;
 };
 
@@ -172,20 +174,24 @@ struct KnowledgeManager {
   // Extracts text with zimdump, embeds chunks, saves .rag file,
   // and updates the index JSON.
   // If error is non-null, the specific failure reason is written to it.
+  // If target_name is non-empty, use it as the .rag file stem
+  // instead of the ZIM filename stem (for appending to existing .rag).
   //
   bool build_from_path(const std::string &zim_path,
                        Llama &llama,
                        Tui &tui,
                        const ProgressFn &progress,
                        std::string *error = nullptr,
-                       const std::string &filter_path = "");
+                       const std::string &filter_path = "",
+                       const std::string &target_name = "");
 
   //
   // (private) save rag file reference and update index JSON with stats
   //
   bool zim_save_and_index(const std::string &id, const std::string &zim_path,
                           int total_chunks, const BuildStats &stats,
-                          const ProgressFn &progress);
+                          const ProgressFn &progress,
+                          const std::string &topics = "");
 
   //
   // Load a built .rag file into the session library
@@ -203,10 +209,12 @@ struct KnowledgeManager {
   bool remove(const std::string &id);
 
   //
-  // Load all .rag files from rag_dir_ into the library
-  // Returns the count loaded
+  // Load .rag files from rag_dir_ into the library.
+  // If names is non-empty, only load those specific files.
+  // If names is empty, load all .rag files in the directory.
+  // Returns the count loaded.
   //
-  int load_all();
+  int load_all(const std::vector<std::string> &names = {});
 
   //
   // Format loaded sources as a display string
@@ -274,7 +282,10 @@ struct KnowledgeManager {
   // Set directories (call before use)
   //
   void set_rag_dir(const std::string &dir)       { rag_dir_ = dir; }
+  const std::string &rag_dir() const             { return rag_dir_; }
   void set_index_json_path(const std::string &p) { index_json_path_ = p; }
+  void set_active_files(const std::vector<std::string> &f) { active_rag_files_ = f; }
+  const std::vector<std::string> &active_files() const { return active_rag_files_; }
 
 private:
   int zim_extract(const std::string &zim_path, const std::string &id,
@@ -308,6 +319,7 @@ private:
   RagLibrary                 library_;
   std::string                rag_dir_ = ".hali/rag";
   std::string                index_json_path_ = ".hali/kiwix-index.json";
+  std::vector<std::string>   active_rag_files_;
   std::unique_ptr<Llama>     embed_llama_;
   mutable std::string        last_query_;
   mutable std::string        last_result_;

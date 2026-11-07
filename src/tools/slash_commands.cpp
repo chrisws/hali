@@ -792,12 +792,13 @@ static std::vector<std::string> discover_zim_files(const HaliConfig &cfg) {
 //
 
 static void index_help(Tui &tui) {
-  tui.append_line(ICON_SYS + "/index [name|remove <name>|create|load|unload <name>|help]");
+  tui.append_line(ICON_SYS + "/index [name|remove <name>|create|load|unload <name>|list|help]");
   tui.append_line(ICON_SYS + "  (no arg)       show this help");
   tui.append_line(ICON_SYS + "  <name>         load a source by name");
   tui.append_line(ICON_SYS + "  <path>         index a .zim file from disk");
   tui.append_line(ICON_SYS + "  create         create a new index from a .zim file");
   tui.append_line(ICON_SYS + "  load           load a previously built index");
+  tui.append_line(ICON_SYS + "  list           show all indexed sources with metadata");
   tui.append_line(ICON_SYS + "  remove <name>  remove an indexed source");
   tui.append_line(ICON_SYS + "  unload <name>  unload a loaded source");
   tui.append_line(ICON_SYS + "  help           show this help");
@@ -862,7 +863,7 @@ static void index_create(const HaliConfig &cfg, Agent &agent, Tui &tui) {
   tui.redraw_all();
 }
 
-static void index_load(KnowledgeManager &km, Tui &tui) {
+static void index_load(KnowledgeManager &km, HaliConfig &cfg, Tui &tui) {
   auto labels = km.indexed_labels();
   auto ids = km.indexed_ids();
 
@@ -881,13 +882,19 @@ static void index_load(KnowledgeManager &km, Tui &tui) {
   std::string id = ids[idx];
   if (km.load(id)) {
     tui.append_line(ICON_SYS + "Loaded: " + id);
+    // Track active .rag files in config
+    if (std::find(cfg.rag_files_.begin(), cfg.rag_files_.end(), id)
+        == cfg.rag_files_.end()) {
+      cfg.rag_files_.emplace_back(id);
+      cfg.save_settings();
+    }
   } else {
     tui.append_line(ICON_ERR + "Failed to load: " + id);
   }
   tui.redraw_all();
 }
 
-static void index_unload(KnowledgeManager &km, std::string &arg, Tui &tui) {
+static void index_unload(KnowledgeManager &km, HaliConfig &cfg, std::string &arg, Tui &tui) {
   arg = pick_source(tui, arg, km.loaded_labels(), km.loaded_ids(),
                     "Select a source to unload", "No sources currently loaded.");
   if (arg.empty()) {
@@ -895,6 +902,11 @@ static void index_unload(KnowledgeManager &km, std::string &arg, Tui &tui) {
   }
   if (km.unload(arg)) {
     tui.append_line(ICON_SYS + "Unloaded: " + arg);
+    // Remove from active .rag files in config
+    cfg.rag_files_.erase(
+        std::remove(cfg.rag_files_.begin(), cfg.rag_files_.end(), arg),
+        cfg.rag_files_.end());
+    cfg.save_settings();
   } else {
     tui.append_line(ICON_ERR + "Not loaded: " + arg);
   }
@@ -902,7 +914,48 @@ static void index_unload(KnowledgeManager &km, std::string &arg, Tui &tui) {
 }
 
 //
-// /index [name|remove <name>|create|load|unload <name>|help]
+// /index list — show all indexed sources with metadata
+//
+static void index_list(KnowledgeManager &km, Tui &tui) {
+  auto labels = km.indexed_labels();
+  auto ids = km.indexed_ids();
+
+  if (ids.empty()) {
+    tui.append_line(ICON_SYS + "No indexes available. Use /index create to build one.");
+    tui.redraw_all();
+    return;
+  }
+
+  tui.append_line(ICON_SYS + "Indexed sources:");
+  tui.append_line(ICON_SYS + "─────────────────────────────────────────────────────────");
+
+  for (size_t i = 0; i < ids.size(); i++) {
+    const std::string &id = ids[i];
+    const IndexedSource *src = km.find(id);
+    bool loaded = km.library().get(id) != nullptr;
+
+    std::string status = loaded ? "[loaded]" : "[not loaded]";
+    tui.append_line(ICON_SYS + "  " + id + "  " + status);
+    if (src) {
+      if (!src->description.empty()) {
+        tui.append_line(ICON_SYS + "    " + src->description);
+      }
+      if (!src->topics.empty()) {
+        tui.append_line(ICON_SYS + "    topics: " + src->topics);
+      }
+      tui.append_line(ICON_SYS + std::format("    chunks: {}  indexed: {}",
+                                             src->chunks, src->indexed_at));
+    }
+  }
+  tui.append_line(ICON_SYS + "─────────────────────────────────────────────────────────");
+  tui.append_line(ICON_SYS + std::format("Total: {} indexed, {} loaded",
+                                         ids.size(),
+                                         km.library().size()));
+  tui.redraw_all();
+}
+
+//
+// /index [name|remove <name>|create|load|unload <name>|list|help]
 //
 static void slash_index(const std::string &rest, HaliConfig &cfg, Agent &agent, Tui &tui) {
   KnowledgeManager &km = agent.knowledge();
@@ -951,12 +1004,17 @@ static void slash_index(const std::string &rest, HaliConfig &cfg, Agent &agent, 
   }
 
   if (sub == "load") {
-    index_load(km, tui);
+    index_load(km, cfg, tui);
     return;
   }
 
   if (sub == "unload") {
-    index_unload(km, arg, tui);
+    index_unload(km, cfg, arg, tui);
+    return;
+  }
+
+  if (sub == "list") {
+    index_list(km, tui);
     return;
   }
 
@@ -968,6 +1026,11 @@ static void slash_index(const std::string &rest, HaliConfig &cfg, Agent &agent, 
   if (km.rag_exists(sub)) {
     if (km.load(sub)) {
       tui.append_line(ICON_SYS + "Loaded: " + sub);
+      if (std::find(cfg.rag_files_.begin(), cfg.rag_files_.end(), sub)
+          == cfg.rag_files_.end()) {
+        cfg.rag_files_.emplace_back(sub);
+        cfg.save_settings();
+      }
     } else {
       tui.append_line(ICON_ERR + "Failed to load: " + sub);
     }
@@ -1241,7 +1304,7 @@ const std::vector<SlashCommand> &slash_commands() {
     {"/task",     "[name]",            "direct agent behavior (web, music, audio, knowledge)", "Tools"},
     {"/tool",     "[TOOL:NAME [args]]","invoke a tool (no args lists all tools)", "Tools"},
     {"/plan",     "[text]",            "open a multiline text editor for a plan", "Tools"},
-    {"/index",    "[name|create|load|remove|unload|help]", "manage knowledge sources (ZIM/Wikipedia)", "Knowledge"},
+    {"/index",    "[name|create|load|remove|unload|list|help]", "manage knowledge sources (ZIM/Wikipedia)", "Knowledge"},
     {"/audio",    "[test|volume <v>]", "enable/disable audio, test tone, set volume", "Audio"},
     {"/help",     "",                  "this message", "Help"},
   };

@@ -458,7 +458,8 @@ bool KnowledgeManager::zim_save_and_index(const std::string &id,
                                           const std::string &zim_path,
                                           int total_chunks,
                                           const BuildStats &stats,
-                                          const ProgressFn &progress) {
+                                          const ProgressFn &progress,
+                                          const std::string &topics) {
   const std::string rag_file = rag_path(id);
   if (!fs::exists(rag_file)) {
     if (log_is_enabled(LEVEL_DEBUG)) {
@@ -490,6 +491,14 @@ bool KnowledgeManager::zim_save_and_index(const std::string &id,
   char ts[32];
   std::strftime(ts, sizeof(ts), "%Y-%m-%dT%H:%M:%S", &tm_buf);
   src.indexed_at = ts;
+  src.topics = topics;
+  if (!topics.empty()) {
+    src.description = std::format("Wikipedia index: {} chunks, topics: {}",
+                                  total_chunks, topics);
+  } else {
+    src.description = std::format("Wikipedia index: {} chunks (full)",
+                                  total_chunks);
+  }
 
   bool found = false;
   for (auto &existing : indexed_) {
@@ -697,7 +706,8 @@ bool KnowledgeManager::build_from_path(const std::string &zim_path,
                                        Tui &tui,
                                        const ProgressFn &progress,
                                        std::string *error,
-                                       const std::string &filter_path) {
+                                       const std::string &filter_path,
+                                       const std::string &target_name) {
   auto fail = [progress, error](const std::string &msg) {
     if (progress) {
       progress(msg);
@@ -719,7 +729,9 @@ bool KnowledgeManager::build_from_path(const std::string &zim_path,
   }
 
   fs::path zp(zim_path);
-  const std::string id = zp.stem().string();
+  // Use target_name as the .rag stem if provided (for appending to
+  // an existing .rag file with a different name), otherwise use ZIM stem.
+  const std::string id = target_name.empty() ? zp.stem().string() : target_name;
 
   BuildContext ctx;
   ctx.id = id;
@@ -813,9 +825,28 @@ bool KnowledgeManager::build_from_path(const std::string &zim_path,
   bstats.skip_no_chunks      = ctx.skip_no_chunks;
   bstats.skip_duplicate      = ctx.skip_duplicate;
   bstats.skip_filtered       = ctx.skip_filtered;
+
+  // Read topics from filter file for metadata
+  std::string topics_str;
+  if (!filter_path.empty() && fs::exists(filter_path)) {
+    std::ifstream tf(filter_path);
+    if (tf) {
+      std::string line;
+      while (std::getline(tf, line)) {
+        line = utils::trim(line);
+        if (!line.empty()) {
+          if (!topics_str.empty()) {
+            topics_str += ", ";
+          }
+          topics_str += line;
+        }
+      }
+    }
+  }
+
   return zim_save_and_index(id, zim_path,
                             (int)(ctx.existing_chunks + (uint32_t)ctx.total_chunks),
-                            bstats, progress);
+                            bstats, progress, topics_str);
 }
 
 //
