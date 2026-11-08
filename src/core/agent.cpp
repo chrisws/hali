@@ -523,7 +523,9 @@ bool Agent::run_turn(const std::string &user_message) {
   turn_.reset();
   knowledge_.reset_cache();
   last_response_.clear();
+  tui_.set_thinking(true);
   if (!llama_->add_message(*iter_, "user", effective_message)) {
+    tui_.set_thinking(false);
     if (!handle_memory_flush()) {
       return false;
     }
@@ -536,8 +538,6 @@ bool Agent::run_turn(const std::string &user_message) {
   int turn_tokens = 0;
 
   ThinkParser thinker(cfg_.thinking_, llama_->is_gemma_4());
-
-  tui_.set_thinking(true);
   std::string buffer;
   int tick_count = 0;
 

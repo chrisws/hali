@@ -398,6 +398,12 @@ class Tui final: TuiContext {
   void set_mode_str(const std::string &s) { mode_str_ = s; }
   void show_tool(const std::string &tool);
   int get_term_rows() const override { return term_rows_; }
+  const std::vector<std::string> &chat_lines() const { return chat_lines_; }
+  std::mutex &lines_mutex() { return lines_mutex_; }
+  void set_chat_lines(const std::vector<std::string> &lines) {
+    std::lock_guard lock(lines_mutex_);
+    chat_lines_ = lines;
+  }
   int get_term_cols() const { return term_cols_; }
 
   // ── draw ──────────────────────────────────────────────────────────
@@ -529,6 +535,7 @@ class Tui final: TuiContext {
   // ── thinking spinner ──────────────────────────────────────────────
   bool thinking_;
   int spinner_frame_;
+  std::string thinking_phrase_;
 
   // ── input ─────────────────────────────────────────────────────────
   Input input_;

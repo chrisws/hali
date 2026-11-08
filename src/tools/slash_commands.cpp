@@ -584,7 +584,7 @@ static void slash_skill(const std::string &rest_in, HaliConfig &cfg,
 //
 // /lint – list source files and run clang-tidy lint
 //
-static void slash_lint(const std::string &rest, HaliConfig &cfg, Tui &tui) {
+static void slash_lint(const std::string &rest, HaliConfig &cfg, Agent &agent, Tui &tui) {
   const std::string sandbox = cfg.sandbox_;
   const std::string src_dir = sandbox + "/src";
 
@@ -626,6 +626,16 @@ static void slash_lint(const std::string &rest, HaliConfig &cfg, Tui &tui) {
   auto result = build_run(sandbox, "lint", status);
   tui.append_line(ICON_TOOL + result.output_);
   tui.redraw_all();
+
+  // Feed lint results back to the agent for resolution
+  if (!result.output_.empty()) {
+    tui.append_line(ICON_SYS + "Submitting lint results to agent…");
+    tui.redraw_all();
+    std::string prompt = "The following clang-tidy lint issues were found. "
+      "Please review and fix them:\n\n" + result.output_;
+    agent.run_turn(prompt);
+    tui.redraw_all();
+  }
 }
 
 //
@@ -870,7 +880,7 @@ static void index_create(const HaliConfig &cfg, Agent &agent, Tui &tui) {
       "(one keyword per line, at most 20 keywords). "
       "If TOOL:RAGINFO shows this index is already loaded, then "
       "use TOOL:RAG to confirm the words are not already indexed. "
-      "Then call TOOL:RAGINDEX " + zim_path + "\", ";
+      "Then call TOOL:RAGINDEX " + zim_path + ".";
   } else {
     prompt = "Please index the ZIM file at " + zim_path +
       " by calling TOOL:RAGINDEX " + zim_path;
@@ -1276,7 +1286,7 @@ void handle_slash(const std::string &input, HaliConfig &cfg, Agent &agent, Tui &
     return;
   }
   if (verb == "/lint") {
-    slash_lint(rest, cfg, tui);
+    slash_lint(rest, cfg, agent, tui);
     return;
   }
   if (verb == "/plan") {

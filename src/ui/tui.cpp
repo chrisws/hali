@@ -365,7 +365,7 @@ void Tui::redraw_input() const {
       }
     }
     ncplane_set_channels(inputpl_, inp_ch(140, 140, 180));
-    ncplane_putstr_yx(inputpl_, 1, 2, "thinking…");
+    ncplane_putstr_yx(inputpl_, 1, 2, thinking_phrase_.c_str());
   } else {
     // draw the border
     set_plane_fg(inputpl_, Color::ColorElement::INPUT_BORDER);
@@ -435,7 +435,32 @@ void Tui::tick_spinner() {
 
 void Tui::set_thinking(bool on) {
   thinking_ = on;
-  if (!on) {
+  if (on) {
+    static const char *PHRASES[] = {
+      "thinking…",
+      "pondering…",
+      "mulling…",
+      "chewing on that…",
+      "ruminating…",
+      "contemplating…",
+      "deliberating…",
+      "waxing philosophical…",
+      "stroking my digital beard…",
+      "consulting my inner monologue…",
+      "vibing…",
+      "simulating intelligence…",
+      "warming up the neurons…",
+      "aligning the tokens…",
+      "dreaming in vectors…",
+      "brewing thoughts…",
+      "tapping into the latent space…",
+      "meditating on embeddings…",
+      "spinning up synapses…",
+      "cooking up a response…",
+    };
+    static const int N = sizeof(PHRASES) / sizeof(PHRASES[0]);
+    thinking_phrase_ = PHRASES[std::rand() % N];
+  } else {
     spinner_frame_ = 0;
   }
   redraw_header();

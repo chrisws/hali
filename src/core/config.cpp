@@ -144,6 +144,13 @@ void HaliConfig::load_settings() {
     rag.get_str("embed_path", embed_path_);
     rag.get_int("top_k", rag_top_k_);
     rag.get_bool("enabled", rag_enabled_);
+    std::vector<json::JsonValue> rfs;
+    if (rag.get_array("files", rfs)) {
+      rag_files_.clear();
+      for (const auto &r : rfs) {
+        rag_files_.emplace_back(r.get_str());
+      }
+    }
   }
 
   // ── mtp section ────────────────────────────────────────────────
@@ -236,13 +243,6 @@ void HaliConfig::load_settings() {
     }
   }
 
-  std::vector<json::JsonValue> rfs;
-  if (root.get_array("rag_files", rfs)) {
-    rag_files_.clear();
-    for (const auto &r : rfs) {
-      rag_files_.emplace_back(r.get_str());
-    }
-  }
 }
 
 // Persist the current cfg to ~/.config/hali/settings.json.
@@ -438,7 +438,9 @@ std::string HaliConfig::prompt_core() const {
     "  TOOL:CURL   <url>          HTTP GET, returns response body (max 32 KB)\n"
     "  TOOL:PERMISSION            ask user for explicit permission\n"
     "  TOOL:RESTART               restart after writing current task context to `.hali/SESSION.md`\n"
-    "  TOOL:GUI    <help|html|input|clear>  display HTML, check input, or clear browser\n\n"
+    "  TOOL:GUI    <help|html|input|clear>  display HTML, check input, or clear browser\n"
+    "  TOOL:CLIPBOARD <copy|cut|paste|show|clear> [file range]  internal clipboard for file lines\n"
+    "  TOOL:SCREEN   <save|show|restore|list|clear> [name]  save/restore display snapshots\n\n"
 
     "## Tool Decision Rules\n"
     "Use tools ONLY if:\n"
@@ -610,6 +612,7 @@ std::string HaliConfig::introspect() const {
   rag.set_str("embed_path", embed_path_);
   rag.set_int("top_k", rag_top_k_);
   rag.set_bool("enabled", rag_enabled_);
+  rag.set_arr("files", rag_files_);
 
   // mtp
   auto mtp = root.get_child("mtp");
@@ -676,7 +679,6 @@ std::string HaliConfig::introspect() const {
     }
   }
   root.set_arr("knowledge_files", user_kf);
-  root.set_arr("rag_files", rag_files_);
 
   return doc.to_string(json::WriteFlag::Pretty);
 }
