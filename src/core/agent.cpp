@@ -498,7 +498,7 @@ void Agent::invoke_tool(const std::string &buffer, const std::string_view templa
   }
   tui_.redraw_all();
   if (cfg_.audio_tool_tick_) {
-    audio::play_tool_tick();
+    audio::play_tool_tick(cfg_.audio_theme_);
   }
 };
 

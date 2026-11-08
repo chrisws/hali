@@ -240,8 +240,24 @@ static void slash_audio(const std::string &rest, HaliConfig &cfg, Agent &agent, 
     } else {
       tui.append_line(ICON_ERR + "Usage: /audio volume <0.0-1.0>");
     }
+  } else if (rest.rfind("theme", 0) == 0) {
+    auto space = rest.find(' ', 5);
+    if (space != std::string::npos) {
+      std::string new_theme = rest.substr(space + 1);
+      new_theme.erase(0, new_theme.find_first_not_of(" \t"));
+      cfg.audio_theme_ = new_theme;
+      cfg.save_settings();
+      tui.append_line(ICON_SYS + "Audio theme set to '" + new_theme + "'");
+      if (audio::is_enabled()) {
+        audio::play_tool_tick(new_theme);
+      }
+    } else {
+      tui.append_line(ICON_SYS + "Current theme: " + cfg.audio_theme_);
+      tui.append_line(ICON_SYS + "Available: hali, r2d2, startrek, stargate");
+      tui.append_line(ICON_SYS + "Usage: /audio theme <name>");
+    }
   } else {
-    tui.append_line(ICON_ERR + "Usage: /audio [test | volume <0.0-1.0>]");
+    tui.append_line(ICON_ERR + "Usage: /audio [test | volume <v> | theme <name>]");
   }
   tui.redraw_all();
 }
@@ -273,6 +289,9 @@ static void slash_set(const std::string &rest, HaliConfig &cfg, Agent &agent, Tu
       tui.append_line(ICON_SYS + msg);
     }
     tui.append_line(ICON_SYS + "" + key + " = " + val);
+    if (key == "audio_theme" && audio::is_enabled()) {
+      audio::play_tool_tick(cfg.audio_theme_);
+    }
   } else if (rc == 1) {
     tui.append_line(ICON_ERR + "Unknown key '" + key + "'.  Try /help for list.");
   } else {
@@ -1305,7 +1324,7 @@ const std::vector<SlashCommand> &slash_commands() {
     {"/tool",     "[TOOL:NAME [args]]","invoke a tool (no args lists all tools)", "Tools"},
     {"/plan",     "[text]",            "open a multiline text editor for a plan", "Tools"},
     {"/index",    "[name|create|load|remove|unload|list|help]", "manage knowledge sources (ZIM/Wikipedia)", "Knowledge"},
-    {"/audio",    "[test|volume <v>]", "enable/disable audio, test tone, set volume", "Audio"},
+    {"/audio",    "[test|volume <v>|theme <n>]", "enable/disable, test, volume, theme", "Audio"},
     {"/help",     "",                  "this message", "Help"},
   };
   return commands;

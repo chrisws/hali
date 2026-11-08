@@ -128,8 +128,8 @@ bool save_wav(const std::vector<NoteEvent> &events, const std::string &path, int
  */
 bool save_mix_wav(const std::vector<TrackMix> &tracks, const std::string &path, int sample_rate = 48000);
 
-/** @brief Play a short bright ascending "tick" (tool completion). */
-void play_tool_tick();
+/** @brief Play a short "tick" (tool completion). Theme selects phrase set. */
+void play_tool_tick(const std::string &theme);
 
 /** @brief Play a short warm "ding" (user prompt / your turn). */
 void play_user_prompt();

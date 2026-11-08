@@ -106,6 +106,7 @@ struct HaliConfig {
   bool  audio_tool_tick_   = false;
   bool  audio_user_prompt_ = false;
   bool  audio_multi_track_ = false;
+  std::string audio_theme_ = "hali";
 
   // Validation gates (disable validate calls for capable models)
   bool  disable_write_validate_ = false;

@@ -565,36 +565,100 @@ void play_test() {
   play_events(std::vector<NoteEvent>(std::begin(events), std::end(events)));
 }
 
-void play_tool_tick() {
-  // A set of short robotic "expressions" — randomly selected for variety.
-  // Each is a quick 2-3 note phrase.
-  static const std::vector<NoteEvent> phrases[] = {
-    // 0: ascending blip (classic)
+void play_tool_tick(const std::string &theme) {
+  // Theme-specific phrase sets for tool tick sounds.
+  // Each theme has a distinct character and frequency range.
+
+  // ── hali: bright, quick robotic blips (164–1760 Hz) ──
+  static const std::vector<NoteEvent> hali_phrases[] = {
     { { {1318.51, 0.04} }, { {1568.00, 0.04} } },
-    // 1: descending "done"
     { { {1568.00, 0.04} }, { {1318.51, 0.05} } },
-    // 2: ascending run C6→E6→G6
     { { {1046.50, 0.03} }, { {1318.51, 0.03} }, { {1568.00, 0.05} } },
-    // 3: double-beep then up (E6, E6, G6)
     { { {1318.51, 0.03} }, { {1318.51, 0.03} }, { {1568.00, 0.05} } },
-    // 4: descending arpeggio A6→G6→E6
     { { {1760.00, 0.03} }, { {1568.00, 0.03} }, { {1318.51, 0.05} } },
-    // 5: little "whee" G6→A6→G6
     { { {1568.00, 0.03} }, { {1760.00, 0.03} }, { {1568.00, 0.05} } },
-    // 6: big jump C6→G6
     { { {1046.50, 0.04} }, { {1568.00, 0.06} } },
-    // 7: ascending run E6→G6→A6
     { { {1318.51, 0.03} }, { {1568.00, 0.03} }, { {1760.00, 0.05} } },
-    // 8: "low-hi" — dramatic octave rise A5→A6
     { { {880.00, 0.05} }, { {1760.00, 0.08} } },
-    // 9: "hi-low" — dramatic octave fall A6→A5
     { { {1760.00, 0.05} }, { {880.00, 0.08} } },
-    // 10: "electronic purr" — two close sines (E3+F3) beat at ~10 Hz
     { { {164.81, 0.18}, {174.61, 0.18} } },
   };
 
+  // ── r2d2: rapid robotic beeps (800–1200 Hz, very short) ──
+  static const std::vector<NoteEvent> r2d2_phrases[] = {
+    // double beep
+    { { {987.77, 0.02} }, { {987.77, 0.02} } },
+    // triple beep
+    { { {1046.50, 0.02} }, { {1046.50, 0.02} }, { {1046.50, 0.03} } },
+    // beep-boop (two close freqs)
+    { { {880.00, 0.03} }, { {932.33, 0.03} } },
+    // rising pair
+    { { {880.00, 0.02} }, { {1174.66, 0.03} } },
+    // falling pair
+    { { {1174.66, 0.02} }, { {880.00, 0.03} } },
+    // rapid triple ascending
+    { { {880.00, 0.02} }, { {987.77, 0.02} }, { {1174.66, 0.03} } },
+    // "beep...beep" with gap feel (longer second)
+    { { {1046.50, 0.02} }, { {1046.50, 0.05} } },
+    // low double
+    { { {830.61, 0.02} }, { {830.61, 0.02} } },
+  };
+
+  // ── startrek: warm descending computer chirps (400–600 Hz) ──
+  static const std::vector<NoteEvent> startrek_phrases[] = {
+    // descending triad
+    { { {587.33, 0.06} }, { {493.88, 0.06} }, { {415.30, 0.08} } },
+    // warm chord then fall
+    { { {523.25, 0.07}, {659.25, 0.07} }, { {440.00, 0.09} } },
+    // gentle descent
+    { { {554.37, 0.06} }, { {493.88, 0.07} } },
+    // "chirp" — quick up then down
+    { { {440.00, 0.05} }, { {587.33, 0.05} }, { {440.00, 0.08} } },
+    // low warm hum
+    { { {392.00, 0.10}, {493.88, 0.10} } },
+    // descending pair
+    { { {523.25, 0.06} }, { {415.30, 0.08} } },
+  };
+
+  // ── stargate: alien low resonant "wub" (150–300 Hz, harmonics) ──
+  static const std::vector<NoteEvent> stargate_phrases[] = {
+    // fundamental + fifth
+    { { {196.00, 0.15}, {293.66, 0.15} } },
+    // fundamental + octave
+    { { {164.81, 0.18}, {329.63, 0.18} } },
+    // close harmonic pair (beat feel)
+    { { {207.65, 0.14}, {220.00, 0.14} } },
+    // low drone with fifth
+    { { {146.83, 0.20}, {220.00, 0.20} } },
+    // rising wub
+    { { {174.61, 0.12} }, { {261.63, 0.15} } },
+    // falling wub
+    { { {261.63, 0.12} }, { {174.61, 0.15} } },
+    // triple harmonic
+    { { {146.83, 0.16}, {220.00, 0.16}, {293.66, 0.16} } },
+  };
+
   static std::mt19937 rng(std::random_device{}());
-  std::uniform_int_distribution<size_t> dist(0, sizeof(phrases)/sizeof(phrases[0]) - 1);
+
+  const std::vector<NoteEvent> *phrases = nullptr;
+  size_t count = 0;
+
+  if (theme == "r2d2") {
+    phrases = r2d2_phrases;
+    count = sizeof(r2d2_phrases) / sizeof(r2d2_phrases[0]);
+  } else if (theme == "startrek") {
+    phrases = startrek_phrases;
+    count = sizeof(startrek_phrases) / sizeof(startrek_phrases[0]);
+  } else if (theme == "stargate") {
+    phrases = stargate_phrases;
+    count = sizeof(stargate_phrases) / sizeof(stargate_phrases[0]);
+  } else {
+    // default: "hali"
+    phrases = hali_phrases;
+    count = sizeof(hali_phrases) / sizeof(hali_phrases[0]);
+  }
+
+  std::uniform_int_distribution<size_t> dist(0, count - 1);
   const auto &phrase = phrases[dist(rng)];
   play_events(phrase);
 }

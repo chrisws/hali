@@ -146,6 +146,7 @@ void settings(Tui &tui, HaliConfig &cfg) {
   tui.append_line(ICON_SYS + "  audio_volume    : " + std::to_string(cfg.audio_volume_));
   tui.append_line(ICON_SYS + "  audio_tool_tick : " + bool_str(cfg.audio_tool_tick_));
   tui.append_line(ICON_SYS + "  audio_user_prompt: " + bool_str(cfg.audio_user_prompt_));
+  tui.append_line(ICON_SYS + "  audio_theme     : " + cfg.audio_theme_);
 
   tui.append_line(ICON_SYS + "── Logging ────────────────────────────────────");
   tui.append_line(ICON_SYS + "  log_level       : " + cfg.log_level_str_);

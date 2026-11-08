@@ -173,6 +173,7 @@ void HaliConfig::load_settings() {
     audio.get_bool("tool_tick", audio_tool_tick_);
     audio.get_bool("user_prompt", audio_user_prompt_);
     audio.get_bool("enable_multi_track", audio_multi_track_);
+    audio.get_str("theme", audio_theme_);
   }
 
   // ── mcp section (plan 12) ──────────────────────────────────────
@@ -632,6 +633,7 @@ std::string HaliConfig::introspect() const {
   audio.set_bool("tool_tick", audio_tool_tick_);
   audio.set_bool("user_prompt", audio_user_prompt_);
   audio.set_bool("enable_multi_track", audio_multi_track_);
+  audio.set_str("theme", audio_theme_);
 
   // mcp
   auto mcp = root.get_child("mcp");
@@ -748,6 +750,8 @@ int HaliConfig::set_value(const std::string &key, const std::string &val,
         }
         msg = "run_allowed: " + list;
       }
+    } else if (key == "audio_theme") {
+      audio_theme_ = val;
     } else {
       return 1;
     }

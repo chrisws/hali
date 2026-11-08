@@ -24,7 +24,7 @@ Most agentic shells assume a hosted API and treat context as free. Hali assumes 
 - **Suffix drafting** — a lightweight n-gram `SuffixDrafter` that matches recent tokens against earlier context and drafts continuations, helping with repetitive/structured text when MTP acceptance is low.
 - **GPU introspection** — `gpu_info` detects VRAM via the ggml backend API and scales the KV-cache restart threshold (8 GB → 75 %, 16 GB → 85 %, 32 GB → 90 %, cap 92 %).
 - **Usage logging** — per-turn metrics (LLM latency, completion tokens, tool calls/errors, KV usage, files read/written) tracked in a `UsageLog` with JSON export and KV-trend detection.
-- **Audio system** — polyphonic playback via a note-script parser (`TOOL:PLAY`). Supports sine tones, chords, tempo/volume/length control tokens, and optional UI sounds (tool-completion tick, user-prompt ding). Enable with `audio_enabled` in config or `/audio`.
+- **Audio system** — polyphonic playback via a note-script parser (`TOOL:PLAY`). Supports sine tones, chords, tempo/volume/length control tokens, and optional UI sounds (tool-completion tick, user-prompt ding). UI sounds support selectable themes (`hali`, `r2d2`, `startrek`, `stargate`) via `audio_theme` config or `/audio theme <name>`. Enable with `audio_enabled` in config or `/audio`.
 - **Planning tool** — `TOOL:PLAN` provides structured goal/step tracking (`set`, `add`, `advance`, `skip`) so the model can maintain a visible work plan across turns. Plans are referenced in `SESSION.md` for session handoff.
 - **Codebase audit** — `/audit` scans C/C++ source files for issues that make the codebase difficult for an LLM to handle (e.g. missing includes, implicit declarations, overly long functions). Results are scored 0–100, formatted as a table, and fed back to the model as a remediation prompt. Confirmed false positives are persisted to `audit_feedback.json` and filtered from future scans.
 - **Sampling profiles** — after model load, Hali prompts for a sampling profile (General, Programming, Creative, Concise) that sets temperature, top_p, top_k, min_p, and penalty parameters in one step. Smart defaults are also applied based on detected VRAM and GPU layer count.
@@ -43,6 +43,8 @@ Most agentic shells assume a hosted API and treat context as free. Hali assumes 
   | `TOOL:BUILD`                                            | Auto-detect and run project build systems (CMake, Gradle, Maven, Python) with modes: `setup`, `build`, `test`, `clean`, `lint` (clang-tidy)                                                                                                                                 |
   | `TOOL:CURL`                                             | HTTP GET via libcurl, with HTML-to-text stripping and a 32 KB response size cap                                                                                                                                                                        |
   | `TOOL:RAG`                                              | Query the local RAG index for extra context                                                                                                                                                                                                            |
+  | `TOOL:RAGINFO`                                          | Inspect RAG subsystem state: loaded databases, chunk counts, embedding model, config                                                                                                                                                                    |
+  | `TOOL:RAGINDEX <zim_file>`                              | Index a ZIM file into the RAG knowledge base. Also supports `--validate <rag_file>` to check an existing index and `--repair <rag_file>` to fix a stale chunk count in the header |
   | `TOOL:ASK`                                              | Ask the user directly, for interactive/agentic flows                                                                                                                                                                                                   |
   | `TOOL:GRAPH`                                            | Render bar charts and tree diagrams as ASCII art from a small JSON schema                                                                                                                                                                              |
   | `TOOL:TABLE`                                            | Format pipe-delimited rows into an aligned text table                                                                                                                                                                                                  |
@@ -64,7 +66,7 @@ Most agentic shells assume a hosted API and treat context as free. Hali assumes 
 - **Persistent run-allowlist** — user-approved `TOOL:RUN` program names are saved to `.hali/user-approved.txt` under the sandbox with timestamps and a 30-day TTL, so approvals survive across sessions without re-prompting. Revoke individual approvals with `/revoke <name>`.
 - **MCP client** — connect to external Model Context Protocol servers (e.g. JetBrains IDE built-in MCP servers) with `--mcp`, filter which tools get exposed with `--mcp-filter`, and dry-run the resulting system context with `--mcp-test`. Server connection details live in `mcp.json`.
 - **Skills system** — load one or more markdown skill files into the static system-prompt prefix at session start with `--skill <name>` (no per-turn routing, so it doesn't disrupt the KV cache). `hali.md`, `persona.md`, and `AGENTS.md` are auto-discovered from the current directory if present. Skills can also be loaded mid-conversation with `/skill <name> [kickoff]`. The [`skills/`](skills/) folder ships a starter set covering debugging, TDD, code review, CMake/build troubleshooting, memory-safety review, dependency-free frontend work, SmallBASIC's raylib plugin, free JSON API sourcing, a local-info feed pattern, planning, spiking, code simplification, house style, skill import, and a few just-for-fun ones (chess, an ELIZA-style roleplay, generative interactive fiction, a self-scoring introspection game).
-- **Pure C++ RAG pipeline** — semantic chunker, binary `.db` index, deduplicating `RagSession`, with a folder picker for building indexes on the fly.
+- **Pure C++ RAG pipeline** — a `KnowledgeManager` owns the embedding model, semantic chunker, and binary `.rag` index. Supports ZIM archive indexing (Wikipedia, DevDocs, etc.) with build statistics, case-insensitive path resolution, and append-mode indexing. New `TOOL:RAGINFO` inspects subsystem state; `TOOL:RAGINDEX` builds, validates, and repairs `.rag` files. RAG tools are conditionally included in the system prompt via the `rag_enabled` setting.
 - **Web development mode** — a local HTTP server with live-reload that watches the sandbox for HTML changes. The model can push messages to the browser and trigger reloads, enabling a tight edit-preview loop. Enabled with `-p, --web-port <port>`.
 - **Persistent settings** — configuration lives in `.hali/config.json` under the sandbox, or point at a specific file with `-c`/`--config` (defaults to `.hali/config.json`). Runtime data (input history, usage log, user-approved run list, plans, badges) is stored in the `.hali/` folder under the sandbox root.
 - **Test suite** — unit tests under `tests/` (file operations, string/Unicode utilities, SHA-1, MCP message formatting, the graph renderer), runnable via CTest.
@@ -142,7 +144,7 @@ Inside the TUI, type a leading `/` to run a built-in command. Tab-completion is 
 | `/memory`            | Show KV cache, VRAM, and layer offload stats                                            |
 | `/clear`             | Reset the conversation (rebuilds the system prompt)                                     |
 | `/theme`             | Cycle through the Dark / Light / Navy themes (F12 also works)                           |
-| `/audio [test\|volume <v>]` | Enable/disable audio, play a test tone, or set volume                                |
+| `/audio [test\|volume <v>\|theme <n>]` | Enable/disable audio, test tone, set volume, select sound theme                        |
 | `/task [name]`       | Direct agent behavior toward a mode: `web`, `music`, `audio`, `knowledge`, or `default` |
 | `/save [file]`       | Save the current chat transcript to a file                                              |
 | `/session [file]`    | Save a structured session snapshot (task, pending actions, errors, last output)          |
@@ -162,11 +164,11 @@ Inside the TUI, type a leading `/` to run a built-in command. Tab-completion is 
 | `/help`              | Show this command list                                                                  |
 | `exit` / `quit`      | Leave Hali                                                                              |
 
-Settable keys via `/set`: `temperature`, `top_p`, `top_k`, `min_p`, `penalty_repeat`, `penalty_last_n`, `rag_top_k`, `n_gpu_layers`, `offload_kqv`, `run_allowed` (comma-separated list of allowed program basenames, or `none` to clear), `mtp_enabled`, `mtp_n_max`, `mtp_n_min`, `mtp_p_min`, `mtp_adaptive`, `mtp_pos_threshold`, `rope_freq_scale`, `rope_scaling_type`, `audio_enabled`, `audio_volume`, `audio_tool_tick`, `audio_user_prompt`, `val_write_validate`, `val_patch_validate`, `val_write_size_warn`, `log_erase`, `disable_run`, `disable_save_on_exit`.
+Settable keys via `/set`: `temperature`, `top_p`, `top_k`, `min_p`, `penalty_repeat`, `penalty_last_n`, `rag_top_k`, `rag_enabled`, `n_gpu_layers`, `offload_kqv`, `run_allowed` (comma-separated list of allowed program basenames, or `none` to clear), `mtp_enabled`, `mtp_n_max`, `mtp_n_min`, `mtp_p_min`, `mtp_adaptive`, `mtp_pos_threshold`, `rope_freq_scale`, `rope_scaling_type`, `audio_enabled`, `audio_volume`, `audio_tool_tick`, `audio_user_prompt`, `audio_theme`, `val_write_validate`, `val_patch_validate`, `val_write_size_warn`, `log_erase`, `disable_run`, `disable_save_on_exit`.
 
 ## Knowledge Base (ZIM)
 
-Hali can build offline knowledge bases from [ZIM archives](https://www.kiwix.org/) (Wikipedia, DevDocs, Stack Exchange, etc.) and query them via RAG. The workflow is: **pick a .zim file → index → query**.
+Hali can build offline knowledge bases from [ZIM archives](https://www.kiwix.org/) (Wikipedia, DevDocs, Stack Exchange, etc.) and query them via RAG. The `KnowledgeManager` owns the embedding model, chunker, and index library. The workflow is: **pick a .zim file → index → query**. RAG tools (`TOOL:RAG`, `TOOL:RAGINFO`, `TOOL:RAGINDEX`) are included in the system prompt only when `rag_enabled` is `true` (the default).
 
 ### Prerequisites
 
@@ -206,15 +208,15 @@ Files are stored under the sandbox's `.hali/` directory:
 | Path | Contents |
 |---|---|
 | `.hali/rag/<id>.rag` | Binary RAG index (embeddings + chunks) |
-| `.hali/kiwix-index.json` | Local tracking index of indexed sources (id, paths, chunk count, timestamp) |
+| `.hali/kiwix-index.json` | Local tracking index of indexed sources (id, title, paths, chunk count, timestamp, topics, description, build stats) |
 
 ### Auto-load
 
-At startup, after the embedding model is loaded, Hali automatically scans `.hali/rag/` and loads any `.rag` files found. This means previously indexed sources are available immediately without manual `/index load`.
+At startup, if `rag_enabled` is `true` and an embedding model is configured, Hali automatically scans `.hali/rag/` and loads any `.rag` files found. Additionally, any paths listed in the `rag_files` config array are loaded explicitly. This means previously indexed sources are available immediately without manual `/index load`.
 
 ### Integration with RAG
 
-Indexed sources are merged into the same `RagLibrary` used by `TOOL:RAG`. When the model calls `TOOL:RAG`, it searches across all loaded sources (project code + knowledge base) and returns the most relevant chunks. The model's system prompt is informed of available knowledge sources so it knows when to query them.
+Indexed sources are merged into the same `RagLibrary` used by `TOOL:RAG`. When the model calls `TOOL:RAG`, it searches across all loaded sources (project code + knowledge base) and returns the most relevant chunks. `TOOL:RAGINFO` provides a full status report of the RAG subsystem (loaded databases, chunk counts, embedding model, config). `TOOL:RAGINDEX` can build new indexes from ZIM files, validate existing `.rag` files, or repair a stale chunk count in the header. The model's system prompt is informed of available knowledge sources so it knows when to query them.
 
 ## Building
 
@@ -328,9 +330,9 @@ hali/
 │   │   ├── agent_dispatch.cpp  # tool dispatch table (all TOOL:* handlers)
 │   │   ├── agent_utils.cpp/.h  # path helpers, tool arg parsing, SEARCH/REPLACE/TABLE, ThinkParser
 │   │   ├── config.cpp/.h       # settings, persistence, help text, prompt assembly, modes
-│   │   ├── knowledge.cpp/.h    # KnowledgeManager: ZIM index build/load, local tracking
-│   │   ├── run_allowed.h       # persistent user-approved TOOL:RUN allowlist
-│   │   └── shell_util.cpp/.h   # shell command execution, metacharacter detection
+│   │   ├── knowledge.cpp/.h    # KnowledgeManager: embedding model, RAG query, index load/build, tracking
+│   │   ├── zim.cpp             # ZIM build pipeline: extraction, chunking, embedding, case-insensitive resolution
+│   │   └── run_allowed.h       # persistent user-approved TOOL:RUN allowlist
 │   ├── model/              # llama.cpp integration
 │   │   ├── llama_sb.cpp/.h     # llama.cpp wrapper
 │   │   ├── llama_sb_mtp.cpp    # MTP speculative decoding
@@ -368,7 +370,9 @@ hali/
 │       ├── json.cpp/.h         # yyjson wrapper
 │       ├── line_list.h         # line-list file I/O utility
 │       ├── logging.cpp/.h      # log file handling
+│       ├── platform.h          # platform detection (Linux/macOS/Windows)
 │       ├── sha1.cpp/.h         # SHA-1 hashing (RAG dedup)
+│       ├── shell_util.cpp/.h   # shell command execution, metacharacter detection
 │       ├── string_utils.cpp/.h # Unicode-aware string helpers
 │       └── utf8.h              # UTF-8 utilities
 ├── tests/                  # unit tests, CTest-driven
