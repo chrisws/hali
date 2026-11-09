@@ -68,9 +68,11 @@ static BuildSystem detect_build_system(const std::string &sandbox) {
     return BuildSystem::PYTHON;
   }
   // Fall back: if there are .py files in the sandbox root, treat as Python
-  for (const auto &entry : fs::directory_iterator(sandbox)) {
-    if (entry.is_regular_file() && entry.path().extension() == ".py") {
-      return BuildSystem::PYTHON;
+  if (fs::exists(sandbox) && fs::is_directory(sandbox)) {
+    for (const auto &entry : fs::directory_iterator(sandbox)) {
+      if (entry.is_regular_file() && entry.path().extension() == ".py") {
+        return BuildSystem::PYTHON;
+      }
     }
   }
   return BuildSystem::NONE;
@@ -733,16 +735,18 @@ static BuildResult build_cmake_lint(const std::string &sandbox,
 BuildResult build_run(const std::string &sandbox, const std::string &mode,
                       const std::function<void(const std::string &)> &status,
                       const std::string &subdir) {
-  const std::string root = subdir.empty() ? sandbox : sandbox + "/" + subdir;
+  std::string m = mode;
+  if (m.empty()) {
+    m = "all";
+  }
+
+  // For pom mode, 'subdir' is the operation string, not a directory.
+  // Use sandbox directly as the root.
+  const std::string root = (m == "pom") ? sandbox : (subdir.empty() ? sandbox : sandbox + "/" + subdir);
   const auto sys = detect_build_system(root);
   if (sys == BuildSystem::NONE) {
     return {false, "ERROR: no recognised build system found in " + root +
                     " (looked for CMakeLists.txt, build.gradle, pom.xml, pyproject.toml, setup.py, requirements.txt, *.py)"};
-  }
-
-  std::string m = mode;
-  if (m.empty()) {
-    m = "all";
   }
 
   if (m == "setup") {
