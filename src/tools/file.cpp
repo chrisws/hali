@@ -48,25 +48,14 @@ static bool path_is_valid(const std::string &path) {
   return tstr == base.string() || tstr.compare(0, bstr.size(), bstr) == 0;
 }
 
-static const std::vector<std::string> cLangExtensions = {
-  ".c", ".cpp", ".h", ".hpp"
-};
-
-static const std::vector<std::string> curlyBraceExtensions = {
+static const std::vector<std::string> braceExtensions = {
+  ".c", ".cpp", ".h", ".hpp",
   ".js", ".jsx", ".ts", ".tsx", ".java"
 };
 
-static bool isCLangExtension(const fs::path &path) {
+static bool isBraceLanguage(const fs::path &path) {
   const std::string ext = path.extension().string();
-  for (const auto &e : cLangExtensions) {
-    if (ext == e) return true;
-  }
-  return false;
-}
-
-static bool isCurlyBraceLanguage(const fs::path &path) {
-  const std::string ext = path.extension().string();
-  for (const auto &e : curlyBraceExtensions) {
+  for (const auto &e : braceExtensions) {
     if (ext == e) return true;
   }
   return false;
@@ -203,10 +192,21 @@ std::string tool_append(const std::string &path, const std::string &data) {
   }
   fs::path p(path);
 
-  if (isCurlyBraceLanguage(p) && !isBalanced(data)) {
-    // Validation checks for curly brace languages
-    // Check if it's a curly brace language and content is unbalanced
-    return "ERROR: File appears to be a curly brace language with unbalanced braces";
+  // For brace languages, validate the *resulting* file (existing + append)
+  // rather than the appended chunk in isolation. This allows appending
+  // closing braces that match openers already in the file.
+  if (isBraceLanguage(p)) {
+    std::string existing;
+    if (fs::exists(p)) {
+      std::ifstream in(path, std::ios::binary);
+      if (in) {
+        existing.assign((std::istreambuf_iterator<char>(in)),
+                        std::istreambuf_iterator<char>());
+      }
+    }
+    if (!isBalanced(existing + data)) {
+      return "ERROR: resulting file would have unbalanced braces";
+    }
   }
 
   // Create parent directories if needed
@@ -322,7 +322,7 @@ std::string tool_write_validate(const std::string &path, const std::string &data
     }
   }
 
-  if (utils::is_blank(result) && isCurlyBraceLanguage(p) && !isBalanced(data)) {
+  if (utils::is_blank(result) && isBraceLanguage(p) && !isBalanced(data)) {
     result  = "Warning: file has unbalanced braces";
   }
 

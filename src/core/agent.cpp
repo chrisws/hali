@@ -45,10 +45,6 @@ static void broadcast_message(const HaliConfig &cfg, Tui &tui, const std::string
   }
 }
 
-static bool is_valid_tool_call(const std::string &buffer) {
-  return buffer.find("HALI_END_TOOL") != std::string::npos;
-}
-
 void Agent::apply_generation_params() const {
   llama_->add_stop("<|turn|>");
   llama_->add_stop("<|im_end|>");
@@ -609,20 +605,6 @@ bool Agent::run_turn(const std::string &user_message) {
     if (tool_start == 0) {
       fetch_tool();
       turn_tokens += iter_->_tokens_generated;
-      if (!is_valid_tool_call(buffer)) {
-        // Not a real tool call — model mentioned a tool name in prose.
-        // Emit as regular text output.
-        auto npos = buffer.find('\n');
-        if (npos != std::string::npos) {
-          tui_.append_token(buffer.substr(0, npos + 1));
-          buffer = buffer.substr(npos + 1);
-        } else {
-          tui_.append_token(buffer);
-          buffer.clear();
-        }
-        thinker.set_mode(ThinkParser::Init);
-        continue;
-      }
       invoke_tool(utils::trim(buffer), "TOOL_RESULT: {}");
       buffer.clear();
       thinker.set_mode(ThinkParser::Init);

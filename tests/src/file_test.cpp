@@ -989,6 +989,80 @@ static void test_tool_append_log() {
 }
 
 //
+// Test: appending a closing brace to a file with an open brace now succeeds
+// (the resulting file is balanced, even though the chunk alone is not)
+//
+static void test_tool_append_closing_brace() {
+  string test_file = "/tmp/test_append_close_brace.java";
+
+  // Create a file with an open method body
+  {
+    ofstream out(test_file);
+    out << "class Foo {\n  void bar() {\n";
+  }
+
+  // Append the closing braces — chunk alone is unbalanced (2 closes, 0 opens)
+  // but the resulting file is balanced
+  string result = tool_append(test_file, "  }\n}\n");
+  assert(result == "OK: appended to " + test_file);
+
+  // Verify the file content
+  ifstream in(test_file);
+  string content((istreambuf_iterator<char>(in)), istreambuf_iterator<char>());
+  in.close();
+  assert(content == "class Foo {\n  void bar() {\n  }\n}\n");
+
+  remove(test_file.c_str());
+  cout << "test_tool_append_closing_brace passed" << endl;
+}
+
+//
+// Test: appending content that makes the *result* unbalanced is still rejected
+//
+static void test_tool_append_result_unbalanced() {
+  string test_file = "/tmp/test_append_result_unbalanced.java";
+
+  // Create a file with balanced content
+  {
+    ofstream out(test_file);
+    out << "class Foo {\n  void bar() {\n  }\n}\n";
+  }
+
+  // Append an extra opening brace — result would be unbalanced
+  string result = tool_append(test_file, "  void baz() {\n");
+  assert(result.find("ERROR") != string::npos);
+  assert(result.find("unbalanced") != string::npos);
+
+  // Verify file was NOT modified
+  ifstream in(test_file);
+  string content((istreambuf_iterator<char>(in)), istreambuf_iterator<char>());
+  in.close();
+  assert(content == "class Foo {\n  void bar() {\n  }\n}\n");
+
+  remove(test_file.c_str());
+  cout << "test_tool_append_result_unbalanced passed" << endl;
+}
+
+//
+// Test: C++ files now get brace validation in tool_write_validate
+//
+static void test_tool_write_validate_cpp_braces() {
+  string test_file = "/tmp/test_cpp_braces.cpp";
+
+  // Balanced C++ content — no warning
+  string balanced = "int main() { return 0; }";
+  string result = tool_write_validate(test_file, balanced);
+  assert(result.find("unbalanced") == string::npos);
+
+  // Unbalanced C++ content — should warn
+  string unbalanced = "int main() { return 0;";
+  result = tool_write_validate(test_file, unbalanced);
+  assert(result.find("unbalanced") != string::npos);
+
+  cout << "test_tool_write_validate_cpp_braces passed" << endl;
+}
+
+//
 // read_file tests
 //
 
@@ -1204,11 +1278,14 @@ void file_test() {
   test_tool_append_nested_dirs();
   test_tool_append_curly_balanced();
   test_tool_append_curly_unbalanced();
+  test_tool_append_closing_brace();
+  test_tool_append_result_unbalanced();
   test_tool_append_binary();
   test_tool_append_empty();
   test_tool_append_special_chars();
   test_tool_append_multiline();
   test_tool_append_log();
+  test_tool_write_validate_cpp_braces();
   cout << "\nAll tool_append tests passed!\n" << endl;
 
   test_empty_input();
