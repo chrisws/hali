@@ -75,6 +75,8 @@ void zim_util_test();
 void knowledge_test();
 void gui_test();
 void tui_progress_test();
+void llama_iter_test();
+void agent_tool_guard_test();
 
 int main() {
   log_open_console();
@@ -112,6 +114,8 @@ int main() {
   run_htp_test("knowledge", knowledge_test);
   run_htp_test("tui_progress", tui_progress_test);
   run_htp_test("gui", gui_test);
+  run_htp_test("llama_iter", llama_iter_test);
+  run_htp_test("agent_tool_guard", agent_tool_guard_test);
 
   return g_failures ? 1 : 0;
 }

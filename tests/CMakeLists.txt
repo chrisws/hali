@@ -122,6 +122,8 @@ add_executable(hali_tests
   src/knowledge_test.cpp
   src/tui_progress_test.cpp
   src/gui_test.cpp
+  src/llama_iter_test.cpp
+  src/agent_tool_guard_test.cpp
   src/main.cpp
 )
 

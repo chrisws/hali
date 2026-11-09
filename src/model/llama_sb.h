@@ -71,6 +71,7 @@ struct LlamaIter {
   int _repetition_count;
   int _tokens_generated;
   bool _has_next;
+  bool _ignore_stop;
 };
 
 struct LlamaLoad {

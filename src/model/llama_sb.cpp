@@ -42,7 +42,8 @@ LlamaIter::LlamaIter() :
   _llama(nullptr),
   _repetition_count(0),
   _tokens_generated(0),
-  _has_next(false) {
+  _has_next(false),
+  _ignore_stop(false) {
 }
 
 LlamaIter::LlamaIter(LlamaIter &&other) noexcept
@@ -52,7 +53,8 @@ LlamaIter::LlamaIter(LlamaIter &&other) noexcept
   , _t_start(std::move(other._t_start))
   , _repetition_count(other._repetition_count)
   , _tokens_generated(other._tokens_generated)
-  , _has_next(other._has_next) {
+  , _has_next(other._has_next)
+  , _ignore_stop(other._ignore_stop) {
 }
 
 Llama::Llama() :
@@ -791,7 +793,7 @@ string Llama::token_to_string(LlamaIter &iter, llama_token tok) const {
     }
 
     // detect stop words (check accumulated tail to catch cross-token boundaries)
-    if (iter._has_next && !_stop_sequences.empty()) {
+    if (iter._has_next && !iter._ignore_stop && !_stop_sequences.empty()) {
       iter._tail.append(buf, n);
 
       size_t max_stop_len = 0;
