@@ -308,6 +308,64 @@ static void test_cmake_over_python() {
   teardown_sandbox();
 }
 
+//
+// test: Maven detection when pom.xml is in a subdirectory
+//
+static void test_maven_detection_subdir() {
+  setup_sandbox();
+  fs::create_directories(SANDBOX + "/server");
+  write_file(SANDBOX + "/server/pom.xml", "<project></project>\n");
+  auto r = build_run(SANDBOX, "invalid", [](const string &) {});
+  assert(!r.success_);
+  assert(r.output_.find("no recognised build system") == string::npos);
+  assert(r.output_.find("unknown build mode") != string::npos);
+  teardown_sandbox();
+}
+
+//
+// test: Maven build with pom.xml in subdirectory is detected and attempted
+//
+static void test_maven_build_subdir() {
+  setup_sandbox();
+  fs::create_directories(SANDBOX + "/server");
+  write_file(SANDBOX + "/server/pom.xml", "<project></project>\n");
+  auto r = build_run(SANDBOX, "build", [](const string &) {});
+  // Should NOT say "no recognised build system" - it should detect Maven
+  assert(r.output_.find("no recognised build system") == string::npos);
+  // Should have attempted Maven compilation
+  assert(r.output_.find("Compiling with Maven") != string::npos);
+  teardown_sandbox();
+}
+
+//
+// test: root pom.xml takes priority over subdirectory pom.xml
+//
+static void test_maven_root_pom_priority() {
+  setup_sandbox();
+  write_file(SANDBOX + "/pom.xml", "<project><artifactId>root</artifactId></project>\n");
+  fs::create_directories(SANDBOX + "/sub");
+  write_file(SANDBOX + "/sub/pom.xml", "<project><artifactId>sub</artifactId></project>\n");
+  // Use invalid mode to just verify detection
+  auto r = build_run(SANDBOX, "invalid", [](const string &) {});
+  assert(!r.success_);
+  assert(r.output_.find("no recognised build system") == string::npos);
+  assert(r.output_.find("unknown build mode") != string::npos);
+  teardown_sandbox();
+}
+
+//
+// test: no pom.xml anywhere means no Maven detection
+//
+static void test_no_pom_no_maven() {
+  setup_sandbox();
+  fs::create_directories(SANDBOX + "/server");
+  write_file(SANDBOX + "/server/main.cpp", "int main(){return 0;}\n");
+  auto r = build_run(SANDBOX, "invalid", [](const string &) {});
+  assert(!r.success_);
+  assert(r.output_.find("no recognised build system") != string::npos);
+  teardown_sandbox();
+}
+
 void build_test() {
   RUN_TEST(test_no_build_system);
   RUN_TEST(test_unknown_mode);
@@ -326,4 +384,8 @@ void build_test() {
   RUN_TEST(test_python_detection_requirements);
   RUN_TEST(test_python_detection_bare_script);
   RUN_TEST(test_cmake_over_python);
+  RUN_TEST(test_maven_detection_subdir);
+  RUN_TEST(test_maven_build_subdir);
+  RUN_TEST(test_maven_root_pom_priority);
+  RUN_TEST(test_no_pom_no_maven);
 }

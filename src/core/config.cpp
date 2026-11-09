@@ -18,6 +18,7 @@
 #include "config.h"
 #include "util/json.h"
 #include "gpu_info.h"
+#include "tools/build.h"
 
 static const std::vector<std::string> ALLOWED_TOOLS = {};
 
@@ -478,6 +479,87 @@ std::string HaliConfig::prompt_core() const {
   return p;
 }
 
+std::string HaliConfig::prompt_project_context() const {
+  if (sandbox_.empty()) return "";
+
+  std::string p;
+  p += "## Project Context\n";
+
+  if (fs::exists(sandbox_ + "/CMakeLists.txt")) {
+    p +=
+      "Detected: C/C++ project (CMake)\n"
+      "- Build: TOOL:BUILD (setup, build, test, clean, lint)\n"
+      "- Layout: src/ (source + headers co-located), tests/ (unit tests)\n"
+      "- Standard: C++20, compiler: GCC/Clang\n"
+      "- Prefer TOOL:BUILD over raw cmake/make commands\n"
+      "- Always consider adding unit tests for code changes\n\n";
+  } else if (!find_pom(sandbox_).empty()) {
+    p +=
+      "Detected: Java project (Maven)\n"
+      "- Build: TOOL:BUILD (setup, build, test, clean)\n"
+      "- Layout: src/main/java/, src/test/java/\n"
+      "- For Maven pom.xml modifications, use TOOL:BUILD pom <operation>:\n"
+      "  - TOOL:BUILD pom show                          — display current pom state\n"
+      "  - TOOL:BUILD pom add-dep <g>:<a>:<v>[:<scope>] — add a dependency\n"
+      "  - TOOL:BUILD pom remove-dep <g>:<a>            — remove a dependency\n"
+      "  - TOOL:BUILD pom set-property <name> <value>   — set a property\n"
+      "  - TOOL:BUILD pom set-version <version>         — change project version\n"
+      "  - TOOL:BUILD pom set-group-id <groupId>        — change groupId\n"
+      "  - TOOL:BUILD pom set-artifact-id <artifactId>  — change artifactId\n"
+      "  - TOOL:BUILD pom add-plugin <g>:<a>:<v>       — add a build plugin\n"
+      "  - NEVER use TOOL:PATCH on pom.xml — always use the pom mode above\n"
+      "- Prefer TOOL:BUILD over raw mvn commands\n"
+      "- Always consider adding unit tests for code changes\n\n";
+  } else if (fs::exists(sandbox_ + "/build.gradle") ||
+             fs::exists(sandbox_ + "/build.gradle.kts")) {
+    p +=
+      "Detected: Java/Kotlin project (Gradle)\n"
+      "- Build: TOOL:BUILD (setup, build, test, clean)\n"
+      "- Layout: src/main/java/ or src/main/kotlin/, src/test/\n"
+      "- Prefer TOOL:BUILD over raw gradle commands\n"
+      "- Always consider adding unit tests for code changes\n\n";
+  } else if (fs::exists(sandbox_ + "/package.json")) {
+    p +=
+      "Detected: JavaScript/TypeScript project (Node.js)\n"
+      "- Build: TOOL:RUN npm run <script> (check package.json for scripts)\n"
+      "- Layout: src/ or lib/, tests: test/ or __tests__/\n"
+      "- Use TOOL:RUN for npm/yarn/pnpm commands\n"
+      "- Always consider adding unit tests for code changes\n\n";
+  } else if (fs::exists(sandbox_ + "/go.mod")) {
+    p +=
+      "Detected: Go project\n"
+      "- Build: TOOL:RUN go build ./...\n"
+      "- Test: TOOL:RUN go test ./...\n"
+      "- Layout: flat package dirs, _test.go files alongside source\n"
+      "- Always consider adding unit tests for code changes\n\n";
+  } else if (fs::exists(sandbox_ + "/Cargo.toml")) {
+    p +=
+      "Detected: Rust project (Cargo)\n"
+      "- Build: TOOL:RUN cargo build\n"
+      "- Test: TOOL:RUN cargo test\n"
+      "- Layout: src/ (lib.rs or main.rs), tests/ (integration), #[cfg(test)] (unit)\n"
+      "- Always consider adding unit tests for code changes\n\n";
+  } else if (fs::exists(sandbox_ + "/pyproject.toml") ||
+             fs::exists(sandbox_ + "/setup.py")) {
+    p +=
+      "Detected: Python project\n"
+      "- Build: TOOL:BUILD (setup, build, test)\n"
+      "- Layout: src/ or package dir, tests/\n"
+      "- Prefer TOOL:BUILD over raw pip/python commands\n"
+      "- Always consider adding unit tests for code changes\n\n";
+  } else if (fs::exists(sandbox_ + "/Makefile")) {
+    p +=
+      "Detected: Make-based project\n"
+      "- Build: TOOL:RUN make [target]\n"
+      "- Check Makefile for available targets before running\n"
+      "- Always consider adding unit tests for code changes\n\n";
+  } else {
+    p += "No recognised build system detected in sandbox.\n\n";
+  }
+
+  return p;
+}
+
 std::string HaliConfig::prompt_file_ops() {
   return
     "## File Writing Rules\n"
@@ -565,6 +647,7 @@ std::string HaliConfig::build_system_prompt() const {
   std::string p;
   p += prompt_identity();
   p += prompt_core();
+  p += prompt_project_context();
   p += prompt_file_ops();
   p += prompt_interaction();
   p += prompt_audio();

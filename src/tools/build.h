@@ -26,6 +26,10 @@ struct BuildResult {
   std::vector<LintWarning> lint_details_;
 };
 
+// Find pom.xml in sandbox root or immediate subdirectories.
+// Returns the path if found, empty string otherwise.
+std::string find_pom(const std::string &sandbox);
+
 // mode: "setup" | "build" | "test" | "clean" | "lint" | "all"
 // sandbox: root directory of the project
 // subdir: optional subdirectory to build as a sub-project (e.g. "tests")

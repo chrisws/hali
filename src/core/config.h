@@ -152,6 +152,7 @@ private:
   static std::string prompt_interaction();
   std::string prompt_identity() const;
   std::string prompt_core() const;
+  std::string prompt_project_context() const;
   std::string prompt_audio() const;
   std::string prompt_web() const;
   std::string prompt_knowledge() const;

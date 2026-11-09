@@ -17,6 +17,7 @@
 #include <utility>
 
 #include "build.h"
+#include "pom.h"
 #include "shell_util.h"
 
 namespace fs = std::filesystem;
@@ -29,6 +30,26 @@ enum class BuildSystem {
   PYTHON,
 };
 
+// Search for pom.xml in the sandbox root or one level of subdirectories.
+// Returns the full path if found, empty string otherwise.
+std::string find_pom(const std::string &sandbox) {
+  std::string root_pom = sandbox + "/pom.xml";
+  if (fs::exists(root_pom)) {
+    return root_pom;
+  }
+  // Check immediate subdirectories
+  if (!fs::exists(sandbox)) return "";
+  for (const auto &entry : fs::directory_iterator(sandbox)) {
+    if (entry.is_directory()) {
+      std::string sub_pom = entry.path().string() + "/pom.xml";
+      if (fs::exists(sub_pom)) {
+        return sub_pom;
+      }
+    }
+  }
+  return "";
+}
+
 static BuildSystem detect_build_system(const std::string &sandbox) {
   if (fs::exists(sandbox + "/CMakeLists.txt")) {
     return BuildSystem::CMAKE;
@@ -38,7 +59,7 @@ static BuildSystem detect_build_system(const std::string &sandbox) {
       fs::exists(sandbox + "/gradlew")) {
     return BuildSystem::GRADLE;
   }
-  if (fs::exists(sandbox + "/pom.xml")) {
+  if (!find_pom(sandbox).empty()) {
     return BuildSystem::MAVEN;
   }
   if (fs::exists(sandbox + "/pyproject.toml") ||
@@ -273,7 +294,10 @@ static BuildResult build_cmake(const std::string &sandbox, const std::string &mo
 
 static BuildResult build_maven(const std::string &sandbox, const std::string &mode,
                                const std::function<void(const std::string &)> &status) {
-  const std::string pom = sandbox + "/pom.xml";
+  const std::string pom = find_pom(sandbox);
+  if (pom.empty()) {
+    return {false, "ERROR: no pom.xml found in sandbox or subdirectories"};
+  }
   std::string result;
   bool ok = true;
 
@@ -442,9 +466,10 @@ static BuildResult setup_maven(const std::string &sandbox,
                                const std::function<void(const std::string &)> &status) {
   std::string result;
   bool ok = true;
-  const std::string pom = sandbox + "/pom.xml";
+  std::string pom = find_pom(sandbox);
 
-  if (!fs::exists(pom)) {
+  if (pom.empty()) {
+    pom = sandbox + "/pom.xml";
     result += "==> Generating basic pom.xml...\n";
     // Write a minimal pom.xml
     std::ofstream f(pom);
@@ -728,6 +753,18 @@ BuildResult build_run(const std::string &sandbox, const std::string &mode,
       case BuildSystem::PYTHON: return setup_python(root, status);
       default:                  return {false, "ERROR: unsupported build system"};
     }
+  }
+
+  if (m == "pom") {
+    if (sys != BuildSystem::MAVEN) {
+      return {false, "ERROR: pom mode requires a Maven project (pom.xml)"};
+    }
+    std::string pom = find_pom(root);
+    if (pom.empty()) {
+      return {false, "ERROR: no pom.xml found"};
+    }
+    PomResult pr = pom_run(pom, subdir, status);
+    return {pr.success_, pr.output_};
   }
 
   if (m == "lint") {
