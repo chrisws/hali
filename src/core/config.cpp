@@ -406,8 +406,7 @@ std::string HaliConfig::prompt_core() const {
     "HALI_END_TOOL\n\n"
     "TOOL:WRITE index.html <!DOCTYPE html><html>...</html>\n"
     "HALI_END_TOOL\n\n"
-    "TOOL:RUN ./build.sh\n"
-    "HALI_END_TOOL\n\n"
+
 
     "## Available Tools\n"
     "  TOOL:LIST   [dir]          list files (default: sandbox root)\n"
@@ -449,9 +448,8 @@ std::string HaliConfig::prompt_core() const {
     "- The answer depends on local or project data, OR\n"
     "- The user asks for date, time, or a random number\n"
     "Otherwise answer directly using internal knowledge.\n"
-    "If the project has a recognisable build system, prefer TOOL:BUILD over\n"
-    "TOOL:RUN cmake/make/mvn/gradle. Use TOOL:RUN only for one-off commands\n"
-    "not covered by the build system.\n\n"
+    "If the project has a recognisable build system, prefer TOOL:BUILD for\n"
+    "build, test, and clean operations.\n\n"
 
     "## Tool Rules\n"
     "- HALI_END_TOOL must immediately follow the tool call — no exceptions\n"
@@ -518,21 +516,21 @@ std::string HaliConfig::prompt_project_context() const {
       "- Layout: src/main/java/ or src/main/kotlin/, src/test/\n"
       "- Prefer TOOL:BUILD over raw gradle commands\n"
       "- Always consider adding unit tests for code changes\n\n";
-  } else if (fs::exists(sandbox_ + "/package.json")) {
+  } else if (fs::exists(sandbox_ + "/package.json") && !disable_run_) {
     p +=
       "Detected: JavaScript/TypeScript project (Node.js)\n"
       "- Build: TOOL:RUN npm run <script> (check package.json for scripts)\n"
       "- Layout: src/ or lib/, tests: test/ or __tests__/\n"
       "- Use TOOL:RUN for npm/yarn/pnpm commands\n"
       "- Always consider adding unit tests for code changes\n\n";
-  } else if (fs::exists(sandbox_ + "/go.mod")) {
+  } else if (fs::exists(sandbox_ + "/go.mod") && !disable_run_) {
     p +=
       "Detected: Go project\n"
       "- Build: TOOL:RUN go build ./...\n"
       "- Test: TOOL:RUN go test ./...\n"
       "- Layout: flat package dirs, _test.go files alongside source\n"
       "- Always consider adding unit tests for code changes\n\n";
-  } else if (fs::exists(sandbox_ + "/Cargo.toml")) {
+  } else if (fs::exists(sandbox_ + "/Cargo.toml") && !disable_run_) {
     p +=
       "Detected: Rust project (Cargo)\n"
       "- Build: TOOL:RUN cargo build\n"
@@ -547,7 +545,7 @@ std::string HaliConfig::prompt_project_context() const {
       "- Layout: src/ or package dir, tests/\n"
       "- Prefer TOOL:BUILD over raw pip/python commands\n"
       "- Always consider adding unit tests for code changes\n\n";
-  } else if (fs::exists(sandbox_ + "/Makefile")) {
+  } else if (fs::exists(sandbox_ + "/Makefile") && !disable_run_) {
     p +=
       "Detected: Make-based project\n"
       "- Build: TOOL:RUN make [target]\n"
