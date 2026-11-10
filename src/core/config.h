@@ -63,6 +63,7 @@ struct HaliConfig {
   bool  offload_kqv_    = true;
   bool  permission_prompt_ = false;
   bool  disable_run_      = false;
+  bool  disable_curl_     = false;
   bool  disable_save_on_exit_ = false;
   bool  thinking_       = true;
   int   log_level_      = GGML_LOG_LEVEL_CONT;

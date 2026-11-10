@@ -22,8 +22,10 @@
     "thinking": true
   },
   "rag": {
-    "embed_path": "",
-    "top_k": 5
+    "embed_path": "/home/chrisws/models/qwen/qwen3-embedding-0.6b-q4_k_m.gguf",
+    "top_k": 20,
+    "enabled": false,
+    "files": []
   },
   "mtp": {
     "enabled": true,
@@ -41,9 +43,10 @@
   "audio": {
     "enabled": true,
     "volume": 0.5,
-    "tool_tick": false,
-    "user_prompt": false,
-    "enable_multi_track": false
+    "tool_tick": true,
+    "user_prompt": true,
+    "enable_multi_track": true,
+    "theme": "hali"
   },
   "mcp": {
     "host": "127.0.0.1",
@@ -52,13 +55,14 @@
   },
   "logging": {
     "level": "debug",
-    "file": "text.log",
-    "filter": "tui",
+    "file": "hali-zim.log",
+    "filter": "zim",
     "erase": true
   },
   "controls": {
     "permission_prompt": false,
     "disable_run": false,
+    "disable_curl": false,
     "disable_save_on_exit": false,
     "disable_write_validate": true,
     "disable_patch_validate": true,
@@ -66,13 +70,13 @@
     "enabled_backups": false
   },
   "web": {
-    "enabled": true,
+    "enabled": false,
     "port": 8080
   },
   "extra_dirs": [
     "/usr/local/include/notcurses",
-    "/home/chrisws/github/project-nomad",
-    "/home/chrisws/github/fenster"
+    "/home/chrisws/github/zim-tools",
+    "/home/chrisws/src/jolt"
   ],
   "knowledge_files": []
 }

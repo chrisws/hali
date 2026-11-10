@@ -30,6 +30,10 @@ struct BuildResult {
 // Returns the path if found, empty string otherwise.
 std::string find_pom(const std::string &sandbox);
 
+// Scan for test functions in common test directories.
+// Returns count of test functions found, or -1 if no test directory located.
+int scan_test_count(const std::string &sandbox);
+
 // mode: "setup" | "build" | "test" | "clean" | "lint" | "all"
 // sandbox: root directory of the project
 // subdir: optional subdirectory to build as a sub-project (e.g. "tests")

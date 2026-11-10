@@ -366,6 +366,67 @@ static void test_no_pom_no_maven() {
   teardown_sandbox();
 }
 
+//
+// test: scan_test_count finds Java tests in src/test/java (Maven root layout)
+//
+static void test_maven_test_dir_root() {
+  setup_sandbox();
+  // Maven-style test dir at sandbox root
+  fs::create_directories(SANDBOX + "/src/test/java");
+  write_file(SANDBOX + "/src/test/java/MyTest.java",
+    "import org.junit.Test;\n"
+    "public class MyTest {\n"
+    "  @Test\n"
+    "  public void testFoo() {}\n"
+    "  @Test\n"
+    "  public void testBar() {}\n"
+    "}\n");
+
+  int count = scan_test_count(SANDBOX);
+  assert(count == 2);
+  teardown_sandbox();
+}
+
+//
+// test: scan_test_count finds Java tests in server/src/test/java (subdir Maven)
+//
+static void test_maven_test_dir_subdir() {
+  setup_sandbox();
+  // Maven test dir one level deep: server/src/test/java
+  fs::create_directories(SANDBOX + "/server/src/test/java");
+  write_file(SANDBOX + "/server/src/test/java/ServerTest.java",
+    "import org.junit.Test;\n"
+    "public class ServerTest {\n"
+    "  @Test\n"
+    "  public void testStart() {}\n"
+    "}\n");
+
+  int count = scan_test_count(SANDBOX);
+  assert(count == 1);
+  teardown_sandbox();
+}
+
+//
+// test: recursive iteration finds Java tests in nested packages
+//
+static void test_maven_test_dir_nested_packages() {
+  setup_sandbox();
+  // Nested Java package: src/test/java/com/example/
+  fs::create_directories(SANDBOX + "/src/test/java/com/example");
+  write_file(SANDBOX + "/src/test/java/com/example/AppTest.java",
+    "import org.junit.Test;\n"
+    "public class AppTest {\n"
+    "  @Test\n"
+    "  public void testAlpha() {}\n"
+    "  @Test\n"
+    "  public void testShutdown() {}\n"
+    "}\n");
+
+  int count = scan_test_count(SANDBOX);
+  assert(count == 2);
+  teardown_sandbox();
+}
+
 void build_test() {
   RUN_TEST(test_no_build_system);
   RUN_TEST(test_unknown_mode);
@@ -388,4 +449,7 @@ void build_test() {
   RUN_TEST(test_maven_build_subdir);
   RUN_TEST(test_maven_root_pom_priority);
   RUN_TEST(test_no_pom_no_maven);
+  RUN_TEST(test_maven_test_dir_root);
+  RUN_TEST(test_maven_test_dir_subdir);
+  RUN_TEST(test_maven_test_dir_nested_packages);
 }

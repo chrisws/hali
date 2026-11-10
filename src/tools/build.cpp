@@ -151,15 +151,26 @@ static void generate_test_badge(const std::string &sandbox, int passed, int tota
 // Returns the total count of individual test functions found.
 // Returns -1 if no test directory could be located.
 //
-static int scan_test_count(const std::string &sandbox) {
+int scan_test_count(const std::string &sandbox) {
   // Try common test directory layouts, most specific first.
-  const char *candidates[] = {"tests/src", "tests", "test"};
+  const char *candidates[] = {"tests/src", "tests", "test", "src/test/java"};
   std::string test_dir;
   for (const auto &c : candidates) {
     auto p = sandbox + "/" + c;
     if (fs::exists(p) && fs::is_directory(p)) {
       test_dir = p;
       break;
+    }
+  }
+  // Also check one level deep for Maven subdirectory layout: */src/test/java
+  if (test_dir.empty()) {
+    for (const auto &entry : fs::directory_iterator(sandbox)) {
+      if (!entry.is_directory()) continue;
+      auto p = entry.path().string() + "/src/test/java";
+      if (fs::exists(p) && fs::is_directory(p)) {
+        test_dir = p;
+        break;
+      }
     }
   }
   if (test_dir.empty()) return -1;
@@ -191,7 +202,7 @@ static int scan_test_count(const std::string &sandbox) {
   };
 
   int count = 0;
-  for (const auto &entry : fs::directory_iterator(test_dir)) {
+  for (const auto &entry : fs::recursive_directory_iterator(test_dir)) {
     if (!entry.is_regular_file()) continue;
     auto ext = entry.path().extension().string();
     if (src_exts.find(ext) == src_exts.end()) continue;

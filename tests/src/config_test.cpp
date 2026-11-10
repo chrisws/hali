@@ -367,6 +367,7 @@ static void test_controls_defaults() {
   assert(cfg.disable_patch_validate_ == false);
   assert(cfg.permission_prompt_ == false);
   assert(cfg.disable_run_ == false);
+  assert(cfg.disable_curl_ == false);
   assert(cfg.disable_save_on_exit_ == false);
   assert(cfg.val_write_size_warn_ == 1000);
   cout << "test_controls_defaults passed" << endl;
@@ -380,6 +381,7 @@ static void test_controls_load() {
     "    \"disable_write_validate\": true,\n"
     "    \"disable_patch_validate\": false,\n"
     "    \"permission_prompt\": true,\n"
+    "    \"disable_curl\": true,\n"
     "    \"val_write_size_warn\": 8000\n"
     "  }\n"
     "}\n";
@@ -395,6 +397,7 @@ static void test_controls_load() {
   assert(cfg.disable_write_validate_ == true);
   assert(cfg.disable_patch_validate_ == false);
   assert(cfg.permission_prompt_ == true);
+  assert(cfg.disable_curl_ == true);
   assert(cfg.val_write_size_warn_ == 8000);
 
   string json = cfg.introspect();
@@ -402,15 +405,17 @@ static void test_controls_load() {
   assert(doc.is_valid());
   auto root = doc.get_root();
   auto controls = root.get_child("controls");
-  bool v1 = false, v2 = false, pp = false;
+  bool v1 = false, v2 = false, pp = false, dc = false;
   int wsw = 0;
   assert(controls.get_bool("disable_write_validate", v1));
   assert(controls.get_bool("disable_patch_validate", v2));
   assert(controls.get_bool("permission_prompt", pp));
+  assert(controls.get_bool("disable_curl", dc));
   assert(controls.get_int("val_write_size_warn", wsw));
   assert(v1 == true);
   assert(v2 == false);
   assert(pp == true);
+  assert(dc == true);
   assert(wsw == 8000);
 
   std::error_code ec;
@@ -437,6 +442,22 @@ static void test_system_prompt_extra_dirs() {
   assert(prompt.find("/usr/include") != string::npos);
 
   cout << "test_system_prompt_extra_dirs passed" << endl;
+}
+
+static void test_disable_curl_prompt() {
+  HaliConfig cfg;
+  cfg.sandbox_ = "/tmp/sandbox";
+
+  // Default: TOOL:CURL should be present
+  string prompt = cfg.build_system_prompt();
+  assert(prompt.find("TOOL:CURL") != string::npos);
+
+  // Disabled: TOOL:CURL should NOT be present
+  cfg.disable_curl_ = true;
+  prompt = cfg.build_system_prompt();
+  assert(prompt.find("TOOL:CURL") == string::npos);
+
+  cout << "test_disable_curl_prompt passed" << endl;
 }
 
 static void test_introspect_knowledge_files_filter() {
@@ -490,6 +511,7 @@ void config_test() {
   test_log_erase_load();
   test_controls_defaults();
   test_controls_load();
+  test_disable_curl_prompt();
   test_system_prompt_extra_dirs();
   test_introspect_knowledge_files_filter();
   cout << "\nAll config tests passed!\n" << endl;

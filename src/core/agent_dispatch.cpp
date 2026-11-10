@@ -710,6 +710,9 @@ ToolMap Agent::build_tool_dispatch() {
     return make_dir(p) ? "OK: created " + a1 : "ERROR: mkdir failed for " + a1;
   };
   tools["TOOL:CURL"] = [this](const std::string &a1, const std::string &a2) -> std::string {
+    if (cfg_.disable_curl_) {
+      return "ERROR: TOOL:CURL is disabled by configuration";
+    }
     tui_.show_tool("curl: " + a1);
     return tool_curl(a1);
   };

@@ -212,6 +212,7 @@ void HaliConfig::load_settings() {
   if (controls.is_object()) {
     controls.get_bool("permission_prompt", permission_prompt_);
     controls.get_bool("disable_run", disable_run_);
+    controls.get_bool("disable_curl", disable_curl_);
     controls.get_bool("disable_save_on_exit", disable_save_on_exit_);
     controls.get_bool("disable_write_validate", disable_write_validate_);
     controls.get_bool("disable_patch_validate", disable_patch_validate_);
@@ -434,12 +435,15 @@ std::string HaliConfig::prompt_core() const {
     "  TOOL:ASK    <query>        ask the user for clarification or additional context\n"
     "  TOOL:CHOICE <question>|<opt1>|<opt2>|...  multiple-choice popup (pipe-delimited)\n"
     "  TOOL:TABLE  <R>x<C> <rows>  format pipe-delimited rows into an aligned table\n"
-    "  TOOL:INTROSPECT            show current model settings\n"
-    "  TOOL:CURL   <url>          HTTP GET, returns response body (max 32 KB)\n"
+    "  TOOL:INTROSPECT            show current model settings\n";
+  if (!disable_curl_) {
+    p += "  TOOL:CURL   <url>          HTTP GET, returns response body (max 32 KB)\n";
+  }
+  p +=
     "  TOOL:PERMISSION            ask user for explicit permission\n"
     "  TOOL:RESTART               restart after writing current task context to `.hali/SESSION.md`\n"
     "  TOOL:GUI    <help|html|input|clear>  display HTML, check input, or clear browser\n"
-    "  TOOL:CLIPBOARD <copy|cut|paste|show|clear> [file range]  internal clipboard for file lines\n"
+    "  TOOL:CLIPBOARD <copy|cut|paste|show|clear> <file> <start>,<end>  copy/cut/paste lines by 1-based range\n"
     "  TOOL:SCREEN   <save|show|restore|list|clear> [name]  save/restore display snapshots\n\n"
 
     "## Tool Decision Rules\n"
@@ -736,6 +740,7 @@ std::string HaliConfig::introspect() const {
   auto controls = root.get_child("controls");
   controls.set_bool("permission_prompt", permission_prompt_);
   controls.set_bool("disable_run", disable_run_);
+  controls.set_bool("disable_curl", disable_curl_);
   controls.set_bool("disable_save_on_exit", disable_save_on_exit_);
   controls.set_bool("disable_write_validate", disable_write_validate_);
   controls.set_bool("disable_patch_validate", disable_patch_validate_);
