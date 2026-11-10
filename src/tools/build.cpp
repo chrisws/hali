@@ -81,14 +81,20 @@ static BuildSystem detect_build_system(const std::string &sandbox) {
 static constexpr size_t kMaxOutputSize = 32768;
 static constexpr size_t kTruncHeadSize = 2048;
 static constexpr size_t kTruncTailSize = 30720;
+static constexpr size_t kQuietMaxOutputSize = 8192;
+static constexpr size_t kQuietTruncHeadSize = 1024;
+static constexpr size_t kQuietTruncTailSize = 7168;
 
 static std::string run_command(const std::string &cmd,
-                               const std::function<void(const std::string &)> &status) {
+                               const std::function<void(const std::string &)> &status,
+                               size_t max_size = kMaxOutputSize) {
   status("build: " + cmd);
   std::string out = run_shell_command(cmd);
-  if (out.size() > kMaxOutputSize) {
-    out = out.substr(0, kTruncHeadSize) + "\n…(truncated)…" +
-          out.substr(out.size() - kTruncTailSize);
+  if (out.size() > max_size) {
+    size_t head = (max_size / 4);
+    size_t tail = max_size - head;
+    out = out.substr(0, head) + "\n…(truncated)…" +
+          out.substr(out.size() - tail);
   }
   return out;
 }
@@ -326,7 +332,7 @@ static BuildResult build_maven(const std::string &sandbox, const std::string &mo
 
   if (mode == "test" || mode == "all") {
     result += "==> Running Maven tests...\n";
-    auto out = run_command("mvn -f " + pom + " test", status);
+    auto out = run_command("mvn -f " + pom + " test -q", status, kQuietMaxOutputSize);
     if (out.find("BUILD FAILURE") != std::string::npos) {
       ok = false;
     }
