@@ -407,8 +407,23 @@ std::string Agent::restart() {
     }
     reset_conversation(cfg_.build_system_prompt());
     tui_.append_line(ICON_ERR + "Session restarted");
+    // Show which knowledge files were re-loaded (mirrors startup behaviour)
+    std::string knowledge_summary;
+    for (const auto &kf : cfg_.knowledge_files_) {
+      if (fs::exists(kf)) {
+        tui_.append_line(ICON_SYS + "Loaded: " + kf);
+        if (!knowledge_summary.empty()) {
+          knowledge_summary += ", ";
+        }
+        knowledge_summary += kf;
+      }
+    }
     tui_.redraw_all();
-    return "continue the pending actions found .hali/SESSION.md";
+    std::string result = "continue the pending actions found .hali/SESSION.md";
+    if (!knowledge_summary.empty()) {
+      result += " Knowledge files reloaded: " + knowledge_summary;
+    }
+    return result;
   }
   return "save work context to .hali/SESSION.md then try again";
 }

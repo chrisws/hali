@@ -192,10 +192,23 @@ std::string tool_append(const std::string &path, const std::string &data) {
   }
   fs::path p(path);
 
+  // Check for --no-balance-check flag (allows incremental building)
+  bool skip_balance = data.find("--no-balance-check") != std::string::npos;
+  std::string write_data = data;
+  if (skip_balance) {
+    // Strip the flag from the data before writing
+    size_t pos = write_data.find("--no-balance-check");
+    write_data.erase(pos, 19);
+    // Clean up any leftover whitespace
+    while (!write_data.empty() && (write_data.front() == ' ' || write_data.front() == '\t')) {
+      write_data.erase(write_data.begin());
+    }
+  }
+
   // For brace languages, validate the *resulting* file (existing + append)
   // rather than the appended chunk in isolation. This allows appending
   // closing braces that match openers already in the file.
-  if (isBraceLanguage(p)) {
+  if (isBraceLanguage(p) && !skip_balance) {
     std::string existing;
     if (fs::exists(p)) {
       std::ifstream in(path, std::ios::binary);
@@ -204,7 +217,7 @@ std::string tool_append(const std::string &path, const std::string &data) {
                         std::istreambuf_iterator<char>());
       }
     }
-    if (!isBalanced(existing + data)) {
+    if (!isBalanced(existing + write_data)) {
       return "ERROR: resulting file would have unbalanced braces";
     }
   }
@@ -219,7 +232,7 @@ std::string tool_append(const std::string &path, const std::string &data) {
   std::ofstream f(path, std::ios::binary | std::ios::app);
 
   if (f) {
-    f.write(data.data(), static_cast<std::streamsize>(data.size()));
+    f.write(write_data.data(), static_cast<std::streamsize>(write_data.size()));
   }
   return f && f.good() ? "OK: appended to " + path : "ERROR: append failed for " + path;
 }
@@ -306,6 +319,23 @@ std::string tool_patch(const std::string& filename, const std::string& patch_str
 }
 
 //
+// Check for non-ASCII bytes in source code (indicates LLM unicode corruption)
+//
+static std::string check_non_ascii(const std::string &data) {
+  int count = 0;
+  size_t first_pos = std::string::npos;
+  for (size_t i = 0; i < data.size(); ++i) {
+    if (static_cast<unsigned char>(data[i]) > 127) {
+      if (first_pos == std::string::npos) first_pos = i;
+      count++;
+    }
+  }
+  if (count == 0) return "";
+  return std::format("Warning: {} non-ASCII byte(s) detected (first at offset {})"
+                     " — possible LLM unicode corruption", count, first_pos);
+}
+
+//
 // tool_write_validate
 //
 std::string tool_write_validate(const std::string &path, const std::string &data,
@@ -332,6 +362,11 @@ std::string tool_write_validate(const std::string &path, const std::string &data
         data.find(PATCH_END) != std::string::npos) {
       return "Warning: data contains patch conflict markers.";
     }
+  }
+
+  // Check for non-ASCII corruption in code files
+  if (utils::is_blank(result) && isBraceLanguage(p)) {
+    result = check_non_ascii(data);
   }
 
   return result;

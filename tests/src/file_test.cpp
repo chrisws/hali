@@ -1240,6 +1240,107 @@ static void test_file_internal_validation() {
   cout << "test_file_internal_validation passed" << endl;
 }
 
+//
+// Test: tool_write_validate with pure ASCII content in a .cpp file
+// Should produce no non-ASCII warning
+//
+static void test_write_validate_ascii_clean() {
+  string test_file = "/tmp/test_ascii_clean.cpp";
+  string content = "int main() { return 0; }\n";
+  string result = tool_write_validate(test_file, content);
+  assert(result.find("non-ASCII") == string::npos);
+  cout << "test_write_validate_ascii_clean passed" << endl;
+}
+
+//
+// Test: tool_write_validate with non-ASCII bytes in a .cpp file
+// Simulates LLM unicode corruption (em-dash, curly quotes)
+//
+static void test_write_validate_non_ascii_warning() {
+  string test_file = "/tmp/test_non_ascii_warn.cpp";
+  // Contains an em-dash (U+2014) and a curly quote (U+2019)
+  string content = "int main() { // \xE2\x80\x94 note \xE2\x80\x99\n  return 0;\n}\n";
+  string result = tool_write_validate(test_file, content);
+  assert(result.find("non-ASCII") != string::npos);
+  assert(result.find("2 non-ASCII byte") == string::npos); // 6 bytes total (3+3)
+  assert(result.find("non-ASCII byte(s) detected") != string::npos);
+  cout << "test_write_validate_non_ascii_warning passed" << endl;
+}
+
+//
+// Test: tool_write_validate with non-ASCII in a non-brace file (.txt)
+// Should NOT trigger the non-ASCII check
+//
+static void test_write_validate_non_ascii_non_brace() {
+  string test_file = "/tmp/test_non_ascii_txt.txt";
+  string content = "hello \xE2\x80\x94 world\n";
+  string result = tool_write_validate(test_file, content);
+  assert(result.find("non-ASCII") == string::npos);
+  cout << "test_write_validate_non_ascii_non_brace passed" << endl;
+}
+
+//
+// Test: tool_append with --no-balance-check flag allows unbalanced braces
+//
+static void test_append_no_balance_check() {
+  string test_file = "/tmp/test_no_balance.cpp";
+  // Remove if exists from prior runs
+  fs::remove(test_file);
+
+  // Append unbalanced opening brace WITH the flag — should succeed
+  string content = "--no-balance-check\nint main() {\n";
+  string result = tool_append(test_file, content);
+  assert(result.find("OK: appended") != string::npos);
+
+  // Verify the flag was stripped from the file content
+  string file_content = read_file(test_file);
+  assert(file_content.find("--no-balance-check") == string::npos);
+  assert(file_content == "int main() {\n");
+
+  fs::remove(test_file);
+  cout << "test_append_no_balance_check passed" << endl;
+}
+
+//
+// Test: tool_append with --no-balance-check on existing file
+// Appending a closing brace that completes the structure
+//
+static void test_append_no_balance_check_existing() {
+  string test_file = "/tmp/test_no_balance_existing.cpp";
+  fs::remove(test_file);
+
+  // First append: opening (with flag to skip balance check)
+  tool_append(test_file, "--no-balance-check\nvoid foo() {\n");
+
+  // Second append: closing (with flag, since file alone is unbalanced)
+  string result = tool_append(test_file, "--no-balance-check\n}\n");
+  assert(result.find("OK: appended") != string::npos);
+
+  // Final file should be balanced
+  string file_content = read_file(test_file);
+  assert(file_content == "void foo() {\n}\n");
+  assert(isBalanced(file_content));
+
+  fs::remove(test_file);
+  cout << "test_append_no_balance_check_existing passed" << endl;
+}
+
+//
+// Test: tool_append WITHOUT --no-balance-check still rejects unbalanced
+// (regression check — existing behavior preserved)
+//
+static void test_append_balance_check_still_enforced() {
+  string test_file = "/tmp/test_balance_enforced.cpp";
+  fs::remove(test_file);
+
+  // Append unbalanced content WITHOUT the flag — should fail
+  string result = tool_append(test_file, "int main() {\n");
+  assert(result.find("ERROR: resulting file would have unbalanced braces") != string::npos);
+
+  fs::remove(test_file);
+  cout << "test_append_balance_check_still_enforced passed" << endl;
+}
+
 static void test_read_file_range();
 
 void file_test() {
@@ -1286,6 +1387,12 @@ void file_test() {
   test_tool_append_multiline();
   test_tool_append_log();
   test_tool_write_validate_cpp_braces();
+  test_write_validate_ascii_clean();
+  test_write_validate_non_ascii_warning();
+  test_write_validate_non_ascii_non_brace();
+  test_append_no_balance_check();
+  test_append_no_balance_check_existing();
+  test_append_balance_check_still_enforced();
   cout << "\nAll tool_append tests passed!\n" << endl;
 
   test_empty_input();
