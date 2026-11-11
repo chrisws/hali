@@ -40,7 +40,7 @@ Most agentic shells assume a hosted API and treat context as free. Hali assumes 
   | `TOOL:WRITE`, `TOOL:APPEND`, `TOOL:PATCH`, `TOOL:MKDIR` | Modify files inside the sandbox                                                                                                                                                                                                                        |
   | `TOOL:REPLACE`                                          | Replace text in a file with `--all` and `--count` flags                                                                                                                                                                                                |
   | `TOOL:RUN`                                              | Run a program inside the sandbox, gated by an optional `run_allowed` allowlist and shell-metacharacter detection                                                                                                                                       |
-  | `TOOL:BUILD`                                            | Auto-detect and run project build systems (CMake, Gradle, Maven, Python) with modes: `setup`, `build`, `test`, `clean`, `lint` (clang-tidy)                                                                                                                                 |
+  | `TOOL:BUILD`                                            | Auto-detect and run project build systems (CMake, Gradle, Maven, Python) with modes: `setup`, `build`, `test`, `clean`, `lint` (clang-tidy). Maven projects are detected via `pom.xml` (root or one level deep) and support `mvn compile`, `mvn test`, `mvn clean`. |
   | `TOOL:CURL`                                             | HTTP GET via libcurl, with HTML-to-text stripping and a 32 KB response size cap                                                                                                                                                                        |
   | `TOOL:RAG`                                              | Query the local RAG index for extra context                                                                                                                                                                                                            |
   | `TOOL:RAGINFO`                                          | Inspect RAG subsystem state: loaded databases, chunk counts, embedding model, config                                                                                                                                                                    |
@@ -62,6 +62,8 @@ Most agentic shells assume a hosted API and treat context as free. Hali assumes 
   | `TOOL:TUNE`                                             | Adjust sampling settings live: `temperature`, `top_p`, `min_p`, `top_k`, `penalty_repeat`, `penalty_freq`, `penalty_present`, `penalty_last_n` (values are clamped to valid ranges) |
   | `TOOL:DATE`, `TOOL:TIME`, `TOOL:RND`, `TOOL:INTROSPECT` | Small utility/introspection tools                                                                                                                                                                                                                      |
   | `TOOL:GUI`                                              | Open a browser tab at `http://localhost:8080/ai` (requires `-p, --web-port <port>` at startup), then just tell Hali what to show — a chart, a diagram, a form, anything. Hali renders your HTML in the browser and can read input back from it. Subcommands: `<html_fragment>` (display HTML), `input` (read pending browser input), `clear` (reset the display), `help` (show usage). |
+  | `TOOL:LINE_EDIT`                                        | Line-level file editing (1-based lines): `read <file> [start,end]`, `write <file> <line> <content>`, `insert <file> <line> <content>`, `delete <file> <start,end>`, `copy <file> <start,end>`, `cut <file> <start,end>`, `paste <file> <line>`, `show`, `clear`. Edit operations include surrounding context with line numbers. |
+  | `TOOL:SCREEN`                                           | Save/restore TUI display snapshots: `save [name]`, `show [name]`, `restore [name]`, `list`, `clear [name]`. |
 
 - **Persistent run-allowlist** — user-approved `TOOL:RUN` program names are saved to `.hali/user-approved.txt` under the sandbox with timestamps and a 30-day TTL, so approvals survive across sessions without re-prompting. Revoke individual approvals with `/revoke <name>`.
 - **MCP client** — connect to external Model Context Protocol servers (e.g. JetBrains IDE built-in MCP servers) with `--mcp`, filter which tools get exposed with `--mcp-filter`, and dry-run the resulting system context with `--mcp-test`. Server connection details live in `mcp.json`.
@@ -69,7 +71,7 @@ Most agentic shells assume a hosted API and treat context as free. Hali assumes 
 - **Pure C++ RAG pipeline** — a `KnowledgeManager` owns the embedding model, semantic chunker, and binary `.rag` index. Supports ZIM archive indexing (Wikipedia, DevDocs, etc.) with build statistics, case-insensitive path resolution, and append-mode indexing. New `TOOL:RAGINFO` inspects subsystem state; `TOOL:RAGINDEX` builds, validates, and repairs `.rag` files. RAG tools are conditionally included in the system prompt via the `rag_enabled` setting.
 - **Web development mode** — a local HTTP server with live-reload that watches the sandbox for HTML changes. The model can push messages to the browser and trigger reloads, enabling a tight edit-preview loop. Enabled with `-p, --web-port <port>`.
 - **Persistent settings** — configuration lives in `.hali/config.json` under the sandbox, or point at a specific file with `-c`/`--config` (defaults to `.hali/config.json`). Runtime data (input history, usage log, user-approved run list, plans, badges) is stored in the `.hali/` folder under the sandbox root.
-- **Test suite** — unit tests under `tests/` (file operations, string/Unicode utilities, SHA-1, MCP message formatting, the graph renderer), runnable via CTest.
+- **Test suite** — unit tests under `tests/` (file operations, line editing, string/Unicode utilities, SHA-1, MCP message formatting, the graph renderer, Maven pom manipulation, build system detection, CURL, audio, planner, RAG, ZIM, config, usage log, git tool, table formatting, replace, audit, input handling, GUI, suffix drafter, MTP adaptive, think parser, logging filter, TUI progress, webview), runnable via CTest.
 
 ## Sandbox Security
 
@@ -164,7 +166,7 @@ Inside the TUI, type a leading `/` to run a built-in command. Tab-completion is 
 | `/help`              | Show this command list                                                                  |
 | `exit` / `quit`      | Leave Hali                                                                              |
 
-Settable keys via `/set`: `temperature`, `top_p`, `top_k`, `min_p`, `penalty_repeat`, `penalty_last_n`, `rag_top_k`, `rag_enabled`, `n_gpu_layers`, `offload_kqv`, `run_allowed` (comma-separated list of allowed program basenames, or `none` to clear), `mtp_enabled`, `mtp_n_max`, `mtp_n_min`, `mtp_p_min`, `mtp_adaptive`, `mtp_pos_threshold`, `rope_freq_scale`, `rope_scaling_type`, `audio_enabled`, `audio_volume`, `audio_tool_tick`, `audio_user_prompt`, `audio_theme`, `val_write_validate`, `val_patch_validate`, `val_write_size_warn`, `log_erase`, `disable_run`, `disable_save_on_exit`.
+Settable keys via `/set`: `temperature`, `top_p`, `top_k`, `min_p`, `penalty_repeat`, `penalty_last_n`, `rag_top_k`, `rag_enabled`, `n_gpu_layers`, `offload_kqv`, `run_allowed` (comma-separated list of allowed program basenames, or `none` to clear), `mtp_enabled`, `mtp_n_max`, `mtp_n_min`, `mtp_p_min`, `mtp_adaptive`, `mtp_pos_threshold`, `rope_freq_scale`, `rope_scaling_type`, `audio_enabled`, `audio_volume`, `audio_tool_tick`, `audio_user_prompt`, `audio_theme`, `val_write_validate`, `val_patch_validate`, `val_write_size_warn`, `log_erase`, `disable_run`, `disable_curl`, `disable_save_on_exit`.
 
 ## Knowledge Base (ZIM)
 
@@ -344,10 +346,13 @@ hali/
 │   │   ├── curl.cpp/.h         # TOOL:CURL via libcurl
 │   │   ├── file.cpp/.h         # sandboxed file tool implementations, path validation
 │   │   ├── git_tool.cpp/.h     # TOOL:GIT whitelisted subcommands
+│   │   ├── line_edit.cpp/.h    # TOOL:LINE_EDIT line-level file editing (read/write/insert/delete/copy/cut/paste)
 │   │   ├── mcp_client.cpp/.h   # MCP protocol client
 │   │   ├── mcp_format.cpp/.h   # MCP message formatting
 │   │   ├── patch.h             # patch delimiters (PATCH_BEGIN/BOUNDARY/END)
 │   │   ├── planner.cpp/.h      # TOOL:PLAN structured goal/step tracking
+│   │   ├── pom.cpp/.h          # Maven pom.xml manipulation (add/remove deps, set properties)
+│   │   ├── screen.cpp/.h       # TOOL:SCREEN TUI display snapshot save/restore
 │   │   ├── security_audit.cpp/.h # sandbox security-audit marker (compile-time salt)
 │   │   ├── slash_commands.cpp/.h # slash command registry and completions
 │   │   ├── sysinfo.cpp/.h      # TOOL:STAT, TOOL:SYSINFO, TOOL:HEX
