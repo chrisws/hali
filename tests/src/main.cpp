@@ -76,6 +76,8 @@ void knowledge_test();
 void gui_test();
 void tui_progress_test();
 void llama_iter_test();
+void line_edit_test();
+void run_pom_tests();
 
 int main() {
   log_open_console();
@@ -114,6 +116,8 @@ int main() {
   run_htp_test("tui_progress", tui_progress_test);
   run_htp_test("gui", gui_test);
   run_htp_test("llama_iter", llama_iter_test);
+  run_htp_test("line_edit", line_edit_test);
+  run_htp_test("pom", run_pom_tests);
 
   return g_failures ? 1 : 0;
 }

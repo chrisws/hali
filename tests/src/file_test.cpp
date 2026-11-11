@@ -380,7 +380,7 @@ static void test_tool_patch_missing_old() {
   string result = tool_patch(test_file, patch);
   assert(result.find("ERROR") != string::npos);
   assert(result.find("not found verbatim") != string::npos);
-  assert(result.find("TOOL:CLIPBOARD") != string::npos);
+  assert(result.find("TOOL:LINE_EDIT") != string::npos);
 
   // Clean up
   remove(test_file.c_str());

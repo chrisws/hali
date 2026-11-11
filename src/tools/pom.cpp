@@ -408,7 +408,7 @@ PomResult pom_set_property(const std::string &pom_path, const std::string &args)
     // Insert before </properties>
     size_t insert_pos = content.find("</properties>");
     if (insert_pos != std::string::npos) {
-      content.insert(insert_pos, "    " + name + " " + value + " " + close_tag + "\n");
+      content.insert(insert_pos, "    <" + name + ">" + value + "</" + name + ">\n");
     }
   }
 

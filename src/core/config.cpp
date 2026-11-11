@@ -443,7 +443,7 @@ std::string HaliConfig::prompt_core() const {
     "  TOOL:PERMISSION            ask user for explicit permission\n"
     "  TOOL:RESTART               restart after writing current task context to `.hali/SESSION.md`\n"
     "  TOOL:GUI    <help|html|input|clear>  display HTML, check input, or clear browser\n"
-    "  TOOL:CLIPBOARD <copy|cut|paste|show|clear> <file> <start>,<end>  copy/cut/paste lines by 1-based range\n"
+    "  TOOL:LINE_EDIT <read|write|insert|delete|copy|cut|paste|show|clear> <file> [args]  line-level file editing (1-based lines)\n"
     "  TOOL:SCREEN   <save|show|restore|list|clear> [name]  save/restore display snapshots\n\n"
 
     "## Tool Decision Rules\n"

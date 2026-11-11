@@ -123,6 +123,8 @@ add_executable(hali_tests
   src/tui_progress_test.cpp
   src/gui_test.cpp
   src/llama_iter_test.cpp
+  src/line_edit_test.cpp
+  src/pom_test.cpp
 
   src/main.cpp
 )

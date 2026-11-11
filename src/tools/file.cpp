@@ -298,8 +298,8 @@ std::string tool_patch(const std::string& filename, const std::string& patch_str
 
   if (count == 0) {
     return "ERROR: OLD block not found verbatim in " + filename +
-           " — re-quote it exactly. Tip: use TOOL:CLIPBOARD copy <file> <start>,<end>"
-           " to grab the exact lines, then TOOL:CLIPBOARD show to inspect them.";
+           " — re-quote it exactly. Tip: use TOOL:LINE_EDIT copy <file> <start>,<end>"
+           " to grab the exact lines, then TOOL:LINE_EDIT show to inspect them.";
   }
 
   if (count > 1) {

@@ -271,7 +271,7 @@ static BuildResult build_cmake(const std::string &sandbox, const std::string &mo
 
   if (mode == "build" || mode == "all") {
     result += "==> Building main project...\n";
-    auto out = run_command("make -C " + build_dir + " -j" + std::to_string(nproc), status);
+    auto out = run_command("make -C " + build_dir + " -j" + std::to_string(nproc), status, kQuietMaxOutputSize);
     if (out.find("Error") != std::string::npos || out.find("error") != std::string::npos) {
       ok = false;
     }
@@ -281,7 +281,7 @@ static BuildResult build_cmake(const std::string &sandbox, const std::string &mo
 
   if ((mode == "test" || mode == "all") && has_tests) {
     result += "==> Building unit tests...\n";
-    auto out = run_command("make -C " + tests_build_dir + " -j" + std::to_string(nproc), status);
+    auto out = run_command("make -C " + tests_build_dir + " -j" + std::to_string(nproc), status, kQuietMaxOutputSize);
     if (out.find("Error") != std::string::npos || out.find("error") != std::string::npos) {
       ok = false;
     }
@@ -290,7 +290,7 @@ static BuildResult build_cmake(const std::string &sandbox, const std::string &mo
     std::string junit_path = sandbox + "/.hali/results.xml";
     fs::create_directories(sandbox + "/.hali");
     out = run_command("ctest --test-dir " + tests_build_dir +
-                      " --output-on-failure --output-junit " + junit_path, status);
+                      " --output-on-failure --output-junit " + junit_path, status, kQuietMaxOutputSize);
     if (out.find("Failed") != std::string::npos) {
       ok = false;
     }

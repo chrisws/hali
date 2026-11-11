@@ -32,7 +32,7 @@
 #include "curl.h"
 #include "music_project.h"
 #include "webview.h"
-#include "clipboard.h"
+#include "line_edit.h"
 #include "screen.h"
 
 namespace fs = std::filesystem;
@@ -810,9 +810,9 @@ ToolMap Agent::build_tool_dispatch() {
     return "OK: played " + std::to_string(total) + " notes in "
       + std::to_string(result.events.size()) + " events";
   };
-  tools["TOOL:CLIPBOARD"] = [this](const std::string &a1, const std::string &a2) -> std::string {
-    tui_.show_tool("clipboard: " + a1);
-    return clipboard_exec(cfg_.sandbox_, a1, a2);
+  tools["TOOL:LINE_EDIT"] = [this](const std::string &a1, const std::string &a2) -> std::string {
+    tui_.show_tool("line_edit: " + a1);
+    return line_edit_exec(cfg_.sandbox_, a1, a2);
   };
   tools["TOOL:SCREEN"] = [this](const std::string &a1, const std::string &a2) -> std::string {
     tui_.show_tool("screen: " + a1);

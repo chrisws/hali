@@ -212,7 +212,7 @@ static void test_pom_add_dep_no_scope() {
   printf("  test_pom_add_dep_no_scope: OK\n");
 }
 
-int main() {
+void run_pom_tests() {
   printf("Running pom tests...\n");
   test_pom_show();
   test_pom_add_dep();
@@ -231,5 +231,4 @@ int main() {
 
   // Cleanup
   fs::remove_all(kTestDir);
-  return 0;
 }
