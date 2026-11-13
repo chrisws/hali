@@ -18,6 +18,7 @@
 #include <system_error>
 
 #include "util/json.h"
+#include "util/project.h"
 
 namespace fs = std::filesystem;
 
@@ -26,6 +27,7 @@ namespace fs = std::filesystem;
 //
 struct FileMetrics {
   std::string path;
+  ProjectLanguage language = ProjectLanguage::NONE;
   int total_lines = 0;
   int longest_line_len = 0;
   int longest_line_num = 0;
@@ -208,9 +210,10 @@ static void update_param_tracking(const std::string &line, int line_num,
 //
 // ── Scan a single file ─────────────────────────────────────────────────────
 //
-static FileMetrics scan_file(const std::string &path) {
+static FileMetrics scan_file(const std::string &path, ProjectLanguage lang) {
   FileMetrics m;
   m.path = path;
+  m.language = lang;
   std::error_code ec;
   m.file_bytes = static_cast<long>(fs::file_size(path, ec));
 
@@ -240,19 +243,25 @@ static FileMetrics scan_file(const std::string &path) {
       }
     }
 
-    if (trimmed.rfind("#include", 0) == 0) {
-      m.include_count++;
-    } else if (trimmed.rfind("#ifdef", 0) == 0 ||
-               trimmed.rfind("#ifndef", 0) == 0 ||
-               trimmed.rfind("#if ", 0) == 0) {
-      m.ifdef_count++;
-    } else if (trimmed.rfind("#define", 0) == 0) {
-      m.define_count++;
-    }
+    if (lang == ProjectLanguage::JAVA) {
+      if (trimmed.rfind("import ", 0) == 0) {
+        m.include_count++;
+      }
+    } else {
+      if (trimmed.rfind("#include", 0) == 0) {
+        m.include_count++;
+      } else if (trimmed.rfind("#ifdef", 0) == 0 ||
+                 trimmed.rfind("#ifndef", 0) == 0 ||
+                 trimmed.rfind("#if ", 0) == 0) {
+        m.ifdef_count++;
+      } else if (trimmed.rfind("#define", 0) == 0) {
+        m.define_count++;
+      }
 
-    if (trimmed.rfind("namespace", 0) == 0 ||
-        trimmed.rfind("inline namespace", 0) == 0) {
-      st.pending_ns = true;
+      if (trimmed.rfind("namespace", 0) == 0 ||
+          trimmed.rfind("inline namespace", 0) == 0) {
+        st.pending_ns = true;
+      }
     }
 
     update_brace_tracking(line, line_num, st, m);
@@ -352,40 +361,47 @@ static void metrics_to_issues(const FileMetrics &m, std::vector<AuditIssue> &out
         "blast radius of any edit within them.");
   }
 
-  // Include count
-  if (m.include_count > 15) {
-    add("high", 1, std::to_string(m.include_count) + " #include directives",
-        "Many headers mean a large transitive dependency graph; the agent "
-        "must track which symbols come from where, and header changes "
-        "cascade widely.");
-  } else if (m.include_count > 10) {
-    add("medium", 1, std::to_string(m.include_count) + " #include directives",
-        "A moderate number of headers increases the surface area for "
-        "include-order bugs and makes the dependency graph harder to navigate.");
+  // Include / import count
+  {
+    const char *label = (m.language == ProjectLanguage::JAVA)
+                           ? "import statements"
+                           : "#include directives";
+    if (m.include_count > 15) {
+      add("high", 1, std::to_string(m.include_count) + " " + label,
+          "Many external dependencies mean a large transitive graph; the "
+          "agent must track which symbols come from where, and changes "
+          "cascade widely.");
+    } else if (m.include_count > 10) {
+      add("medium", 1, std::to_string(m.include_count) + " " + label,
+          "A moderate number of imports increases the surface area for "
+          "dependency bugs and makes the graph harder to navigate.");
+    }
   }
 
-  // Preprocessor conditionals
-  if (m.ifdef_count > 12) {
-    add("high", 1, std::to_string(m.ifdef_count) + " #if/#ifdef blocks",
-        "Heavy conditional compilation means the agent cannot determine which "
-        "code paths are active without knowing the build configuration; "
-        "edits may break untested #ifdef branches.");
-  } else if (m.ifdef_count > 8) {
-    add("medium", 1, std::to_string(m.ifdef_count) + " #if/#ifdef blocks",
-        "Conditional compilation obscures the effective code structure and "
-        "makes it harder to reason about what actually compiles.");
-  }
+  // Preprocessor conditionals (C/C++ only)
+  if (m.language != ProjectLanguage::JAVA) {
+    if (m.ifdef_count > 12) {
+      add("high", 1, std::to_string(m.ifdef_count) + " #if/#ifdef blocks",
+          "Heavy conditional compilation means the agent cannot determine "
+          "which code paths are active without knowing the build "
+          "configuration; edits may break untested #ifdef branches.");
+    } else if (m.ifdef_count > 8) {
+      add("medium", 1, std::to_string(m.ifdef_count) + " #if/#ifdef blocks",
+          "Conditional compilation obscures the effective code structure "
+          "and makes it harder to reason about what actually compiles.");
+    }
 
-  // Macro count
-  if (m.define_count > 20) {
-    add("high", 1, std::to_string(m.define_count) + " #define macros",
-        "Many macros obscure the real code; the agent must mentally expand "
-        "each macro to understand behaviour, and macro name collisions or "
-        "redefinition bugs are easy to introduce.");
-  } else if (m.define_count > 12) {
-    add("medium", 1, std::to_string(m.define_count) + " #define macros",
-        "Macros add an indirection layer that makes code harder to search, "
-        "refactor, and reason about.");
+    // Macro count
+    if (m.define_count > 20) {
+      add("high", 1, std::to_string(m.define_count) + " #define macros",
+          "Many macros obscure the real code; the agent must mentally "
+          "expand each macro to understand behaviour, and macro name "
+          "collisions or redefinition bugs are easy to introduce.");
+    } else if (m.define_count > 12) {
+      add("medium", 1, std::to_string(m.define_count) + " #define macros",
+          "Macros add an indirection layer that makes code harder to "
+          "search, refactor, and reason about.");
+    }
   }
 
   // Switch cases
@@ -573,7 +589,7 @@ std::string audit_write_report(const AuditResult &r,
 //
 // ── Public entry point ─────────────────────────────────────────────────────
 //
-AuditResult audit_cpp(const std::string &root) {
+AuditResult audit_codebase(const std::string &root) {
   AuditResult result;
   std::vector<FileMetrics> all_metrics;
 
@@ -582,15 +598,31 @@ AuditResult audit_cpp(const std::string &root) {
     return result;
   }
 
-  // Collect .cpp, .h, .hpp, .cc, .c files
+  ProjectLanguage lang = detect_project_language(root);
+
+  auto is_source_file = [](const std::string &ext, ProjectLanguage l) {
+    switch (l) {
+      case ProjectLanguage::CPLUS:
+        return ext == ".cpp" || ext == ".h" || ext == ".hpp" ||
+               ext == ".cc" || ext == ".c";
+      case ProjectLanguage::JAVA:
+        return ext == ".java";
+      case ProjectLanguage::PYTHON:
+        return ext == ".py";
+      default:
+        return ext == ".cpp" || ext == ".h" || ext == ".hpp" ||
+               ext == ".cc" || ext == ".c" || ext == ".java" ||
+               ext == ".py";
+    }
+  };
+
   std::vector<std::string> files;
   for (const auto &entry : fs::recursive_directory_iterator(root, ec)) {
     if (!entry.is_regular_file()) {
       continue;
     }
     auto ext = entry.path().extension().string();
-    if (ext == ".cpp" || ext == ".h" || ext == ".hpp" ||
-        ext == ".cc" || ext == ".c") {
+    if (is_source_file(ext, lang)) {
       files.push_back(entry.path().string());
     }
   }
@@ -599,7 +631,7 @@ AuditResult audit_cpp(const std::string &root) {
   result.total_files = static_cast<int>(files.size());
 
   for (const auto &f : files) {
-    FileMetrics m = scan_file(f);
+    FileMetrics m = scan_file(f, lang);
     result.total_lines += m.total_lines;
     metrics_to_issues(m, result.issues);
   }

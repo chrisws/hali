@@ -459,7 +459,7 @@ static void slash_audit(const std::string &rest, HaliConfig &cfg, Tui &tui, Agen
   tui.append_line(ICON_SYS + "Scanning " + root + " …");
   tui.redraw_all();
 
-  AuditResult r = audit_cpp(root);
+  AuditResult r = audit_codebase(root);
 
   int before = static_cast<int>(r.issues.size());
   filter_false_positives(r, fps);

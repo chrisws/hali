@@ -50,7 +50,7 @@ struct FalsePositive {
 // Scan a directory tree for C/C++ source files and report
 // issues that make the codebase difficult for an LLM to handle.
 //
-AuditResult audit_cpp(const std::string &root);
+AuditResult audit_codebase(const std::string &root);
 
 //
 // Format issues as aligned table lines for TUI display.

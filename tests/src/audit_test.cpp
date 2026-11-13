@@ -4,6 +4,7 @@
 #include <filesystem>
 #include <fstream>
 #include "audit.h"
+#include "util/project.h"
 
 namespace fs = std::filesystem;
 
@@ -17,7 +18,7 @@ static AuditResult audit_single_file(const std::string &dir,
     std::ofstream f(file_path);
     f << content;
   }
-  return audit_cpp(dir);
+  return audit_codebase(dir);
 }
 
 // Helper: find an issue by substring in message
@@ -429,7 +430,7 @@ static void test_load_nonexistent_file() {
 
 static void test_empty_directory() {
   fs::create_directories("/tmp/audit_test_empty");
-  auto r = audit_cpp("/tmp/audit_test_empty");
+  auto r = audit_codebase("/tmp/audit_test_empty");
   assert(r.total_files == 0);
   assert(r.issues.empty());
   assert(r.score == 0);
@@ -444,7 +445,7 @@ static void test_non_c_files_ignored() {
     std::ofstream f2("/tmp/audit_test_nonc/script.py");
     f2 << "print('hi')\n";
   }
-  auto r = audit_cpp("/tmp/audit_test_nonc");
+  auto r = audit_codebase("/tmp/audit_test_nonc");
   assert(r.total_files == 0);
   std::cout << "test_non_c_files_ignored passed" << std::endl;
 }
@@ -480,6 +481,125 @@ static void test_score_capped_at_100() {
 
 // ── Main runner ────────────────────────────────────────────────────────────
 
+static void test_java_file_scanned() {
+  fs::create_directories("/tmp/audit_test_java");
+  {
+    std::ofstream f("/tmp/audit_test_java/build.gradle");
+    f << "plugins { id 'java' }\n";
+    std::ofstream f2("/tmp/audit_test_java/Main.java");
+    f2 << "package com.example;\n"
+       << "public class Main {\n"
+       << "  public static void main(String[] args) {\n"
+       << "    System.out.println(\"hi\");\n"
+       << "  }\n"
+       << "}\n";
+  }
+  auto r = audit_codebase("/tmp/audit_test_java");
+  assert(r.total_files == 1);
+  assert(r.total_lines > 0);
+  std::cout << "test_java_file_scanned passed" << std::endl;
+}
+
+static void test_java_import_count() {
+  fs::create_directories("/tmp/audit_test_java_imp");
+  {
+    std::ofstream f("/tmp/audit_test_java_imp/build.gradle");
+    f << "plugins { id 'java' }\n";
+    std::string code = "package com.example;\n";
+    for (int i = 0; i < 20; ++i) {
+      code += "import com.example.lib.Class" + std::to_string(i) + ";\n";
+    }
+    code += "public class Big {\n  void f() {}\n}\n";
+    std::ofstream f2("/tmp/audit_test_java_imp/Big.java");
+    f2 << code;
+  }
+  auto r = audit_codebase("/tmp/audit_test_java_imp");
+  assert(r.total_files == 1);
+  bool found = false;
+  for (const auto &i : r.issues) {
+    if (i.message.find("import statements") != std::string::npos) {
+      found = true;
+      break;
+    }
+  }
+  assert(found);
+  std::cout << "test_java_import_count passed" << std::endl;
+}
+
+static void test_java_no_ifdef_issues() {
+  fs::create_directories("/tmp/audit_test_java_noifdef");
+  {
+    std::ofstream f("/tmp/audit_test_java_noifdef/build.gradle");
+    f << "plugins { id 'java' }\n";
+    std::ofstream f2("/tmp/audit_test_java_noifdef/Clean.java");
+    f2 << "package com.example;\n"
+       << "public class Clean {\n"
+       << "  void f() {\n"
+       << "    if (true) {\n"
+       << "      g();\n"
+       << "    }\n"
+       << "  }\n"
+       << "}\n";
+  }
+  auto r = audit_codebase("/tmp/audit_test_java_noifdef");
+  for (const auto &i : r.issues) {
+    assert(i.message.find("#if") == std::string::npos);
+    assert(i.message.find("#define") == std::string::npos);
+  }
+  std::cout << "test_java_no_ifdef_issues passed" << std::endl;
+}
+
+static void test_detect_language_cmake() {
+  fs::create_directories("/tmp/audit_test_lang_cmake");
+  {
+    std::ofstream f("/tmp/audit_test_lang_cmake/CMakeLists.txt");
+    f << "cmake_minimum_required(VERSION 3.15)\n";
+  }
+  assert(detect_project_language("/tmp/audit_test_lang_cmake") ==
+         ProjectLanguage::CPLUS);
+  std::cout << "test_detect_language_cmake passed" << std::endl;
+}
+
+static void test_detect_language_gradle() {
+  fs::create_directories("/tmp/audit_test_lang_gradle");
+  {
+    std::ofstream f("/tmp/audit_test_lang_gradle/build.gradle");
+    f << "plugins { id 'java' }\n";
+  }
+  assert(detect_project_language("/tmp/audit_test_lang_gradle") ==
+         ProjectLanguage::JAVA);
+  std::cout << "test_detect_language_gradle passed" << std::endl;
+}
+
+static void test_detect_language_maven() {
+  fs::create_directories("/tmp/audit_test_lang_maven");
+  {
+    std::ofstream f("/tmp/audit_test_lang_maven/pom.xml");
+    f << "<project></project>\n";
+  }
+  assert(detect_project_language("/tmp/audit_test_lang_maven") ==
+         ProjectLanguage::JAVA);
+  std::cout << "test_detect_language_maven passed" << std::endl;
+}
+
+static void test_detect_language_python() {
+  fs::create_directories("/tmp/audit_test_lang_py");
+  {
+    std::ofstream f("/tmp/audit_test_lang_py/pyproject.toml");
+    f << "[project]\n";
+  }
+  assert(detect_project_language("/tmp/audit_test_lang_py") ==
+         ProjectLanguage::PYTHON);
+  std::cout << "test_detect_language_python passed" << std::endl;
+}
+
+static void test_detect_language_none() {
+  fs::create_directories("/tmp/audit_test_lang_none");
+  assert(detect_project_language("/tmp/audit_test_lang_none") ==
+         ProjectLanguage::NONE);
+  std::cout << "test_detect_language_none passed" << std::endl;
+}
+
 void audit_test() {
   std::cout << "=== Audit Tests ===" << std::endl;
 
@@ -495,6 +615,11 @@ void audit_test() {
     "/tmp/audit_test_largefile", "/tmp/audit_test_namespace",
     "/tmp/audit_test_empty", "/tmp/audit_test_nonc",
     "/tmp/audit_test_clean",
+    "/tmp/audit_test_java", "/tmp/audit_test_java_imp",
+    "/tmp/audit_test_java_noifdef",
+    "/tmp/audit_test_lang_cmake", "/tmp/audit_test_lang_gradle",
+    "/tmp/audit_test_lang_maven", "/tmp/audit_test_lang_py",
+    "/tmp/audit_test_lang_none",
   };
   for (const auto &d : dirs) {
     fs::remove_all(d);
@@ -525,6 +650,14 @@ void audit_test() {
   test_non_c_files_ignored();
   test_no_issues_clean_file();
   test_score_capped_at_100();
+  test_java_file_scanned();
+  test_java_import_count();
+  test_java_no_ifdef_issues();
+  test_detect_language_cmake();
+  test_detect_language_gradle();
+  test_detect_language_maven();
+  test_detect_language_python();
+  test_detect_language_none();
 
   // Cleanup
   for (const auto &d : dirs) {
