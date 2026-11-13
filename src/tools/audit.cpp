@@ -54,6 +54,8 @@ struct LineScanState {
   int in_func = 0;
   std::vector<int> ns_braces;
   bool pending_ns = false;
+  std::vector<int> type_braces;
+  bool pending_type = false;
   int switch_depth = 0;
   int switch_cases = 0;
   int switch_start = 0;
@@ -61,6 +63,60 @@ struct LineScanState {
   int param_paren_depth = 0;
   bool in_params = false;
 };
+
+//
+// ── Type declaration detection ─────────────────────────────────────────────
+//
+// Returns true if the trimmed line is a type body declaration
+// (class, interface, enum, record, struct, union, @interface).
+// Forward declarations ending in ';' are excluded.
+//
+static bool is_type_decl_line(const std::string &line) {
+  size_t pos = line.find_first_not_of(" \t");
+  if (pos == std::string::npos) {
+    return false;
+  }
+  std::string s = line.substr(pos);
+  static const std::string mods[] = {
+    "public ", "protected ", "private ", "abstract ",
+    "static ", "final ", "strictfp ", "sealed ",
+    "non-sealed ", "transient ", "volatile "
+  };
+  for (int pass = 0; pass < 8; ++pass) {
+    bool stripped = false;
+    for (const auto &mod : mods) {
+      if (s.rfind(mod, 0) == 0) {
+        s = s.substr(mod.size());
+        size_t p2 = s.find_first_not_of(" \t");
+        if (p2 == std::string::npos) {
+          return false;
+        }
+        s = s.substr(p2);
+        stripped = true;
+        break;
+      }
+    }
+    if (!stripped) {
+      break;
+    }
+  }
+  bool is_type = s.rfind("class ", 0) == 0 ||
+                 s.rfind("interface ", 0) == 0 ||
+                 s.rfind("enum ", 0) == 0 ||
+                 s.rfind("record ", 0) == 0 ||
+                 s.rfind("@interface ", 0) == 0 ||
+                 s.rfind("struct ", 0) == 0 ||
+                 s.rfind("union ", 0) == 0;
+  if (!is_type) {
+    return false;
+  }
+  // Forward declarations (C++) end with ';' — not a type body
+  size_t last = s.find_last_not_of(" \t");
+  if (last != std::string::npos && s[last] == ';') {
+    return false;
+  }
+  return true;
+}
 
 //
 // ── Brace / nesting / function-span tracking ──────────────────────────────
@@ -109,7 +165,13 @@ static void update_brace_tracking(const std::string &line, int line_num,
         st.ns_braces.push_back(st.nesting);
         st.pending_ns = false;
       }
-      int eff_depth = st.nesting - static_cast<int>(st.ns_braces.size());
+      if (st.pending_type) {
+        st.type_braces.push_back(st.nesting);
+        st.pending_type = false;
+      }
+      int eff_depth = st.nesting
+                     - static_cast<int>(st.ns_braces.size())
+                     - static_cast<int>(st.type_braces.size());
       if (eff_depth > m.max_nesting) {
         m.max_nesting = eff_depth;
         m.max_nesting_line = line_num;
@@ -134,6 +196,9 @@ static void update_brace_tracking(const std::string &line, int line_num,
       }
       if (!st.ns_braces.empty() && st.nesting == st.ns_braces.back()) {
         st.ns_braces.pop_back();
+      }
+      if (!st.type_braces.empty() && st.nesting == st.type_braces.back()) {
+        st.type_braces.pop_back();
       }
       if (st.nesting > 0) {
         --st.nesting;
@@ -262,6 +327,10 @@ static FileMetrics scan_file(const std::string &path, ProjectLanguage lang) {
           trimmed.rfind("inline namespace", 0) == 0) {
         st.pending_ns = true;
       }
+    }
+
+    if (is_type_decl_line(trimmed)) {
+      st.pending_type = true;
     }
 
     update_brace_tracking(line, line_num, st, m);

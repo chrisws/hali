@@ -479,6 +479,160 @@ static void test_score_capped_at_100() {
   std::cout << "test_score_capped_at_100 passed" << std::endl;
 }
 
+// ── Type body (class/struct) tracking ─────────────────────────────────────
+
+static void test_java_class_not_tracked_as_function() {
+  // A 120-line Java class with small methods should NOT report
+  // a 120-line "function". The class body is not a function.
+  fs::create_directories("/tmp/audit_test_java_class");
+  {
+    std::string code = "package com.example;\n"
+                       "public class Big {\n";
+    for (int i = 0; i < 30; ++i) {
+      code += "  void m" + std::to_string(i) + "() {\n"
+              + "    int x" + std::to_string(i) + " = " + std::to_string(i) + ";\n"
+              + "  }\n";
+    }
+    code += "}\n";
+    std::ofstream f("/tmp/audit_test_java_class/Big.java");
+    f << code;
+    std::ofstream f2("/tmp/audit_test_java_class/build.gradle");
+    f2 << "plugins { id 'java' }\n";
+  }
+  auto r = audit_codebase("/tmp/audit_test_java_class");
+  // No "function spans" issue should appear — the class body is not a function
+  const AuditIssue *iss = find_issue(r, "function spans");
+  assert(iss == nullptr);
+  std::cout << "test_java_class_not_tracked_as_function passed" << std::endl;
+}
+
+static void test_java_method_inside_class_tracked() {
+  // A 105-line method inside a Java class SHOULD be reported
+  fs::create_directories("/tmp/audit_test_java_method");
+  {
+    std::string code = "package com.example;\n"
+                       "public class Wrapper {\n"
+                       "  void longMethod() {\n";
+    for (int i = 0; i < 103; ++i) {
+      code += "    int x" + std::to_string(i) + " = " + std::to_string(i) + ";\n";
+    }
+    code += "  }\n"
+            "}\n";
+    std::ofstream f("/tmp/audit_test_java_method/Wrapper.java");
+    f << code;
+    std::ofstream f2("/tmp/audit_test_java_method/build.gradle");
+    f2 << "plugins { id 'java' }\n";
+  }
+  auto r = audit_codebase("/tmp/audit_test_java_method");
+  const AuditIssue *iss = find_issue(r, "function spans");
+  assert(iss != nullptr);
+  assert(iss->severity == "medium");
+  assert(iss->message.find("105 lines") != std::string::npos);
+  std::cout << "test_java_method_inside_class_tracked passed" << std::endl;
+}
+
+static void test_cpp_class_not_tracked_as_function() {
+  // A C++ class with small methods should NOT report the class as a function
+  std::string code =
+      "class Foo {\n"
+      "public:\n"
+      "  void a() { int x = 1; }\n"
+      "  void b() { int y = 2; }\n"
+      "  void c() { int z = 3; }\n"
+      "};\n";
+  auto r = audit_single_file("/tmp/audit_test_cpp_class", code);
+  const AuditIssue *iss = find_issue(r, "function spans");
+  assert(iss == nullptr);
+  std::cout << "test_cpp_class_not_tracked_as_function passed" << std::endl;
+}
+
+static void test_cpp_struct_not_tracked_as_function() {
+  std::string code =
+      "struct Bar {\n"
+      "  int x;\n"
+      "  int y;\n"
+      "  void f() { x = 1; }\n"
+      "};\n";
+  auto r = audit_single_file("/tmp/audit_test_cpp_struct", code);
+  const AuditIssue *iss = find_issue(r, "function spans");
+  assert(iss == nullptr);
+  std::cout << "test_cpp_struct_not_tracked_as_function passed" << std::endl;
+}
+
+static void test_cpp_forward_decl_not_type_body() {
+  // Forward declaration should NOT set pending_type
+  std::string code =
+      "class Foo;\n"
+      "void bar() {\n"
+      "  int x = 1;\n"
+      "}\n";
+  auto r = audit_single_file("/tmp/audit_test_cpp_fwd", code);
+  // bar() is a 3-line function, no issues expected
+  const AuditIssue *iss = find_issue(r, "function spans");
+  assert(iss == nullptr);
+  std::cout << "test_cpp_forward_decl_not_type_body passed" << std::endl;
+}
+
+static void test_java_interface_not_tracked_as_function() {
+  fs::create_directories("/tmp/audit_test_java_iface");
+  {
+    std::string code = "package com.example;\n"
+                       "public interface MyIface {\n"
+                       "  void a();\n"
+                       "  void b();\n"
+                       "  void c();\n"
+                       "}\n";
+    std::ofstream f("/tmp/audit_test_java_iface/MyIface.java");
+    f << code;
+    std::ofstream f2("/tmp/audit_test_java_iface/build.gradle");
+    f2 << "plugins { id 'java' }\n";
+  }
+  auto r = audit_codebase("/tmp/audit_test_java_iface");
+  const AuditIssue *iss = find_issue(r, "function spans");
+  assert(iss == nullptr);
+  std::cout << "test_java_interface_not_tracked_as_function passed" << std::endl;
+}
+
+static void test_java_enum_not_tracked_as_function() {
+  fs::create_directories("/tmp/audit_test_java_enum");
+  {
+    std::string code = "package com.example;\n"
+                       "public enum Color {\n"
+                       "  RED, GREEN, BLUE\n"
+                       "}\n";
+    std::ofstream f("/tmp/audit_test_java_enum/Color.java");
+    f << code;
+    std::ofstream f2("/tmp/audit_test_java_enum/build.gradle");
+    f2 << "plugins { id 'java' }\n";
+  }
+  auto r = audit_codebase("/tmp/audit_test_java_enum");
+  const AuditIssue *iss = find_issue(r, "function spans");
+  assert(iss == nullptr);
+  std::cout << "test_java_enum_not_tracked_as_function passed" << std::endl;
+}
+
+static void test_java_nested_class() {
+  // Outer class contains inner class; inner class method should be tracked
+  fs::create_directories("/tmp/audit_test_java_nested");
+  {
+    std::string code = "package com.example;\n"
+                       "public class Outer {\n"
+                       "  class Inner {\n"
+                       "    void small() { int x = 1; }\n"
+                       "  }\n"
+                       "  void outerMethod() { int y = 2; }\n"
+                       "}\n";
+    std::ofstream f("/tmp/audit_test_java_nested/Outer.java");
+    f << code;
+    std::ofstream f2("/tmp/audit_test_java_nested/build.gradle");
+    f2 << "plugins { id 'java' }\n";
+  }
+  auto r = audit_codebase("/tmp/audit_test_java_nested");
+  const AuditIssue *iss = find_issue(r, "function spans");
+  assert(iss == nullptr);
+  std::cout << "test_java_nested_class passed" << std::endl;
+}
+
 // ── Main runner ────────────────────────────────────────────────────────────
 
 static void test_java_file_scanned() {
@@ -703,6 +857,10 @@ void audit_test() {
     "/tmp/audit_test_lang_cmake", "/tmp/audit_test_lang_gradle",
     "/tmp/audit_test_lang_maven", "/tmp/audit_test_lang_py",
     "/tmp/audit_test_lang_none",
+    "/tmp/audit_test_java_class", "/tmp/audit_test_java_method",
+    "/tmp/audit_test_cpp_class", "/tmp/audit_test_cpp_struct",
+    "/tmp/audit_test_cpp_fwd", "/tmp/audit_test_java_iface",
+    "/tmp/audit_test_java_enum", "/tmp/audit_test_java_nested",
   };
   for (const auto &d : dirs) {
     fs::remove_all(d);
@@ -745,6 +903,14 @@ void audit_test() {
   test_detect_language_maven();
   test_detect_language_python();
   test_detect_language_none();
+  test_java_class_not_tracked_as_function();
+  test_java_method_inside_class_tracked();
+  test_cpp_class_not_tracked_as_function();
+  test_cpp_struct_not_tracked_as_function();
+  test_cpp_forward_decl_not_type_body();
+  test_java_interface_not_tracked_as_function();
+  test_java_enum_not_tracked_as_function();
+  test_java_nested_class();
 
   // Cleanup
   for (const auto &d : dirs) {
