@@ -1,0 +1,17 @@
+{
+  "total_turns": 2,
+  "total_llm_ms": 419417,
+  "total_tool_calls": 16,
+  "total_tool_errors": 0,
+  "peak_kv_pct": 90.33,
+  "total_tokens": 19289,
+  "cumulative_tokens": 1137480,
+  "cumulative_tool_calls": 5472,
+  "cumulative_tool_errors": 146,
+  "cumulative_turns": 590,
+  "cumulative_llm_ms": 4.04767e+07,
+  "turns": [
+    {"turn": 1, "llm_ms": 51864.3, "tokens": 2748, "tool_calls": 1, "tool_errors": 0, "kv_pct": 21.6398, "files_read": 1, "files_written": 0},
+    {"turn": 2, "llm_ms": 367553, "tokens": 16541, "tool_calls": 15, "tool_errors": 0, "kv_pct": 90.33, "files_read": 5, "files_written": 8}
+  ]
+}
