@@ -366,12 +366,14 @@ static void metrics_to_issues(const FileMetrics &m, std::vector<AuditIssue> &out
     const char *label = (m.language == ProjectLanguage::JAVA)
                            ? "import statements"
                            : "#include directives";
-    if (m.include_count > 15) {
+    int high_thresh = (m.language == ProjectLanguage::JAVA) ? 30 : 15;
+    int med_thresh  = (m.language == ProjectLanguage::JAVA) ? 20 : 10;
+    if (m.include_count > high_thresh) {
       add("high", 1, std::to_string(m.include_count) + " " + label,
           "Many external dependencies mean a large transitive graph; the "
           "agent must track which symbols come from where, and changes "
           "cascade widely.");
-    } else if (m.include_count > 10) {
+    } else if (m.include_count > med_thresh) {
       add("medium", 1, std::to_string(m.include_count) + " " + label,
           "A moderate number of imports increases the surface area for "
           "dependency bugs and makes the graph harder to navigate.");

@@ -515,15 +515,96 @@ static void test_java_import_count() {
   }
   auto r = audit_codebase("/tmp/audit_test_java_imp");
   assert(r.total_files == 1);
-  bool found = false;
-  for (const auto &i : r.issues) {
-    if (i.message.find("import statements") != std::string::npos) {
-      found = true;
-      break;
-    }
-  }
-  assert(found);
+  const AuditIssue *iss = find_issue(r, "import statements");
+  assert(iss != nullptr);
+  assert(iss->severity == "medium");
+  assert(iss->message.find("20 import") != std::string::npos);
   std::cout << "test_java_import_count passed" << std::endl;
+}
+
+static void test_java_import_below_medium() {
+  // 18 imports should NOT trigger any issue (threshold is >18)
+  fs::create_directories("/tmp/audit_test_java_imp_low");
+  {
+    std::ofstream f("/tmp/audit_test_java_imp_low/build.gradle");
+    f << "plugins { id 'java' }\n";
+    std::string code = "package com.example;\n";
+    for (int i = 0; i < 18; ++i) {
+      code += "import com.example.lib.Class" + std::to_string(i) + ";\n";
+    }
+    code += "public class Ok {\n  void f() {}\n}\n";
+    std::ofstream f2("/tmp/audit_test_java_imp_low/Ok.java");
+    f2 << code;
+  }
+  auto r = audit_codebase("/tmp/audit_test_java_imp_low");
+  assert(find_issue(r, "import statements") == nullptr);
+  std::cout << "test_java_import_below_medium passed" << std::endl;
+}
+
+static void test_java_import_medium_boundary() {
+  // 19 imports should trigger MEDIUM (threshold is >18)
+  fs::create_directories("/tmp/audit_test_java_imp_med");
+  {
+    std::ofstream f("/tmp/audit_test_java_imp_med/build.gradle");
+    f << "plugins { id 'java' }\n";
+    std::string code = "package com.example;\n";
+    for (int i = 0; i < 19; ++i) {
+      code += "import com.example.lib.Class" + std::to_string(i) + ";\n";
+    }
+    code += "public class Med {\n  void f() {}\n}\n";
+    std::ofstream f2("/tmp/audit_test_java_imp_med/Med.java");
+    f2 << code;
+  }
+  auto r = audit_codebase("/tmp/audit_test_java_imp_med");
+  const AuditIssue *iss = find_issue(r, "import statements");
+  assert(iss != nullptr);
+  assert(iss->severity == "medium");
+  assert(iss->message.find("19 import") != std::string::npos);
+  std::cout << "test_java_import_medium_boundary passed" << std::endl;
+}
+
+static void test_java_import_high_boundary() {
+  // 26 imports should trigger HIGH (threshold is >25)
+  fs::create_directories("/tmp/audit_test_java_imp_high");
+  {
+    std::ofstream f("/tmp/audit_test_java_imp_high/build.gradle");
+    f << "plugins { id 'java' }\n";
+    std::string code = "package com.example;\n";
+    for (int i = 0; i < 26; ++i) {
+      code += "import com.example.lib.Class" + std::to_string(i) + ";\n";
+    }
+    code += "public class Big {\n  void f() {}\n}\n";
+    std::ofstream f2("/tmp/audit_test_java_imp_high/Big.java");
+    f2 << code;
+  }
+  auto r = audit_codebase("/tmp/audit_test_java_imp_high");
+  const AuditIssue *iss = find_issue(r, "import statements");
+  assert(iss != nullptr);
+  assert(iss->severity == "high");
+  assert(iss->message.find("26 import") != std::string::npos);
+  std::cout << "test_java_import_high_boundary passed" << std::endl;
+}
+
+static void test_java_import_25_not_high() {
+  // 25 imports should NOT trigger HIGH (threshold is >25), but IS medium
+  fs::create_directories("/tmp/audit_test_java_imp_25");
+  {
+    std::ofstream f("/tmp/audit_test_java_imp_25/build.gradle");
+    f << "plugins { id 'java' }\n";
+    std::string code = "package com.example;\n";
+    for (int i = 0; i < 25; ++i) {
+      code += "import com.example.lib.Class" + std::to_string(i) + ";\n";
+    }
+    code += "public class Big {\n  void f() {}\n}\n";
+    std::ofstream f2("/tmp/audit_test_java_imp_25/Big.java");
+    f2 << code;
+  }
+  auto r = audit_codebase("/tmp/audit_test_java_imp_25");
+  const AuditIssue *iss = find_issue(r, "import statements");
+  assert(iss != nullptr);
+  assert(iss->severity == "medium");
+  assert(iss->message.find("25 import") != std::string::npos);
+  std::cout << "test_java_import_25_not_high passed" << std::endl;
 }
 
 static void test_java_no_ifdef_issues() {
@@ -616,6 +697,8 @@ void audit_test() {
     "/tmp/audit_test_empty", "/tmp/audit_test_nonc",
     "/tmp/audit_test_clean",
     "/tmp/audit_test_java", "/tmp/audit_test_java_imp",
+    "/tmp/audit_test_java_imp_low", "/tmp/audit_test_java_imp_med",
+    "/tmp/audit_test_java_imp_high", "/tmp/audit_test_java_imp_25",
     "/tmp/audit_test_java_noifdef",
     "/tmp/audit_test_lang_cmake", "/tmp/audit_test_lang_gradle",
     "/tmp/audit_test_lang_maven", "/tmp/audit_test_lang_py",
@@ -652,6 +735,10 @@ void audit_test() {
   test_score_capped_at_100();
   test_java_file_scanned();
   test_java_import_count();
+  test_java_import_below_medium();
+  test_java_import_medium_boundary();
+  test_java_import_high_boundary();
+  test_java_import_25_not_high();
   test_java_no_ifdef_issues();
   test_detect_language_cmake();
   test_detect_language_gradle();
