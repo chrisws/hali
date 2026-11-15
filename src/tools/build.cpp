@@ -56,6 +56,8 @@ static BuildSystem detect_build_system(const std::string &sandbox) {
   }
   if (fs::exists(sandbox + "/build.gradle") ||
       fs::exists(sandbox + "/build.gradle.kts") ||
+      fs::exists(sandbox + "/settings.gradle") ||
+      fs::exists(sandbox + "/settings.gradle.kts") ||
       fs::exists(sandbox + "/gradlew")) {
     return BuildSystem::GRADLE;
   }
@@ -72,6 +74,14 @@ static BuildSystem detect_build_system(const std::string &sandbox) {
     for (const auto &entry : fs::directory_iterator(sandbox)) {
       if (entry.is_regular_file() && entry.path().extension() == ".py") {
         return BuildSystem::PYTHON;
+      }
+    }
+  }
+  // Fall back: if there are .kt files in the sandbox root, treat as Gradle/Kotlin
+  if (fs::exists(sandbox) && fs::is_directory(sandbox)) {
+    for (const auto &entry : fs::directory_iterator(sandbox)) {
+      if (entry.is_regular_file() && entry.path().extension() == ".kt") {
+        return BuildSystem::GRADLE;
       }
     }
   }
@@ -184,7 +194,7 @@ int scan_test_count(const std::string &sandbox) {
   // Source extensions we recognise.
   const std::set<std::string> src_exts = {
     ".c", ".cpp", ".cc", ".h", ".hpp",
-    ".go", ".py", ".rs", ".java", ".ts", ".js",
+    ".go", ".py", ".rs", ".java", ".kt", ".ts", ".js",
   };
 
   // Patterns that indicate a test function in various languages.
@@ -200,8 +210,10 @@ int scan_test_count(const std::string &sandbox) {
     "def test_",
     // Rust
     "#[test]",
-    // Java
+    // Java / Kotlin
     "@Test",
+    // Kotlin
+    "fun test",
     // JS / TS
     "test(",
     "it(",
@@ -350,39 +362,173 @@ static BuildResult build_maven(const std::string &sandbox, const std::string &mo
   return {ok, result};
 }
 
+//
+// Check if a Gradle project is an Android project by scanning
+// build files for the com.android plugin.
+//
+static bool is_android_project(const std::string &sandbox) {
+  const std::vector<std::string> build_files = {
+    sandbox + "/build.gradle",
+    sandbox + "/build.gradle.kts",
+  };
+  for (const auto &bf : build_files) {
+    if (!fs::exists(bf)) continue;
+    std::ifstream f(bf);
+    if (!f) continue;
+    std::string content((std::istreambuf_iterator<char>(f)),
+                        std::istreambuf_iterator<char>());
+    f.close();
+    if (content.find("com.android.application") != std::string::npos ||
+        content.find("com.android.library") != std::string::npos) {
+      return true;
+    }
+  }
+  // Also check settings.gradle for android modules
+  const std::vector<std::string> settings_files = {
+    sandbox + "/settings.gradle",
+    sandbox + "/settings.gradle.kts",
+  };
+  for (const auto &sf : settings_files) {
+    if (!fs::exists(sf)) continue;
+    std::ifstream f(sf);
+    if (!f) continue;
+    std::string content((std::istreambuf_iterator<char>(f)),
+                        std::istreambuf_iterator<char>());
+    f.close();
+    if (content.find("com.android") != std::string::npos) {
+      return true;
+    }
+  }
+  return false;
+}
+
+//
+// Parse JUnit XML test results from Gradle build/test-results/ directory.
+// Returns {total_tests, total_failures, total_errors}.
+//
+struct GradleTestSummary {
+  int total_tests;
+  int total_failures;
+  int total_errors;
+};
+
+static GradleTestSummary parse_gradle_test_results(const std::string &sandbox) {
+  GradleTestSummary summary{0, 0, 0};
+  // Gradle writes test results to build/test-results/<task>/
+  // Common task names: test, testDebugUnitTest, testReleaseUnitTest
+  const std::vector<std::string> result_dirs = {
+    sandbox + "/build/test-results/test",
+    sandbox + "/build/test-results/testDebugUnitTest",
+    sandbox + "/build/test-results/testReleaseUnitTest",
+  };
+  for (const auto &dir : result_dirs) {
+    if (!fs::exists(dir) || !fs::is_directory(dir)) continue;
+    for (const auto &entry : fs::directory_iterator(dir)) {
+      if (!entry.is_regular_file()) continue;
+      if (entry.path().extension() != ".xml") continue;
+      std::ifstream f(entry.path());
+      if (!f) continue;
+      std::string content((std::istreambuf_iterator<char>(f)),
+                          std::istreambuf_iterator<char>());
+      f.close();
+      // Parse <testsuite ... tests="N" failures="N" errors="N" ...>
+      size_t pos = 0;
+      while ((pos = content.find("<testsuite", pos)) != std::string::npos) {
+        size_t end = content.find(">", pos);
+        if (end == std::string::npos) break;
+        std::string tag = content.substr(pos, end - pos);
+        auto extract_attr = [&tag](const std::string &name) -> int {
+          std::string key = name + "=\"";
+          size_t a = tag.find(key);
+          if (a == std::string::npos) return 0;
+          a += key.size();
+          size_t b = tag.find('"', a);
+          if (b == std::string::npos) return 0;
+          return std::stoi(tag.substr(a, b - a));
+        };
+        summary.total_tests += extract_attr("tests");
+        summary.total_failures += extract_attr("failures");
+        summary.total_errors += extract_attr("errors");
+        pos = end + 1;
+      }
+    }
+  }
+  return summary;
+}
+
 static BuildResult build_gradle(const std::string &sandbox, const std::string &mode,
                                  const std::function<void(const std::string &)> &status) {
   // Prefer the Gradle wrapper over a system install
   const std::string gradle = fs::exists(sandbox + "/gradlew")
                                 ? sandbox + "/gradlew"
                                 : "gradle";
+  const bool android = is_android_project(sandbox);
   std::string result;
   bool ok = true;
 
   if (mode == "build" || mode == "all") {
-    result += "==> Building with Gradle...\n";
-    auto out = run_command(gradle + " -p " + sandbox + " build", status);
+    std::string task = android ? "assembleDebug" : "build";
+    result += "==> Building with Gradle" +
+              (android ? " (Android: " + task + ")" : "") + "...\n";
+    auto out = run_command(gradle + " -p " + sandbox + " --console=plain " + task, status);
     if (out.find("BUILD FAILED") != std::string::npos) {
       ok = false;
+      // Extract compilation errors for better reporting
+      size_t err_pos = 0;
+      int err_count = 0;
+      while ((err_pos = out.find("e: ", err_pos)) != std::string::npos && err_count < 10) {
+        size_t eol = out.find('\n', err_pos);
+        std::string err_line = (eol == std::string::npos)
+                                   ? out.substr(err_pos)
+                                   : out.substr(err_pos, eol - err_pos);
+        result += "  ERROR: " + err_line + "\n";
+        err_count++;
+        err_pos = (eol == std::string::npos) ? out.size() : eol + 1;
+      }
+      if (err_count > 0) {
+        result += "==> " + std::to_string(err_count) + " compilation error(s) found.\n";
+      }
     }
     result += out;
     result += "==> Build complete.\n";
   }
 
   if (mode == "test" || mode == "all") {
-    result += "==> Running Gradle tests...\n";
-    auto out = run_command(gradle + " -p " + sandbox + " test", status);
+    std::string task = android ? "testDebugUnitTest" : "test";
+    result += "==> Running Gradle tests" +
+              (android ? " (Android: " + task + ")" : "") + "...\n";
+    auto out = run_command(gradle + " -p " + sandbox + " --console=plain " + task, status,
+                           kQuietMaxOutputSize);
     if (out.find("BUILD FAILED") != std::string::npos) {
       ok = false;
     }
     result += out;
+
+    // Parse structured test results from XML
+    auto summary = parse_gradle_test_results(sandbox);
+    if (summary.total_tests > 0) {
+      int passed = summary.total_tests - summary.total_failures - summary.total_errors;
+      result += "==> Test results: " + std::to_string(passed) + "/" +
+                std::to_string(summary.total_tests) + " passed";
+      if (summary.total_failures > 0) {
+        result += ", " + std::to_string(summary.total_failures) + " failed";
+      }
+      if (summary.total_errors > 0) {
+        result += ", " + std::to_string(summary.total_errors) + " errors";
+      }
+      result += "\n";
+      if (summary.total_failures > 0 || summary.total_errors > 0) {
+        ok = false;
+      }
+    }
+
     result += "==> Tests complete.\n";
     result += make_test_badge(sandbox, ok);
   }
 
   if (mode == "clean") {
     result += "==> Cleaning with Gradle...\n";
-    result += run_command(gradle + " -p " + sandbox + " clean", status);
+    result += run_command(gradle + " -p " + sandbox + " --console=plain clean", status);
     result += "==> Clean complete.\n";
   }
 
@@ -531,8 +677,28 @@ static BuildResult setup_gradle(const std::string &sandbox,
 
   result += "==> Checking Gradle project structure...\n";
 
+  // Check for build files
+  bool has_build_file = fs::exists(sandbox + "/build.gradle") ||
+                        fs::exists(sandbox + "/build.gradle.kts");
+  if (has_build_file) {
+    result += "==> build.gradle found.\n";
+  } else {
+    result += "==> WARNING: no build.gradle found. This project may need to be\n"
+              "==> set up in Android Studio or IntelliJ first.\n";
+    ok = false;
+  }
+
+  // Check for settings file
+  bool has_settings = fs::exists(sandbox + "/settings.gradle") ||
+                      fs::exists(sandbox + "/settings.gradle.kts");
+  if (has_settings) {
+    result += "==> settings.gradle found.\n";
+  } else {
+    result += "==> NOTE: no settings.gradle found (single-module project).\n";
+  }
+
+  // Check for gradlew wrapper
   if (fs::exists(sandbox + "/gradlew")) {
-    // Ensure gradlew is executable
     fs::permissions(sandbox + "/gradlew",
                      fs::perms::owner_all | fs::perms::group_read | fs::perms::group_exec |
                      fs::perms::others_read | fs::perms::others_exec);
@@ -543,10 +709,59 @@ static BuildResult setup_gradle(const std::string &sandbox,
     ok = false;
   }
 
-  if (!fs::exists(sandbox + "/build.gradle") && !fs::exists(sandbox + "/build.gradle.kts")) {
-    result += "==> WARNING: no build.gradle found. This project may need to be\n"
-              "==> set up in Android Studio first.\n";
-    ok = false;
+  // Check for gradle wrapper properties
+  if (fs::exists(sandbox + "/gradle/wrapper/gradle-wrapper.properties")) {
+    result += "==> gradle-wrapper.properties found.\n";
+  } else {
+    result += "==> NOTE: no gradle/wrapper/gradle-wrapper.properties found.\n";
+  }
+
+  // Check for gradle.properties
+  if (fs::exists(sandbox + "/gradle.properties")) {
+    result += "==> gradle.properties found.\n";
+  }
+
+  // Android-specific checks
+  if (is_android_project(sandbox)) {
+    result += "==> Android project detected.\n";
+    if (fs::exists(sandbox + "/local.properties")) {
+      result += "==> local.properties found (Android SDK configured).\n";
+    } else {
+      result += "==> WARNING: no local.properties found.\n"
+                "==> Android SDK path may not be configured. Create local.properties\n"
+                "==> with: sdk.dir=/path/to/android/sdk\n";
+    }
+    // Check for AndroidManifest.xml
+    bool has_manifest = false;
+    auto app_dir = sandbox + "/app";
+    if (fs::exists(app_dir) && fs::is_directory(app_dir)) {
+      for (const auto &entry : fs::recursive_directory_iterator(app_dir)) {
+        if (entry.is_regular_file() &&
+            entry.path().filename() == "AndroidManifest.xml") {
+          has_manifest = true;
+          break;
+        }
+      }
+    }
+    if (has_manifest) {
+      result += "==> AndroidManifest.xml found.\n";
+    } else {
+      result += "==> WARNING: no AndroidManifest.xml found in app/.\n";
+    }
+  }
+
+  // Check for Kotlin source files
+  int kt_count = 0;
+  auto src_dir = sandbox + "/src";
+  if (fs::exists(src_dir) && fs::is_directory(src_dir)) {
+    for (const auto &entry : fs::recursive_directory_iterator(src_dir)) {
+      if (entry.is_regular_file() && entry.path().extension() == ".kt") {
+        kt_count++;
+      }
+    }
+  }
+  if (kt_count > 0) {
+    result += "==> Found " + std::to_string(kt_count) + " Kotlin source file(s).\n";
   }
 
   result += "==> Setup complete.\n";
@@ -749,6 +964,131 @@ static BuildResult build_cmake_lint(const std::string &sandbox,
   return {true, result, details};
 }
 
+static BuildResult build_gradle_lint(const std::string &sandbox,
+                                     const std::function<void(const std::string &)> &status) {
+  std::string result;
+  std::vector<LintWarning> details;
+
+  // Collect Kotlin source files
+  std::vector<std::string> kt_files;
+  auto src_dir = sandbox + "/src";
+  auto app_dir = sandbox + "/app/src";
+  const std::vector<std::string> search_dirs = {src_dir, app_dir};
+  for (const auto &dir : search_dirs) {
+    if (!fs::exists(dir) || !fs::is_directory(dir)) continue;
+    for (const auto &entry : fs::recursive_directory_iterator(dir)) {
+      if (entry.is_regular_file() && entry.path().extension() == ".kt") {
+        kt_files.push_back(entry.path().string());
+      }
+    }
+  }
+
+  if (kt_files.empty()) {
+    result += "==> No Kotlin source files found in src/ or app/src/.\n";
+    result += "==> Lint complete.\n";
+    return {true, result, details};
+  }
+
+  result += "==> Found " + std::to_string(kt_files.size()) + " Kotlin file(s) to lint.\n";
+
+  // Try ktlint first
+  auto ktlint_check = run_command("which ktlint 2>/dev/null", status);
+  if (ktlint_check.find("ktlint") != std::string::npos) {
+    result += "==> Running ktlint...\n";
+    std::string files_arg;
+    for (const auto &f : kt_files) {
+      files_arg += f + " ";
+    }
+    auto out = run_command("ktlint " + files_arg, status);
+    result += out;
+
+    // Parse ktlint output: file:line:col: message [rule]
+    size_t pos = 0;
+    while (pos < out.size()) {
+      size_t eol = out.find('\n', pos);
+      std::string line = (eol == std::string::npos)
+                             ? out.substr(pos)
+                             : out.substr(pos, eol - pos);
+      pos = (eol == std::string::npos) ? out.size() : eol + 1;
+
+      // ktlint format: /path/to/file.kt:12:34: message [rule-name]
+      if (line.find(".kt:") == std::string::npos) continue;
+      if (line.find("[") == std::string::npos) continue;
+
+      LintWarning w;
+      size_t colon1 = line.find(':');
+      size_t colon2 = line.find(':', colon1 + 1);
+      size_t colon3 = line.find(':', colon2 + 1);
+      if (colon1 == std::string::npos || colon2 == std::string::npos ||
+          colon3 == std::string::npos) continue;
+
+      std::string full_path = line.substr(0, colon1);
+      size_t slash = full_path.rfind('/');
+      w.file = (slash != std::string::npos) ? full_path.substr(slash + 1) : full_path;
+      w.line = std::stoi(line.substr(colon1 + 1, colon2 - colon1 - 1));
+
+      size_t bracket = line.find('[');
+      size_t bracket_close = line.find(']', bracket);
+      if (bracket != std::string::npos && bracket_close != std::string::npos) {
+        w.check = line.substr(bracket + 1, bracket_close - bracket - 1);
+        w.description = line.substr(colon3 + 1, bracket - colon3 - 1);
+      } else {
+        w.check = "ktlint";
+        w.description = line.substr(colon3 + 1);
+      }
+      while (!w.description.empty() &&
+             (w.description.back() == ' ' || w.description.back() == '\t')) {
+        w.description.pop_back();
+      }
+      details.push_back(std::move(w));
+    }
+
+    if (!details.empty()) {
+      result += "==> ktlint found " + std::to_string(details.size()) +
+                " issue(s).\n";
+    } else {
+      result += "==> ktlint: no issues found.\n";
+    }
+  } else {
+    result += "==> ktlint not found on PATH. Skipping.\n"
+              "==> Install with: curl -sSLO https://github.com/pinterest/ktlint/releases/latest/download/ktlint\n"
+              "==> then: chmod +x ktlint && sudo mv ktlint /usr/local/bin/\n";
+  }
+
+  // Try detekt if configured
+  auto detekt_check = run_command("which detekt 2>/dev/null", status);
+  if (detekt_check.find("detekt") != std::string::npos) {
+    result += "==> Running detekt...\n";
+    auto out = run_command("detekt --input " + sandbox + "/src --report-txt " +
+                           sandbox + "/.hali/detekt-report.txt 2>&1", status);
+    result += out;
+    if (out.find("FAILURE") != std::string::npos) {
+      result += "==> detekt found issues.\n";
+    } else {
+      result += "==> detekt: no issues found.\n";
+    }
+  }
+
+  // Summary
+  if (!details.empty()) {
+    result += "==> Summary (" + std::to_string(details.size()) + " warnings):\n";
+    int shown = 0;
+    for (const auto &w : details) {
+      if (shown >= 10) {
+        result += "  ... and " + std::to_string(details.size() - 10) + " more\n";
+        break;
+      }
+      result += "  " + std::to_string(shown + 1) + ". " +
+                w.file + ":" + std::to_string(w.line) +
+                " [" + w.check + "] " + w.description + "\n";
+      shown++;
+    }
+  }
+
+  result += "==> Lint complete.\n";
+  return {true, result, details};
+}
+
 BuildResult build_run(const std::string &sandbox, const std::string &mode,
                       const std::function<void(const std::string &)> &status,
                       const std::string &subdir) {
@@ -763,7 +1103,8 @@ BuildResult build_run(const std::string &sandbox, const std::string &mode,
   const auto sys = detect_build_system(root);
   if (sys == BuildSystem::NONE) {
     return {false, "ERROR: no recognised build system found in " + root +
-                    " (looked for CMakeLists.txt, build.gradle, pom.xml, pyproject.toml, setup.py, requirements.txt, *.py)"};
+                    " (looked for CMakeLists.txt, build.gradle, build.gradle.kts, settings.gradle, "
+                    "gradlew, pom.xml, pyproject.toml, setup.py, requirements.txt, *.py, *.kt)"};
   }
 
   if (m == "setup") {
@@ -789,10 +1130,14 @@ BuildResult build_run(const std::string &sandbox, const std::string &mode,
   }
 
   if (m == "lint") {
-    if (sys == BuildSystem::CMAKE) {
-      return build_cmake_lint(root, status);
+    switch (sys) {
+      case BuildSystem::CMAKE:
+        return build_cmake_lint(root, status);
+      case BuildSystem::GRADLE:
+        return build_gradle_lint(root, status);
+      default:
+        return {false, "ERROR: lint mode is only supported for CMake and Gradle/Kotlin projects"};
     }
-    return {false, "ERROR: lint mode is only supported for CMake projects"};
   }
 
   if (m != "build" && m != "test" && m != "clean" && m != "all") {

@@ -451,7 +451,14 @@ static std::vector<FalsePositive> parse_false_positives(const std::string &text)
 // /audit – scan the codebase for model-hostility issues
 //
 static void slash_audit(const std::string &rest, HaliConfig &cfg, Tui &tui, Agent &agent) {
-  std::string root = rest.empty() ? cfg.sandbox_ : rest;
+  std::string root;
+  if (rest.empty()) {
+    root = cfg.sandbox_;
+  } else if (rest[0] == '/') {
+    root = rest;
+  } else {
+    root = cfg.sandbox_ + "/" + rest;
+  }
   std::string fp_path = cfg.sandbox_ + "/.hali/audit_feedback.json";
 
   auto fps = load_false_positives(fp_path);

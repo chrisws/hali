@@ -72,6 +72,19 @@ void Input::build_scroll_handlers() {
 }
 
 void Input::build_cursor_handlers() {
+  dispatch_["RIGHT"] = [this](const InputEvent &, TuiContext &tui, std::string &) -> bool {
+    if (completion_active_ && !completion_suffix_.empty()) {
+      accept_completion(tui);
+      return true;
+    }
+    if (cursor_pos_ < static_cast<int>(input_buf_.size())) {
+      ++cursor_pos_;
+      tui.redraw_input();
+      tui.render();
+    }
+    return true;
+  };
+
   dispatch_["C-LEFT"] = [this](const InputEvent &, TuiContext &tui, std::string &) -> bool {
     log_write(LEVEL_DEBUG, "input", "Ctrl+left pressed [%d]", cursor_pos_);
     cursor_pos_ = move_to_prev_word(cursor_pos_);
@@ -471,7 +484,8 @@ int Input::lowercase_word(const int pos) {
 // Called after every edit to the input buffer.
 // Collects all matching commands (sorted alphabetically), stores them
 // in completion_matches_, and sets the suffix for the first match.
-// TAB cycles through the matches; ENTER accepts the current one.
+// TAB cycles through the matches; RIGHT arrow accepts the current one
+// in-place (without submitting); ENTER accepts and submits.
 //
 void Input::update_completion() {
   if (input_buf_.empty() || input_buf_[0] != '/') {

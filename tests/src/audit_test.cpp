@@ -633,6 +633,287 @@ static void test_java_nested_class() {
   std::cout << "test_java_nested_class passed" << std::endl;
 }
 
+// ── Kotlin detection and scanning ─────────────────────────────────────────
+
+static void test_detect_language_kotlin_kts() {
+  fs::create_directories("/tmp/audit_test_lang_kts");
+  {
+    std::ofstream f("/tmp/audit_test_lang_kts/build.gradle.kts");
+    f << "plugins { kotlin(\"jvm\") }\n";
+  }
+  assert(detect_project_language("/tmp/audit_test_lang_kts") ==
+         ProjectLanguage::KOTLIN);
+  std::cout << "test_detect_language_kotlin_kts passed" << std::endl;
+}
+
+static void test_detect_language_kotlin_settings_kts() {
+  fs::create_directories("/tmp/audit_test_lang_settings_kts");
+  {
+    std::ofstream f("/tmp/audit_test_lang_settings_kts/settings.gradle.kts");
+    f << "rootProject.name = \"myapp\"\n";
+  }
+  assert(detect_project_language("/tmp/audit_test_lang_settings_kts") ==
+         ProjectLanguage::KOTLIN);
+  std::cout << "test_detect_language_kotlin_settings_kts passed" << std::endl;
+}
+
+static void test_detect_language_kotlin_gradle_with_kt() {
+  fs::create_directories("/tmp/audit_test_lang_kt_gradle");
+  {
+    std::ofstream f("/tmp/audit_test_lang_kt_gradle/build.gradle");
+    f << "plugins { id 'org.jetbrains.kotlin.jvm' }\n";
+    fs::create_directories("/tmp/audit_test_lang_kt_gradle/src/main/kotlin");
+    std::ofstream f2("/tmp/audit_test_lang_kt_gradle/src/main/kotlin/Main.kt");
+    f2 << "fun main() { println(\"hi\") }\n";
+  }
+  assert(detect_project_language("/tmp/audit_test_lang_kt_gradle") ==
+         ProjectLanguage::KOTLIN);
+  std::cout << "test_detect_language_kotlin_gradle_with_kt passed" << std::endl;
+}
+
+static void test_detect_language_kotlin_android_deep() {
+  // Mimics Android project: app/src/main/kotlin/com/example/Main.kt
+  // (.kt file is 5 levels deep from project root)
+  fs::create_directories("/tmp/audit_test_lang_kt_android");
+  {
+    std::ofstream f("/tmp/audit_test_lang_kt_android/build.gradle");
+    f << "plugins { id 'com.android.application' }\n";
+    std::ofstream f2("/tmp/audit_test_lang_kt_android/settings.gradle");
+    f2 << "rootProject.name = \"myapp\"\n";
+    fs::create_directories(
+      "/tmp/audit_test_lang_kt_android/app/src/main/kotlin/com/example");
+    std::ofstream f3(
+      "/tmp/audit_test_lang_kt_android/app/src/main/kotlin/com/example/Main.kt");
+    f3 << "fun main() { println(\"hi\") }\n";
+  }
+  assert(detect_project_language("/tmp/audit_test_lang_kt_android") ==
+         ProjectLanguage::KOTLIN);
+  std::cout << "test_detect_language_kotlin_android_deep passed" << std::endl;
+}
+
+static void test_detect_language_java_gradle_no_kt() {
+  // build.gradle with only .java files should still be JAVA
+  fs::create_directories("/tmp/audit_test_lang_java_no_kt");
+  {
+    std::ofstream f("/tmp/audit_test_lang_java_no_kt/build.gradle");
+    f << "plugins { id 'java' }\n";
+    fs::create_directories("/tmp/audit_test_lang_java_no_kt/src/main/java");
+    std::ofstream f2("/tmp/audit_test_lang_java_no_kt/src/main/java/Main.java");
+    f2 << "public class Main {}\n";
+  }
+  assert(detect_project_language("/tmp/audit_test_lang_java_no_kt") ==
+         ProjectLanguage::JAVA);
+  std::cout << "test_detect_language_java_gradle_no_kt passed" << std::endl;
+}
+
+static void test_kotlin_file_scanned() {
+  fs::create_directories("/tmp/audit_test_kotlin");
+  {
+    std::ofstream f("/tmp/audit_test_kotlin/build.gradle.kts");
+    f << "plugins { kotlin(\"jvm\") }\n";
+    std::ofstream f2("/tmp/audit_test_kotlin/Main.kt");
+    f2 << "package com.example\n"
+       << "fun main() {\n"
+       << "    println(\"hello\")\n"
+       << "}\n";
+  }
+  auto r = audit_codebase("/tmp/audit_test_kotlin");
+  assert(r.total_files == 1);
+  assert(r.total_lines > 0);
+  std::cout << "test_kotlin_file_scanned passed" << std::endl;
+}
+
+static void test_kotlin_import_count() {
+  fs::create_directories("/tmp/audit_test_kotlin_imp");
+  {
+    std::ofstream f("/tmp/audit_test_kotlin_imp/build.gradle.kts");
+    f << "plugins { kotlin(\"jvm\") }\n";
+    std::string code = "package com.example\n";
+    for (int i = 0; i < 22; ++i) {
+      code += "import com.example.lib.Class" + std::to_string(i) + "\n";
+    }
+    code += "fun main() {}\n";
+    std::ofstream f2("/tmp/audit_test_kotlin_imp/Big.kt");
+    f2 << code;
+  }
+  auto r = audit_codebase("/tmp/audit_test_kotlin_imp");
+  assert(r.total_files == 1);
+  const AuditIssue *iss = find_issue(r, "import statements");
+  assert(iss != nullptr);
+  assert(iss->severity == "medium");
+  assert(iss->message.find("22 import") != std::string::npos);
+  std::cout << "test_kotlin_import_count passed" << std::endl;
+}
+
+static void test_kotlin_no_ifdef_issues() {
+  fs::create_directories("/tmp/audit_test_kotlin_noifdef");
+  {
+    std::ofstream f("/tmp/audit_test_kotlin_noifdef/build.gradle.kts");
+    f << "plugins { kotlin(\"jvm\") }\n";
+    std::ofstream f2("/tmp/audit_test_kotlin_noifdef/Clean.kt");
+    f2 << "package com.example\n"
+       << "fun clean() {\n"
+       << "    if (true) {\n"
+       << "        g()\n"
+       << "    }\n"
+       << "}\n";
+  }
+  auto r = audit_codebase("/tmp/audit_test_kotlin_noifdef");
+  for (const auto &i : r.issues) {
+    assert(i.message.find("#if") == std::string::npos);
+    assert(i.message.find("#define") == std::string::npos);
+  }
+  std::cout << "test_kotlin_no_ifdef_issues passed" << std::endl;
+}
+
+static void test_kotlin_object_not_tracked_as_function() {
+  // A Kotlin object declaration should not be tracked as a function
+  fs::create_directories("/tmp/audit_test_kotlin_obj");
+  {
+    std::ofstream f("/tmp/audit_test_kotlin_obj/build.gradle.kts");
+    f << "plugins { kotlin(\"jvm\") }\n";
+    std::string code = "package com.example\n"
+                       "object Singleton {\n";
+    for (int i = 0; i < 30; ++i) {
+      code += "    fun m" + std::to_string(i) + "() { val x" +
+              std::to_string(i) + " = " + std::to_string(i) + " }\n";
+    }
+    code += "}\n";
+    std::ofstream f2("/tmp/audit_test_kotlin_obj/Singleton.kt");
+    f2 << code;
+  }
+  auto r = audit_codebase("/tmp/audit_test_kotlin_obj");
+  const AuditIssue *iss = find_issue(r, "function spans");
+  assert(iss == nullptr);
+  std::cout << "test_kotlin_object_not_tracked_as_function passed" << std::endl;
+}
+
+// ── Kotlin missing test detection ─────────────────────────────────────────
+
+static void test_kotlin_missing_test_flagged() {
+  // A .kt file with no corresponding test should be flagged
+  fs::create_directories("/tmp/audit_test_kt_notest/src/main/kotlin/com/ex");
+  {
+    std::ofstream f("/tmp/audit_test_kt_notest/build.gradle.kts");
+    f << "plugins { kotlin(\"jvm\") }\n";
+    std::ofstream f2("/tmp/audit_test_kt_notest/src/main/kotlin/com/ex/Foo.kt");
+    f2 << "package com.ex\nfun foo() {}\n";
+  }
+  auto r = audit_codebase("/tmp/audit_test_kt_notest");
+  const AuditIssue *iss = find_issue(r, "no corresponding test file");
+  assert(iss != nullptr);
+  assert(iss->severity == "medium");
+  assert(iss->file.find("Foo.kt") != std::string::npos);
+  std::cout << "test_kotlin_missing_test_flagged passed" << std::endl;
+}
+
+static void test_kotlin_test_exists_not_flagged() {
+  // A .kt file WITH a corresponding test should NOT be flagged
+  fs::create_directories("/tmp/audit_test_kt_hastest/src/main/kotlin/com/ex");
+  fs::create_directories("/tmp/audit_test_kt_hastest/src/test/kotlin/com/ex");
+  {
+    std::ofstream f("/tmp/audit_test_kt_hastest/build.gradle.kts");
+    f << "plugins { kotlin(\"jvm\") }\n";
+    std::ofstream f2("/tmp/audit_test_kt_hastest/src/main/kotlin/com/ex/Foo.kt");
+    f2 << "package com.ex\nfun foo() {}\n";
+    std::ofstream f3("/tmp/audit_test_kt_hastest/src/test/kotlin/com/ex/FooTest.kt");
+    f3 << "import org.junit.Test\n@Test fun testFoo() {}\n";
+  }
+  auto r = audit_codebase("/tmp/audit_test_kt_hastest");
+  const AuditIssue *iss = find_issue(r, "no corresponding test file");
+  assert(iss == nullptr);
+  std::cout << "test_kotlin_test_exists_not_flagged passed" << std::endl;
+}
+
+static void test_kotlin_spec_file_counts_as_test() {
+  // A .kt file with a corresponding Spec file should NOT be flagged
+  fs::create_directories("/tmp/audit_test_kt_spec/src/main/kotlin/com/ex");
+  fs::create_directories("/tmp/audit_test_kt_spec/src/test/kotlin/com/ex");
+  {
+    std::ofstream f("/tmp/audit_test_kt_spec/build.gradle.kts");
+    f << "plugins { kotlin(\"jvm\") }\n";
+    std::ofstream f2("/tmp/audit_test_kt_spec/src/main/kotlin/com/ex/Bar.kt");
+    f2 << "package com.ex\nfun bar() {}\n";
+    std::ofstream f3("/tmp/audit_test_kt_spec/src/test/kotlin/com/ex/BarSpec.kt");
+    f3 << "class BarSpec\n";
+  }
+  auto r = audit_codebase("/tmp/audit_test_kt_spec");
+  const AuditIssue *iss = find_issue(r, "no corresponding test file");
+  assert(iss == nullptr);
+  std::cout << "test_kotlin_spec_file_counts_as_test passed" << std::endl;
+}
+
+static void test_kotlin_kts_not_flagged() {
+  // .kts build scripts should NOT be flagged for missing tests
+  fs::create_directories("/tmp/audit_test_kt_kts");
+  {
+    std::ofstream f("/tmp/audit_test_kt_kts/build.gradle.kts");
+    f << "plugins { kotlin(\"jvm\") }\n";
+    std::ofstream f2("/tmp/audit_test_kt_kts/settings.gradle.kts");
+    f2 << "rootProject.name = \"test\"\n";
+  }
+  auto r = audit_codebase("/tmp/audit_test_kt_kts");
+  const AuditIssue *iss = find_issue(r, "no corresponding test file");
+  assert(iss == nullptr);
+  std::cout << "test_kotlin_kts_not_flagged passed" << std::endl;
+}
+
+static void test_kotlin_androidtest_counts() {
+  // A .kt file with an androidTest counterpart should NOT be flagged
+  fs::create_directories("/tmp/audit_test_kt_android/src/main/kotlin/com/ex");
+  fs::create_directories("/tmp/audit_test_kt_android/src/androidTest/kotlin/com/ex");
+  {
+    std::ofstream f("/tmp/audit_test_kt_android/build.gradle.kts");
+    f << "plugins { kotlin(\"jvm\") }\n";
+    std::ofstream f2("/tmp/audit_test_kt_android/src/main/kotlin/com/ex/Baz.kt");
+    f2 << "package com.ex\nfun baz() {}\n";
+    std::ofstream f3("/tmp/audit_test_kt_android/src/androidTest/kotlin/com/ex/BazTest.kt");
+    f3 << "class BazTest\n";
+  }
+  auto r = audit_codebase("/tmp/audit_test_kt_android");
+  const AuditIssue *iss = find_issue(r, "no corresponding test file");
+  assert(iss == nullptr);
+  std::cout << "test_kotlin_androidtest_counts passed" << std::endl;
+}
+
+static void test_kotlin_android_java_src_missing_test() {
+  // Android convention: .kt files in src/main/java/ with no test → flagged
+  fs::create_directories("/tmp/audit_test_kt_android_java/src/main/java/com/ex");
+  {
+    std::ofstream f("/tmp/audit_test_kt_android_java/build.gradle");
+    f << "apply plugin: 'com.android.application'\n";
+    std::ofstream f2("/tmp/audit_test_kt_android_java/gradlew");
+    f2 << "#!/bin/sh\n";
+    std::ofstream f3("/tmp/audit_test_kt_android_java/src/main/java/com/ex/Foo.kt");
+    f3 << "package com.ex\nfun foo() {}\n";
+  }
+  auto r = audit_codebase("/tmp/audit_test_kt_android_java");
+  const AuditIssue *iss = find_issue(r, "no corresponding test file");
+  assert(iss != nullptr);
+  assert(iss->file.find("Foo.kt") != std::string::npos);
+  std::cout << "test_kotlin_android_java_src_missing_test passed" << std::endl;
+}
+
+static void test_kotlin_android_java_src_test_exists() {
+  // Android convention: .kt in src/main/java/ with test in src/test/java/ → NOT flagged
+  fs::create_directories("/tmp/audit_test_kt_android_java2/src/main/java/com/ex");
+  fs::create_directories("/tmp/audit_test_kt_android_java2/src/test/java/com/ex");
+  {
+    std::ofstream f("/tmp/audit_test_kt_android_java2/build.gradle");
+    f << "apply plugin: 'com.android.application'\n";
+    std::ofstream f2("/tmp/audit_test_kt_android_java2/gradlew");
+    f2 << "#!/bin/sh\n";
+    std::ofstream f3("/tmp/audit_test_kt_android_java2/src/main/java/com/ex/Bar.kt");
+    f3 << "package com.ex\nfun bar() {}\n";
+    std::ofstream f4("/tmp/audit_test_kt_android_java2/src/test/java/com/ex/BarTest.kt");
+    f4 << "class BarTest\n";
+  }
+  auto r = audit_codebase("/tmp/audit_test_kt_android_java2");
+  const AuditIssue *iss = find_issue(r, "no corresponding test file");
+  assert(iss == nullptr);
+  std::cout << "test_kotlin_android_java_src_test_exists passed" << std::endl;
+}
+
 // ── Main runner ────────────────────────────────────────────────────────────
 
 static void test_java_file_scanned() {
@@ -835,6 +1116,39 @@ static void test_detect_language_none() {
   std::cout << "test_detect_language_none passed" << std::endl;
 }
 
+static void test_detect_language_monorepo_gradle_kotlin() {
+  // Monorepo: build files one level down in a subdirectory
+  fs::create_directories("/tmp/audit_test_lang_mono/android/app/src/main/java/com/ex");
+  fs::create_directories("/tmp/audit_test_lang_mono/prototype");
+  {
+    std::ofstream f("/tmp/audit_test_lang_mono/android/build.gradle");
+    f << "apply plugin: 'com.android.application'\n";
+    std::ofstream f2("/tmp/audit_test_lang_mono/android/gradlew");
+    f2 << "#!/bin/sh\n";
+    std::ofstream f3("/tmp/audit_test_lang_mono/android/app/src/main/java/com/ex/Foo.kt");
+    f3 << "package com.ex\nfun foo() {}\n";
+  }
+  assert(detect_project_language("/tmp/audit_test_lang_mono") ==
+         ProjectLanguage::KOTLIN);
+  std::cout << "test_detect_language_monorepo_gradle_kotlin passed" << std::endl;
+}
+
+static void test_detect_language_monorepo_gradle_java() {
+  // Monorepo: Gradle subdirectory with only .java files → JAVA
+  fs::create_directories("/tmp/audit_test_lang_mono_java/app/src/main/java/com/ex");
+  {
+    std::ofstream f("/tmp/audit_test_lang_mono_java/build.gradle");
+    f << "apply plugin: 'java'\n";
+    std::ofstream f2("/tmp/audit_test_lang_mono_java/gradlew");
+    f2 << "#!/bin/sh\n";
+    std::ofstream f3("/tmp/audit_test_lang_mono_java/app/src/main/java/com/ex/Main.java");
+    f3 << "package com.ex;\npublic class Main {}\n";
+  }
+  assert(detect_project_language("/tmp/audit_test_lang_mono_java") ==
+         ProjectLanguage::JAVA);
+  std::cout << "test_detect_language_monorepo_gradle_java passed" << std::endl;
+}
+
 void audit_test() {
   std::cout << "=== Audit Tests ===" << std::endl;
 
@@ -861,6 +1175,13 @@ void audit_test() {
     "/tmp/audit_test_cpp_class", "/tmp/audit_test_cpp_struct",
     "/tmp/audit_test_cpp_fwd", "/tmp/audit_test_java_iface",
     "/tmp/audit_test_java_enum", "/tmp/audit_test_java_nested",
+    "/tmp/audit_test_lang_kts", "/tmp/audit_test_lang_settings_kts",
+    "/tmp/audit_test_lang_kt_gradle", "/tmp/audit_test_lang_java_no_kt",
+    "/tmp/audit_test_kotlin", "/tmp/audit_test_kotlin_imp",
+    "/tmp/audit_test_kotlin_noifdef", "/tmp/audit_test_kotlin_obj",
+    "/tmp/audit_test_kt_notest", "/tmp/audit_test_kt_hastest",
+    "/tmp/audit_test_kt_spec", "/tmp/audit_test_kt_kts",
+    "/tmp/audit_test_kt_android",
   };
   for (const auto &d : dirs) {
     fs::remove_all(d);
@@ -903,6 +1224,8 @@ void audit_test() {
   test_detect_language_maven();
   test_detect_language_python();
   test_detect_language_none();
+  test_detect_language_monorepo_gradle_kotlin();
+  test_detect_language_monorepo_gradle_java();
   test_java_class_not_tracked_as_function();
   test_java_method_inside_class_tracked();
   test_cpp_class_not_tracked_as_function();
@@ -911,6 +1234,22 @@ void audit_test() {
   test_java_interface_not_tracked_as_function();
   test_java_enum_not_tracked_as_function();
   test_java_nested_class();
+  test_detect_language_kotlin_kts();
+  test_detect_language_kotlin_settings_kts();
+  test_detect_language_kotlin_gradle_with_kt();
+  test_detect_language_kotlin_android_deep();
+  test_detect_language_java_gradle_no_kt();
+  test_kotlin_file_scanned();
+  test_kotlin_import_count();
+  test_kotlin_no_ifdef_issues();
+  test_kotlin_object_not_tracked_as_function();
+  test_kotlin_missing_test_flagged();
+  test_kotlin_test_exists_not_flagged();
+  test_kotlin_spec_file_counts_as_test();
+  test_kotlin_kts_not_flagged();
+  test_kotlin_androidtest_counts();
+  test_kotlin_android_java_src_missing_test();
+  test_kotlin_android_java_src_test_exists();
 
   // Cleanup
   for (const auto &d : dirs) {

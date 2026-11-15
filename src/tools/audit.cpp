@@ -9,6 +9,7 @@
 #include "audit.h"
 
 #include <algorithm>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -80,7 +81,8 @@ static bool is_type_decl_line(const std::string &line) {
   static const std::string mods[] = {
     "public ", "protected ", "private ", "abstract ",
     "static ", "final ", "strictfp ", "sealed ",
-    "non-sealed ", "transient ", "volatile "
+    "non-sealed ", "transient ", "volatile ",
+    "data ", "open ", "inner ", "external "
   };
   for (int pass = 0; pass < 8; ++pass) {
     bool stripped = false;
@@ -106,7 +108,8 @@ static bool is_type_decl_line(const std::string &line) {
                  s.rfind("record ", 0) == 0 ||
                  s.rfind("@interface ", 0) == 0 ||
                  s.rfind("struct ", 0) == 0 ||
-                 s.rfind("union ", 0) == 0;
+                 s.rfind("union ", 0) == 0 ||
+                 s.rfind("object ", 0) == 0;
   if (!is_type) {
     return false;
   }
@@ -308,7 +311,7 @@ static FileMetrics scan_file(const std::string &path, ProjectLanguage lang) {
       }
     }
 
-    if (lang == ProjectLanguage::JAVA) {
+    if (lang == ProjectLanguage::JAVA || lang == ProjectLanguage::KOTLIN) {
       if (trimmed.rfind("import ", 0) == 0) {
         m.include_count++;
       }
@@ -432,11 +435,11 @@ static void metrics_to_issues(const FileMetrics &m, std::vector<AuditIssue> &out
 
   // Include / import count
   {
-    const char *label = (m.language == ProjectLanguage::JAVA)
-                           ? "import statements"
-                           : "#include directives";
-    int high_thresh = (m.language == ProjectLanguage::JAVA) ? 30 : 15;
-    int med_thresh  = (m.language == ProjectLanguage::JAVA) ? 20 : 10;
+    bool is_jvm = (m.language == ProjectLanguage::JAVA ||
+                   m.language == ProjectLanguage::KOTLIN);
+    const char *label = is_jvm ? "import statements" : "#include directives";
+    int high_thresh = is_jvm ? 30 : 15;
+    int med_thresh  = is_jvm ? 20 : 10;
     if (m.include_count > high_thresh) {
       add("high", 1, std::to_string(m.include_count) + " " + label,
           "Many external dependencies mean a large transitive graph; the "
@@ -450,7 +453,8 @@ static void metrics_to_issues(const FileMetrics &m, std::vector<AuditIssue> &out
   }
 
   // Preprocessor conditionals (C/C++ only)
-  if (m.language != ProjectLanguage::JAVA) {
+  if (m.language != ProjectLanguage::JAVA &&
+      m.language != ProjectLanguage::KOTLIN) {
     if (m.ifdef_count > 12) {
       add("high", 1, std::to_string(m.ifdef_count) + " #if/#ifdef blocks",
           "Heavy conditional compilation means the agent cannot determine "
@@ -658,6 +662,86 @@ std::string audit_write_report(const AuditResult &r,
 }
 
 //
+// ── Kotlin test-file existence check ───────────────────────────────────────
+//
+// Given a Kotlin source file path, derive the expected test file path(s)
+// and return true if any of them exist.
+//
+// Conventions checked:
+//   src/main/kotlin/...  →  src/test/kotlin/...FooTest.kt
+//   src/main/kotlin/...  →  src/androidTest/kotlin/...FooTest.kt
+//   Fallback: sibling "test" dir with <Name>Test.kt or <Name>Spec.kt
+//
+static bool kotlin_test_exists(const std::string &src_path) {
+  std::string base;
+  std::string dir;
+  {
+    auto pos = src_path.find_last_of("/\\");
+    if (pos != std::string::npos) {
+      dir = src_path.substr(0, pos);
+      base = src_path.substr(pos + 1);
+    } else {
+      base = src_path;
+    }
+  }
+  // Strip extension
+  std::string stem = base;
+  auto dot = stem.find_last_of('.');
+  if (dot != std::string::npos) {
+    stem = stem.substr(0, dot);
+  }
+
+  std::string test_name = stem + "Test.kt";
+  std::string spec_name = stem + "Spec.kt";
+
+  std::error_code ec;
+  auto exists = [&](const std::string &p) -> bool {
+    if (p.empty()) {
+      return false;
+    }
+    return fs::exists(p, ec) && !ec;
+  };
+
+  // Try replacing src/main/<lang> with src/test/<lang> and
+  // src/androidTest/<lang> where <lang> is "kotlin" or "java"
+  // (Android projects use src/main/java for Kotlin sources too).
+  static const char *src_patterns[] = {"src/main/kotlin", "src/main/java"};
+  static const char *test_replacements[] = {
+    "src/test/kotlin", "src/test/java",
+    "src/androidTest/kotlin", "src/androidTest/java"
+  };
+
+  for (const auto *pat : src_patterns) {
+    size_t pos = dir.find(pat);
+    if (pos == std::string::npos) {
+      continue;
+    }
+    for (const auto *repl : test_replacements) {
+      std::string candidate = dir.substr(0, pos) + repl +
+                              dir.substr(pos + std::strlen(pat));
+      if (exists(candidate + "/" + test_name) ||
+          exists(candidate + "/" + spec_name)) {
+        return true;
+      }
+    }
+  }
+
+  // Fallback: look in a sibling "test" directory
+  {
+    std::string test_dir = dir;
+    auto main_pos = test_dir.find("src/main/");
+    if (main_pos != std::string::npos) {
+      test_dir.replace(main_pos + 4, 5, "test/");
+      if (exists(test_dir + "/" + test_name) ||
+          exists(test_dir + "/" + spec_name)) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+//
 // ── Public entry point ─────────────────────────────────────────────────────
 //
 AuditResult audit_codebase(const std::string &root) {
@@ -678,23 +762,31 @@ AuditResult audit_codebase(const std::string &root) {
                ext == ".cc" || ext == ".c";
       case ProjectLanguage::JAVA:
         return ext == ".java";
+      case ProjectLanguage::KOTLIN:
+        return ext == ".kt" || ext == ".kts";
       case ProjectLanguage::PYTHON:
         return ext == ".py";
       default:
         return ext == ".cpp" || ext == ".h" || ext == ".hpp" ||
                ext == ".cc" || ext == ".c" || ext == ".java" ||
-               ext == ".py";
+               ext == ".kt" || ext == ".py";
     }
   };
 
   std::vector<std::string> files;
-  for (const auto &entry : fs::recursive_directory_iterator(root, ec)) {
-    if (!entry.is_regular_file()) {
+  for (auto it = fs::recursive_directory_iterator(root, ec);
+       !ec && it != fs::recursive_directory_iterator(); ++it) {
+    // Skip build output directories
+    if (it->is_directory() && it->path().filename() == "build") {
+      it.disable_recursion_pending();
       continue;
     }
-    auto ext = entry.path().extension().string();
+    if (!it->is_regular_file()) {
+      continue;
+    }
+    auto ext = it->path().extension().string();
     if (is_source_file(ext, lang)) {
-      files.push_back(entry.path().string());
+      files.push_back(it->path().string());
     }
   }
 
@@ -705,6 +797,23 @@ AuditResult audit_codebase(const std::string &root) {
     FileMetrics m = scan_file(f, lang);
     result.total_lines += m.total_lines;
     metrics_to_issues(m, result.issues);
+  }
+
+  // Check for missing unit tests (Kotlin only for now)
+  if (lang == ProjectLanguage::KOTLIN) {
+    for (const auto &f : files) {
+      // Skip build script files (.kts) — they don't need tests
+      if (f.size() > 4 && f.substr(f.size() - 4) == ".kts") {
+        continue;
+      }
+      if (!kotlin_test_exists(f)) {
+        result.issues.push_back(
+          {f, 1, "medium", "no corresponding test file found",
+           "Untested code is harder to refactor safely; the agent cannot "
+           "verify that changes preserve existing behaviour without a "
+           "regression safety net."});
+      }
+    }
   }
 
   // Sort issues: high first, then by file

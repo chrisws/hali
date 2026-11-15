@@ -427,6 +427,403 @@ static void test_maven_test_dir_nested_packages() {
   teardown_sandbox();
 }
 
+//
+// test: Gradle detection via settings.gradle
+//
+static void test_gradle_settings_detection() {
+  setup_sandbox();
+  write_file(SANDBOX + "/settings.gradle", "rootProject.name = 'myapp'\n");
+  auto r = build_run(SANDBOX, "invalid", [](const string &) {});
+  assert(!r.success_);
+  assert(r.output_.find("no recognised build system") == string::npos);
+  assert(r.output_.find("unknown build mode") != string::npos);
+  teardown_sandbox();
+}
+
+//
+// test: Gradle detection via settings.gradle.kts
+//
+static void test_gradle_settings_kts_detection() {
+  setup_sandbox();
+  write_file(SANDBOX + "/settings.gradle.kts", "rootProject.name = \"myapp\"\n");
+  auto r = build_run(SANDBOX, "invalid", [](const string &) {});
+  assert(!r.success_);
+  assert(r.output_.find("no recognised build system") == string::npos);
+  assert(r.output_.find("unknown build mode") != string::npos);
+  teardown_sandbox();
+}
+
+//
+// test: Kotlin file fallback detection (bare .kt file, no build files)
+//
+static void test_kotlin_file_detection() {
+  setup_sandbox();
+  write_file(SANDBOX + "/Main.kt", "fun main() { println(\"hello\") }\n");
+  auto r = build_run(SANDBOX, "invalid", [](const string &) {});
+  assert(!r.success_);
+  assert(r.output_.find("no recognised build system") == string::npos);
+  assert(r.output_.find("unknown build mode") != string::npos);
+  teardown_sandbox();
+}
+
+//
+// test: CMake takes priority over Kotlin files
+//
+static void test_cmake_over_kotlin() {
+  setup_sandbox();
+  write_file(SANDBOX + "/CMakeLists.txt", "cmake_minimum_required(VERSION 3.15)\n");
+  write_file(SANDBOX + "/Main.kt", "fun main() {}\n");
+  fs::create_directories(SANDBOX + "/build");
+  write_file(SANDBOX + "/build/Makefile", "clean:\n\techo 'cmake cleaned'\n");
+  fs::create_directories(SANDBOX + "/tests/build");
+  write_file(SANDBOX + "/tests/build/Makefile", "clean:\n\techo 'cmake tests cleaned'\n");
+
+  auto r = build_run(SANDBOX, "clean", [](const string &) {});
+  assert(r.success_);
+  assert(r.output_.find("cmake cleaned") != string::npos);
+  assert(r.output_.find("gradle") == string::npos);
+  teardown_sandbox();
+}
+
+//
+// test: Gradle takes priority over Kotlin file fallback
+//
+static void test_gradle_over_kotlin_fallback() {
+  setup_sandbox();
+  write_file(SANDBOX + "/build.gradle", "apply plugin: 'kotlin'\n");
+  write_file(SANDBOX + "/Main.kt", "fun main() {}\n");
+  auto r = build_run(SANDBOX, "invalid", [](const string &) {});
+  assert(!r.success_);
+  assert(r.output_.find("no recognised build system") == string::npos);
+  assert(r.output_.find("unknown build mode") != string::npos);
+  teardown_sandbox();
+}
+
+//
+// test: scan_test_count finds Kotlin tests with @Test annotation
+//
+static void test_kotlin_test_scan_at_test() {
+  setup_sandbox();
+  fs::create_directories(SANDBOX + "/tests/src");
+  write_file(SANDBOX + "/tests/src/MyTest.kt",
+    "import org.junit.Test\n"
+    "class MyTest {\n"
+    "  @Test\n"
+    "  fun testFoo() {}\n"
+    "  @Test\n"
+    "  fun testBar() {}\n"
+    "}\n");
+
+  int count = scan_test_count(SANDBOX);
+  assert(count == 2);
+  teardown_sandbox();
+}
+
+//
+// test: scan_test_count finds Kotlin tests with fun test pattern
+//
+static void test_kotlin_test_scan_fun_test() {
+  setup_sandbox();
+  fs::create_directories(SANDBOX + "/tests/src");
+  write_file(SANDBOX + "/tests/src/MyTest.kt",
+    "class MyTest {\n"
+    "  fun testAlpha() {}\n"
+    "  fun testBeta() {}\n"
+    "}\n");
+
+  int count = scan_test_count(SANDBOX);
+  assert(count == 2);
+  teardown_sandbox();
+}
+
+//
+// test: scan_test_count finds mixed Java and Kotlin tests
+//
+static void test_mixed_java_kotlin_test_scan() {
+  setup_sandbox();
+  fs::create_directories(SANDBOX + "/tests/src");
+  write_file(SANDBOX + "/tests/src/JavaTest.java",
+    "import org.junit.Test;\n"
+    "public class JavaTest {\n"
+    "  @Test\n"
+    "  public void testOne() {}\n"
+    "}\n");
+  write_file(SANDBOX + "/tests/src/KotlinTest.kt",
+    "import org.junit.Test\n"
+    "class KotlinTest {\n"
+    "  @Test\n"
+    "  fun testTwo() {}\n"
+    "}\n");
+
+  int count = scan_test_count(SANDBOX);
+  assert(count == 2);
+  teardown_sandbox();
+}
+
+//
+// test: Gradle clean with Android project uses --console=plain
+//
+static void test_gradle_android_clean() {
+  setup_sandbox();
+  write_file(SANDBOX + "/build.gradle",
+    "plugins {\n"
+    "    id 'com.android.application'\n"
+    "}\n");
+  write_file(SANDBOX + "/gradlew",
+    "#!/bin/sh\necho 'gradle android clean: $@'\n");
+  fs::permissions(SANDBOX + "/gradlew",
+                   fs::perms::owner_all | fs::perms::group_read | fs::perms::others_read);
+
+  auto r = build_run(SANDBOX, "clean", [](const string &) {});
+  assert(r.success_);
+  assert(r.output_.find("Cleaning with Gradle") != string::npos);
+  assert(r.output_.find("Clean complete") != string::npos);
+  assert(r.output_.find("--console=plain") != string::npos);
+  teardown_sandbox();
+}
+
+//
+// test: Gradle build with Android project uses assembleDebug
+//
+static void test_gradle_android_build() {
+  setup_sandbox();
+  write_file(SANDBOX + "/build.gradle",
+    "plugins {\n"
+    "    id 'com.android.application'\n"
+    "}\n");
+  write_file(SANDBOX + "/gradlew",
+    "#!/bin/sh\necho 'gradle build: $@'\n");
+  fs::permissions(SANDBOX + "/gradlew",
+                   fs::perms::owner_all | fs::perms::group_read | fs::perms::others_read);
+
+  auto r = build_run(SANDBOX, "build", [](const string &) {});
+  assert(r.success_);
+  assert(r.output_.find("Android: assembleDebug") != string::npos);
+  assert(r.output_.find("assembleDebug") != string::npos);
+  teardown_sandbox();
+}
+
+//
+// test: Gradle test with Android project uses testDebugUnitTest
+//
+static void test_gradle_android_test() {
+  setup_sandbox();
+  write_file(SANDBOX + "/build.gradle",
+    "plugins {\n"
+    "    id 'com.android.application'\n"
+    "}\n");
+  write_file(SANDBOX + "/gradlew",
+    "#!/bin/sh\necho 'gradle test: $@'\n");
+  fs::permissions(SANDBOX + "/gradlew",
+                   fs::perms::owner_all | fs::perms::group_read | fs::perms::others_read);
+
+  auto r = build_run(SANDBOX, "test", [](const string &) {});
+  assert(r.success_);
+  assert(r.output_.find("Android: testDebugUnitTest") != string::npos);
+  assert(r.output_.find("testDebugUnitTest") != string::npos);
+  teardown_sandbox();
+}
+
+//
+// test: Gradle build with non-Android project uses build
+//
+static void test_gradle_non_android_build() {
+  setup_sandbox();
+  write_file(SANDBOX + "/build.gradle",
+    "plugins {\n"
+    "    id 'org.jetbrains.kotlin.jvm'\n"
+    "}\n");
+  write_file(SANDBOX + "/gradlew",
+    "#!/bin/sh\necho 'gradle build: $@'\n");
+  fs::permissions(SANDBOX + "/gradlew",
+                   fs::perms::owner_all | fs::perms::group_read | fs::perms::others_read);
+
+  auto r = build_run(SANDBOX, "build", [](const string &) {});
+  assert(r.success_);
+  assert(r.output_.find("Android") == string::npos);
+  assert(r.output_.find("build") != string::npos);
+  teardown_sandbox();
+}
+
+//
+// test: Gradle test result parsing from XML
+//
+static void test_gradle_test_result_parsing() {
+  setup_sandbox();
+  write_file(SANDBOX + "/build.gradle", "apply plugin: 'java'\n");
+  write_file(SANDBOX + "/gradlew",
+    "#!/bin/sh\necho 'BUILD SUCCESSFUL'\n");
+  fs::permissions(SANDBOX + "/gradlew",
+                   fs::perms::owner_all | fs::perms::group_read | fs::perms::others_read);
+
+  // Create fake test results XML
+  fs::create_directories(SANDBOX + "/build/test-results/test");
+  write_file(SANDBOX + "/build/test-results/test/TEST-com.example.MyTest.xml",
+    "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+    "<testsuite name=\"com.example.MyTest\" tests=\"5\" failures=\"1\" errors=\"0\" skipped=\"0\">\n"
+    "  <testcase name=\"testOne\" classname=\"com.example.MyTest\"/>\n"
+    "  <testcase name=\"testTwo\" classname=\"com.example.MyTest\">\n"
+    "    <failure message=\"assertion failed\"/>\n"
+    "  </testcase>\n"
+    "  <testcase name=\"testThree\" classname=\"com.example.MyTest\"/>\n"
+    "  <testcase name=\"testFour\" classname=\"com.example.MyTest\"/>\n"
+    "  <testcase name=\"testFive\" classname=\"com.example.MyTest\"/>\n"
+    "</testsuite>\n");
+
+  auto r = build_run(SANDBOX, "test", [](const string &) {});
+  // Should report test results from XML
+  assert(r.output_.find("Test results: 4/5 passed") != string::npos);
+  assert(r.output_.find("1 failed") != string::npos);
+  // Should be marked as failed due to test failure
+  assert(!r.success_);
+  teardown_sandbox();
+}
+
+//
+// test: Gradle test with all passing XML results
+//
+static void test_gradle_test_all_passing() {
+  setup_sandbox();
+  write_file(SANDBOX + "/build.gradle", "apply plugin: 'java'\n");
+  write_file(SANDBOX + "/gradlew",
+    "#!/bin/sh\necho 'BUILD SUCCESSFUL'\n");
+  fs::permissions(SANDBOX + "/gradlew",
+                   fs::perms::owner_all | fs::perms::group_read | fs::perms::others_read);
+
+  fs::create_directories(SANDBOX + "/build/test-results/test");
+  write_file(SANDBOX + "/build/test-results/test/TEST-com.example.AllPass.xml",
+    "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+    "<testsuite name=\"com.example.AllPass\" tests=\"3\" failures=\"0\" errors=\"0\" skipped=\"0\">\n"
+    "  <testcase name=\"testA\" classname=\"com.example.AllPass\"/>\n"
+    "  <testcase name=\"testB\" classname=\"com.example.AllPass\"/>\n"
+    "  <testcase name=\"testC\" classname=\"com.example.AllPass\"/>\n"
+    "</testsuite>\n");
+
+  auto r = build_run(SANDBOX, "test", [](const string &) {});
+  assert(r.success_);
+  assert(r.output_.find("Test results: 3/3 passed") != string::npos);
+  teardown_sandbox();
+}
+
+//
+// test: Gradle lint mode with no Kotlin files
+//
+static void test_gradle_lint_no_kotlin() {
+  setup_sandbox();
+  write_file(SANDBOX + "/build.gradle", "apply plugin: 'java'\n");
+  write_file(SANDBOX + "/src/Main.java", "public class Main {}\n");
+  auto r = build_run(SANDBOX, "lint", [](const string &) {});
+  assert(r.success_);
+  assert(r.output_.find("No Kotlin source files found") != string::npos);
+  assert(r.output_.find("Lint complete") != string::npos);
+  teardown_sandbox();
+}
+
+//
+// test: Gradle lint mode with Kotlin files (ktlint not installed)
+//
+static void test_gradle_lint_with_kotlin() {
+  setup_sandbox();
+  write_file(SANDBOX + "/build.gradle", "apply plugin: 'kotlin'\n");
+  fs::create_directories(SANDBOX + "/src");
+  write_file(SANDBOX + "/src/Main.kt", "fun main() { println(\"hello\") }\n");
+  auto r = build_run(SANDBOX, "lint", [](const string &) {});
+  assert(r.success_);
+  assert(r.output_.find("Kotlin file(s) to lint") != string::npos);
+  assert(r.output_.find("Lint complete") != string::npos);
+  teardown_sandbox();
+}
+
+//
+// test: Gradle lint mode is not available for CMake
+//
+static void test_cmake_lint_still_works() {
+  setup_sandbox();
+  write_file(SANDBOX + "/CMakeLists.txt", "cmake_minimum_required(VERSION 3.15)\n");
+  // CMake lint should work (may fail due to no compile_commands.json,
+  // but should not say "only supported for CMake and Gradle")
+  auto r = build_run(SANDBOX, "lint", [](const string &) {});
+  // Should NOT get the "only supported" error
+  assert(r.output_.find("only supported for CMake and Gradle") == string::npos);
+  teardown_sandbox();
+}
+
+//
+// test: Gradle lint mode is not available for Python
+//
+static void test_python_lint_not_supported() {
+  setup_sandbox();
+  write_file(SANDBOX + "/pyproject.toml", "[project]\nname = \"test\"\n");
+  auto r = build_run(SANDBOX, "lint", [](const string &) {});
+  assert(!r.success_);
+  assert(r.output_.find("only supported for CMake and Gradle") != string::npos);
+  teardown_sandbox();
+}
+
+//
+// test: Gradle setup with Android project checks local.properties
+//
+static void test_gradle_setup_android() {
+  setup_sandbox();
+  write_file(SANDBOX + "/build.gradle",
+    "plugins {\n"
+    "    id 'com.android.application'\n"
+    "}\n");
+  write_file(SANDBOX + "/settings.gradle", "rootProject.name = 'myapp'\n");
+  write_file(SANDBOX + "/gradlew", "#!/bin/sh\necho gradlew\n");
+  fs::permissions(SANDBOX + "/gradlew",
+                   fs::perms::owner_all | fs::perms::group_read | fs::perms::others_read);
+  // No local.properties - should warn
+  auto r = build_run(SANDBOX, "setup", [](const string &) {});
+  assert(r.output_.find("Android project detected") != string::npos);
+  assert(r.output_.find("local.properties") != string::npos);
+  assert(r.output_.find("settings.gradle found") != string::npos);
+  teardown_sandbox();
+}
+
+//
+// test: Gradle setup with Kotlin source files reports count
+//
+static void test_gradle_setup_kotlin_count() {
+  setup_sandbox();
+  write_file(SANDBOX + "/build.gradle", "apply plugin: 'kotlin'\n");
+  write_file(SANDBOX + "/gradlew", "#!/bin/sh\necho gradlew\n");
+  fs::permissions(SANDBOX + "/gradlew",
+                   fs::perms::owner_all | fs::perms::group_read | fs::perms::others_read);
+  fs::create_directories(SANDBOX + "/src");
+  write_file(SANDBOX + "/src/Main.kt", "fun main() {}\n");
+  write_file(SANDBOX + "/src/Util.kt", "fun helper() {}\n");
+
+  auto r = build_run(SANDBOX, "setup", [](const string &) {});
+  assert(r.output_.find("2 Kotlin source file") != string::npos);
+  teardown_sandbox();
+}
+
+//
+// test: Gradle setup with AndroidManifest.xml detection
+//
+static void test_gradle_setup_android_manifest() {
+  setup_sandbox();
+  write_file(SANDBOX + "/build.gradle",
+    "plugins {\n"
+    "    id 'com.android.application'\n"
+    "}\n");
+  write_file(SANDBOX + "/gradlew", "#!/bin/sh\necho gradlew\n");
+  fs::permissions(SANDBOX + "/gradlew",
+                   fs::perms::owner_all | fs::perms::group_read | fs::perms::others_read);
+  fs::create_directories(SANDBOX + "/app/src/main");
+  write_file(SANDBOX + "/app/src/main/AndroidManifest.xml",
+    "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n"
+    "<manifest package=\"com.example.app\"/>\n");
+  write_file(SANDBOX + "/local.properties", "sdk.dir=/opt/android-sdk\n");
+
+  auto r = build_run(SANDBOX, "setup", [](const string &) {});
+  assert(r.output_.find("Android project detected") != string::npos);
+  assert(r.output_.find("AndroidManifest.xml found") != string::npos);
+  assert(r.output_.find("local.properties found") != string::npos);
+  teardown_sandbox();
+}
+
 void build_test() {
   RUN_TEST(test_no_build_system);
   RUN_TEST(test_unknown_mode);
@@ -452,4 +849,26 @@ void build_test() {
   RUN_TEST(test_maven_test_dir_root);
   RUN_TEST(test_maven_test_dir_subdir);
   RUN_TEST(test_maven_test_dir_nested_packages);
+  // Kotlin/Android tests
+  RUN_TEST(test_gradle_settings_detection);
+  RUN_TEST(test_gradle_settings_kts_detection);
+  RUN_TEST(test_kotlin_file_detection);
+  RUN_TEST(test_cmake_over_kotlin);
+  RUN_TEST(test_gradle_over_kotlin_fallback);
+  RUN_TEST(test_kotlin_test_scan_at_test);
+  RUN_TEST(test_kotlin_test_scan_fun_test);
+  RUN_TEST(test_mixed_java_kotlin_test_scan);
+  RUN_TEST(test_gradle_android_clean);
+  RUN_TEST(test_gradle_android_build);
+  RUN_TEST(test_gradle_android_test);
+  RUN_TEST(test_gradle_non_android_build);
+  RUN_TEST(test_gradle_test_result_parsing);
+  RUN_TEST(test_gradle_test_all_passing);
+  RUN_TEST(test_gradle_lint_no_kotlin);
+  RUN_TEST(test_gradle_lint_with_kotlin);
+  RUN_TEST(test_cmake_lint_still_works);
+  RUN_TEST(test_python_lint_not_supported);
+  RUN_TEST(test_gradle_setup_android);
+  RUN_TEST(test_gradle_setup_kotlin_count);
+  RUN_TEST(test_gradle_setup_android_manifest);
 }
