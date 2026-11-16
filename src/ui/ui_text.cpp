@@ -175,8 +175,7 @@ void settings(Tui &tui, HaliConfig &cfg) {
 
   tui.append_line(ICON_SYS + "── Paths ──────────────────────────────────────");
   tui.append_line(ICON_SYS + "  sandbox         : " + cfg.sandbox_);
-  tui.append_line(ICON_SYS + "  config          : " + cfg.config_);
-  tui.append_line(ICON_SYS + "  saved to        : " + cfg.settings_path());
+  tui.append_line(ICON_SYS + "  settings        : " + cfg.settings_path());
 
   tui.append_line(ICON_SYS + "── Access ─────────────────────────────────────");
   if (!cfg.extra_dirs_.empty()) {

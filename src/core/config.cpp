@@ -69,14 +69,19 @@ std::string HaliConfig::kv_preset_to_string() const {
 
 //
 // Settings persistence  (<sandbox>/.hali/settings.json)
-// Returns the canonical settings path: <sandbox>/.hali/settings.json
+// Returns the canonical settings path, or the -c override if set.
 //
 std::string HaliConfig::settings_path() const {
-  // Attempt to read settings from the current working directory first
-  if (fs::exists(config_)) {
+  if (!config_.empty() && fs::exists(config_)) {
     return config_;
   }
   return sandbox_ + "/.hali/settings.json";
+}
+
+void HaliConfig::set_config(const std::string &config) {
+  if (fs::exists(config)) {
+    config_ = config;
+  }
 }
 
 std::string history_path(const std::string &sandbox) {
@@ -85,12 +90,6 @@ std::string history_path(const std::string &sandbox) {
 
 std::string usage_log_path(const std::string &sandbox) {
   return sandbox + "/.hali/usage_log.json";
-}
-
-void HaliConfig::set_config(const std::string &config) {
-  if (fs::exists(config)) {
-    config_ = config;
-  }
 }
 
 // Load settings from disk into cfg.  Fields present in the file overwrite
@@ -756,7 +755,7 @@ std::string HaliConfig::introspect() const {
   root.set_arr("extra_dirs", extra_dirs_);
 
   // Filter out auto-included knowledge files so they are not persisted
-  // to config.json — they are re-discovered at startup.
+  // to settings.json — they are re-discovered at startup.
   std::vector<std::string> user_kf;
   for (const auto &kf : knowledge_files_) {
     if (std::find(AUTO_KNOWLEDGE_FILES.begin(), AUTO_KNOWLEDGE_FILES.end(), kf)

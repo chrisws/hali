@@ -51,7 +51,7 @@ struct HaliConfig {
   std::string embed_path_;
   bool  enabled_backups_ = false;
   std::string sandbox_; // not a recorded setting
-  std::string config_ = ".hali/config.json";
+  std::string config_;  // optional override path (set via -c flag)
 
   float min_p_          = 0.0f;
   float penalty_freq_   = 0.0f;
@@ -126,7 +126,7 @@ struct HaliConfig {
   std::vector<std::string> knowledge_files_;
   std::vector<std::string> rag_files_;
 
-  // Files auto-discovered at startup; excluded from config.json persistence.
+  // Files auto-discovered at startup; excluded from settings.json persistence.
   static const std::vector<std::string> AUTO_KNOWLEDGE_FILES;
 
   // Extra directories allowed for read-only access (READ, SEARCH, LIST, EXISTS)

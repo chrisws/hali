@@ -102,18 +102,20 @@ static void test_rag_enabled_set_value() {
 }
 
 static void test_rag_enabled_load() {
-  const string path = "/tmp/hali_test_rag_enabled.json";
+  const string sandbox = "/tmp/hali_test_rag_enabled";
+  const string path = sandbox + "/.hali/settings.json";
   const string content =
     "{\n"
     "  \"rag\": { \"embed_path\": \"/tmp/bert.gguf\", \"top_k\": 5, \"enabled\": false }\n"
     "}\n";
   {
+    std::filesystem::create_directories(sandbox + "/.hali");
     ofstream f(path);
     f << content;
   }
 
   HaliConfig cfg;
-  cfg.set_config(path);
+  cfg.sandbox_ = sandbox;
   cfg.load_settings();
 
   assert(cfg.rag_enabled_ == false);
@@ -131,7 +133,7 @@ static void test_rag_enabled_load() {
   assert(enabled == false);
 
   std::error_code ec;
-  std::filesystem::remove(path, ec);
+  std::filesystem::remove_all(sandbox, ec);
 
   cout << "test_rag_enabled_load passed" << endl;
 }
@@ -252,7 +254,8 @@ static void test_introspect_nested() {
 
 static void test_load_settings_nested() {
   // Write a temp config file
-  const string path = "/tmp/hali_test_config.json";
+  const string sandbox = "/tmp/hali_test_config";
+  const string path = sandbox + "/.hali/settings.json";
   const string content =
     "{\n"
     "  \"model\": { \"path\": \"/tmp/a.gguf\", \"n_ctx\": 1234, \"temperature\": 0.7 },\n"
@@ -262,12 +265,13 @@ static void test_load_settings_nested() {
     "  \"logging\": { \"level\": \"3\", \"file\": \"/tmp/test.log\" }\n"
     "}\n";
   {
+    std::filesystem::create_directories(sandbox + "/.hali");
     ofstream f(path);
     f << content;
   }
 
   HaliConfig cfg;
-  cfg.set_config(path);
+  cfg.sandbox_ = sandbox;
   cfg.load_settings();
 
   assert(cfg.model_path_ == "/tmp/a.gguf");
@@ -284,7 +288,7 @@ static void test_load_settings_nested() {
 
   // Cleanup
   std::error_code ec;
-  std::filesystem::remove(path, ec);
+  std::filesystem::remove_all(sandbox, ec);
 
   cout << "test_load_settings_nested passed" << endl;
 }
@@ -327,18 +331,20 @@ static void test_log_erase_default() {
 }
 
 static void test_log_erase_load() {
-  const string path = "/tmp/hali_test_erase.json";
+  const string sandbox = "/tmp/hali_test_erase";
+  const string path = sandbox + "/.hali/settings.json";
   const string content =
     "{\n"
     "  \"logging\": { \"level\": \"1\", \"file\": \"/tmp/erase_test.log\", \"erase\": true }\n"
     "}\n";
   {
+    std::filesystem::create_directories(sandbox + "/.hali");
     ofstream f(path);
     f << content;
   }
 
   HaliConfig cfg;
-  cfg.set_config(path);
+  cfg.sandbox_ = sandbox;
   cfg.load_settings();
 
   assert(cfg.log_erase_ == true);
@@ -356,7 +362,7 @@ static void test_log_erase_load() {
 
   // Cleanup
   std::error_code ec;
-  std::filesystem::remove(path, ec);
+  std::filesystem::remove_all(sandbox, ec);
 
   cout << "test_log_erase_load passed" << endl;
 }
@@ -374,7 +380,8 @@ static void test_controls_defaults() {
 }
 
 static void test_controls_load() {
-  const string path = "/tmp/hali_test_controls.json";
+  const string sandbox = "/tmp/hali_test_controls";
+  const string path = sandbox + "/.hali/settings.json";
   const string content =
     "{\n"
     "  \"controls\": {\n"
@@ -386,12 +393,13 @@ static void test_controls_load() {
     "  }\n"
     "}\n";
   {
+    std::filesystem::create_directories(sandbox + "/.hali");
     ofstream f(path);
     f << content;
   }
 
   HaliConfig cfg;
-  cfg.set_config(path);
+  cfg.sandbox_ = sandbox;
   cfg.load_settings();
 
   assert(cfg.disable_write_validate_ == true);
@@ -419,7 +427,7 @@ static void test_controls_load() {
   assert(wsw == 8000);
 
   std::error_code ec;
-  std::filesystem::remove(path, ec);
+  std::filesystem::remove_all(sandbox, ec);
 
   cout << "test_controls_load passed" << endl;
 }
