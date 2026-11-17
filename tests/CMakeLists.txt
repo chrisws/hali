@@ -94,6 +94,7 @@ add_executable(hali_tests
   src/webview_stub.cpp
   src/utf8_test.cpp
   src/file_test.cpp
+  src/file_test_io.cpp
   src/graph_test.cpp
   src/string_utils_test.cpp
   src/mcp_format_test.cpp
