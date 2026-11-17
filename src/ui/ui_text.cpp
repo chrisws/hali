@@ -157,6 +157,7 @@ void settings(Tui &tui, HaliConfig &cfg) {
   tui.append_line(ICON_SYS + "── Controls ───────────────────────────────────");
   tui.append_line(ICON_SYS + "  permission_prompt      : " + bool_str(cfg.permission_prompt_));
   tui.append_line(ICON_SYS + "  disable_run            : " + bool_str(cfg.disable_run_));
+  tui.append_line(ICON_SYS + "  disable_move           : " + bool_str(cfg.disable_move_));
   tui.append_line(ICON_SYS + "  disable_save_on_exit   : " + bool_str(cfg.disable_save_on_exit_));
   tui.append_line(ICON_SYS + "  disable_write_validate : " + bool_str(cfg.disable_write_validate_));
   tui.append_line(ICON_SYS + "  disable_patch_validate : " + bool_str(cfg.disable_patch_validate_));

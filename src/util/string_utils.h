@@ -93,6 +93,12 @@ namespace utils {
   //
   bool path_allowed(const std::string &sandbox, const std::vector<std::string> &extra_dirs, const std::string &path);
 
+  //
+  // Validate a raw path argument for safety (length, line breaks, control chars).
+  // Returns empty string if valid, or an error message if not.
+  //
+  std::string validate_path_arg(const std::string &path);
+
 } // namespace utils
 
 

@@ -212,6 +212,7 @@ void HaliConfig::load_settings() {
     controls.get_bool("permission_prompt", permission_prompt_);
     controls.get_bool("disable_run", disable_run_);
     controls.get_bool("disable_curl", disable_curl_);
+    controls.get_bool("disable_move", disable_move_);
     controls.get_bool("disable_save_on_exit", disable_save_on_exit_);
     controls.get_bool("disable_write_validate", disable_write_validate_);
     controls.get_bool("disable_patch_validate", disable_patch_validate_);
@@ -443,7 +444,11 @@ std::string HaliConfig::prompt_core() const {
     "  TOOL:RESTART               restart after writing current task context to `.hali/SESSION.md`\n"
     "  TOOL:GUI    <help|html|input|clear>  display HTML, check input, or clear browser\n"
     "  TOOL:LINE_EDIT <read|write|insert|delete|copy|cut|paste|show|clear> <file> [args]  line-level file editing (1-based lines)\n"
-    "  TOOL:SCREEN   <save|show|restore|list|clear> [name]  save/restore display snapshots\n\n"
+    "  TOOL:SCREEN   <save|show|restore|list|clear> [name]  save/restore display snapshots\n";
+  if (!disable_move_) {
+    p += "  TOOL:MOVE   <source> <destination>  move/rename a file or directory\n";
+  }
+  p += "\n"
 
     "## Tool Decision Rules\n"
     "Use tools ONLY if:\n"
@@ -740,6 +745,7 @@ std::string HaliConfig::introspect() const {
   controls.set_bool("permission_prompt", permission_prompt_);
   controls.set_bool("disable_run", disable_run_);
   controls.set_bool("disable_curl", disable_curl_);
+  controls.set_bool("disable_move", disable_move_);
   controls.set_bool("disable_save_on_exit", disable_save_on_exit_);
   controls.set_bool("disable_write_validate", disable_write_validate_);
   controls.set_bool("disable_patch_validate", disable_patch_validate_);

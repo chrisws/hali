@@ -322,6 +322,37 @@ void run_split_tests() {
 
 static void run_strip_html_tests();
 
+static void test_validate_path_arg() {
+  // Valid paths return empty string
+  assert(utils::validate_path_arg("foo.txt") == "");
+  assert(utils::validate_path_arg("src/core/config.cpp") == "");
+  assert(utils::validate_path_arg(".hali/settings.json") == "");
+  assert(utils::validate_path_arg("a") == "");
+
+  // Exactly 255 chars is valid
+  string long_ok(255, 'a');
+  assert(utils::validate_path_arg(long_ok) == "");
+
+  // 256 chars is too long
+  string too_long(256, 'a');
+  assert(utils::validate_path_arg(too_long) == "ERROR: path too long (max 255 characters)");
+
+  // Line breaks
+  assert(utils::validate_path_arg("foo\nbar") == "ERROR: path contains line breaks");
+  assert(utils::validate_path_arg("foo\rbar") == "ERROR: path contains line breaks");
+  assert(utils::validate_path_arg("line1\nline2\nline3") == "ERROR: path contains line breaks");
+
+  // Control characters
+  assert(utils::validate_path_arg("foo\x01bar") == "ERROR: path contains control characters");
+  assert(utils::validate_path_arg("foo\x00bar") == "ERROR: path contains control characters");
+  assert(utils::validate_path_arg("foo\tbar") == "ERROR: path contains control characters");
+
+  // Empty string is valid (no chars to check)
+  assert(utils::validate_path_arg("") == "");
+
+  cout << "test_validate_path_arg passed" << endl;
+}
+
 void string_utils_test() {
   test_starts_with();
   test_ends_with();
@@ -331,6 +362,7 @@ void string_utils_test() {
   test_trim_string_view();
   run_split_tests();
   run_strip_html_tests();
+  test_validate_path_arg();
   cout << "\nAll string_utils tests passed!\n" << endl;
 }
 

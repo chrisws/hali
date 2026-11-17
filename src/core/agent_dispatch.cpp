@@ -50,6 +50,9 @@ std::string Agent::handle_file_write(const std::string &tool_name,
                                      const ExecuteFn &execute) {
   tui_.show_tool(tool_name + ": " + path_arg);
   turn_.files_written++;
+  if (auto err = utils::validate_path_arg(path_arg); !err.empty()) {
+    return err;
+  }
   const auto path = utils::resolve_path(cfg_.sandbox_, path_arg);
   if (!utils::path_in_sandbox(cfg_.sandbox_, path)) {
     return "ERROR: path outside sandbox";
@@ -702,6 +705,9 @@ ToolMap Agent::build_tool_dispatch() {
                              });
   };
   tools["TOOL:MKDIR"] = [this](const std::string &a1, const std::string &a2) -> std::string {
+    if (auto err = utils::validate_path_arg(a1); !err.empty()) {
+      return err;
+    }
     std::string p = utils::resolve_path(cfg_.sandbox_, a1);
     tui_.show_tool("mkdir: " + a1);
     if (!utils::path_in_sandbox(cfg_.sandbox_, p)) {
@@ -710,8 +716,17 @@ ToolMap Agent::build_tool_dispatch() {
     return make_dir(p) ? "OK: created " + a1 : "ERROR: mkdir failed for " + a1;
   };
   tools["TOOL:MOVE"] = [this](const std::string &a1, const std::string &a2) -> std::string {
+    if (cfg_.disable_move_) {
+      return "ERROR: TOOL:MOVE is disabled by configuration";
+    }
     if (a2.empty()) {
       return "ERROR: usage: TOOL:MOVE <source> <destination>";
+    }
+    if (auto err = utils::validate_path_arg(a1); !err.empty()) {
+      return err;
+    }
+    if (auto err = utils::validate_path_arg(a2); !err.empty()) {
+      return err;
     }
     const auto src = utils::resolve_path(cfg_.sandbox_, a1);
     const auto dst = utils::resolve_path(cfg_.sandbox_, a2);

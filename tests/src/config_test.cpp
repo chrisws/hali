@@ -374,6 +374,7 @@ static void test_controls_defaults() {
   assert(cfg.permission_prompt_ == false);
   assert(cfg.disable_run_ == false);
   assert(cfg.disable_curl_ == false);
+  assert(cfg.disable_move_ == false);
   assert(cfg.disable_save_on_exit_ == false);
   assert(cfg.val_write_size_warn_ == 1000);
   cout << "test_controls_defaults passed" << endl;
@@ -468,6 +469,27 @@ static void test_disable_curl_prompt() {
   cout << "test_disable_curl_prompt passed" << endl;
 }
 
+static void test_disable_move_prompt() {
+  HaliConfig cfg;
+  cfg.sandbox_ = "/tmp/sandbox";
+
+  // Default (false): TOOL:MOVE should be present
+  string prompt = cfg.build_system_prompt();
+  assert(prompt.find("TOOL:MOVE") != string::npos);
+
+  // Disabled: TOOL:MOVE should NOT be present
+  cfg.disable_move_ = true;
+  prompt = cfg.build_system_prompt();
+  assert(prompt.find("TOOL:MOVE") == string::npos);
+
+  // Re-enabled: TOOL:MOVE should be present
+  cfg.disable_move_ = false;
+  prompt = cfg.build_system_prompt();
+  assert(prompt.find("TOOL:MOVE") != string::npos);
+
+  cout << "test_disable_move_prompt passed" << endl;
+}
+
 static void test_introspect_knowledge_files_filter() {
   HaliConfig cfg;
 
@@ -520,6 +542,7 @@ void config_test() {
   test_controls_defaults();
   test_controls_load();
   test_disable_curl_prompt();
+  test_disable_move_prompt();
   test_system_prompt_extra_dirs();
   test_introspect_knowledge_files_filter();
   cout << "\nAll config tests passed!\n" << endl;

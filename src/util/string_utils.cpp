@@ -401,4 +401,19 @@ bool path_allowed(const std::string &sandbox, const std::vector<std::string> &ex
   return false;
 }
 
+std::string validate_path_arg(const std::string &path) {
+  if (path.size() > 255) {
+    return "ERROR: path too long (max 255 characters)";
+  }
+  if (path.find('\n') != std::string::npos || path.find('\r') != std::string::npos) {
+    return "ERROR: path contains line breaks";
+  }
+  for (unsigned char c : path) {
+    if (c < 0x20) {
+      return "ERROR: path contains control characters";
+    }
+  }
+  return "";
+}
+
 }
