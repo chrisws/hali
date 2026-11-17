@@ -18,6 +18,7 @@ std::string tool_patch(const std::string& filename, const std::string& patch_str
 std::string tool_patch_validate(const std::string& filename, const std::string& patch_str);
 std::string tool_write(const std::string &path, const std::string &data);
 std::string tool_write_backup(const std::string &backup_path, const std::string &path);
+std::string tool_move(const std::string &src, const std::string &dst);
 std::string tool_write_validate(const std::string &path, const std::string &data,
                                 int size_warn = 1000);
 std::string read_file(const std::string &path);

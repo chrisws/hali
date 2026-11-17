@@ -449,6 +449,49 @@ std::string tool_write_backup(const std::string &backup_path, const std::string 
 }
 
 //
+// tool_move - move a file from src to dst within the sandbox
+//
+std::string tool_move(const std::string &src, const std::string &dst) {
+  if (!path_is_valid(src)) {
+    return "ERROR: source path outside sandbox";
+  }
+  if (!path_is_valid(dst)) {
+    return "ERROR: destination path outside sandbox";
+  }
+
+  fs::path s(src);
+  fs::path d(dst);
+
+  // Source must exist
+  if (!fs::exists(s)) {
+    return "ERROR: source file not found: " + src;
+  }
+
+  // Destination must not already exist
+  if (fs::exists(d)) {
+    return "ERROR: destination already exists: " + dst;
+  }
+
+  // Create parent directories for destination if needed
+  if (d.has_parent_path()) {
+    std::error_code ec;
+    fs::create_directories(d.parent_path(), ec);
+    if (ec) {
+      return "ERROR: cannot create destination directory: " + ec.message();
+    }
+  }
+
+  // Perform the move
+  std::error_code ec;
+  fs::rename(s, d, ec);
+  if (ec) {
+    return "ERROR: move failed: " + ec.message();
+  }
+
+  return "OK: moved " + src + " -> " + dst;
+}
+
+//
 // read_file - read a file up to MAX_READ_SIZE bytes
 //
 static constexpr size_t MAX_READ_SIZE = 32 * 1024; // 32 KB

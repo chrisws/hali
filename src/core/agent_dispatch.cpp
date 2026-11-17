@@ -709,6 +709,21 @@ ToolMap Agent::build_tool_dispatch() {
     }
     return make_dir(p) ? "OK: created " + a1 : "ERROR: mkdir failed for " + a1;
   };
+  tools["TOOL:MOVE"] = [this](const std::string &a1, const std::string &a2) -> std::string {
+    if (a2.empty()) {
+      return "ERROR: usage: TOOL:MOVE <source> <destination>";
+    }
+    const auto src = utils::resolve_path(cfg_.sandbox_, a1);
+    const auto dst = utils::resolve_path(cfg_.sandbox_, a2);
+    tui_.show_tool("move: " + a1 + " -> " + a2);
+    if (!utils::path_in_sandbox(cfg_.sandbox_, src)) {
+      return "ERROR: source path outside sandbox";
+    }
+    if (!utils::path_in_sandbox(cfg_.sandbox_, dst)) {
+      return "ERROR: destination path outside sandbox";
+    }
+    return tool_move(src, dst);
+  };
   tools["TOOL:CURL"] = [this](const std::string &a1, const std::string &a2) -> std::string {
     if (cfg_.disable_curl_) {
       return "ERROR: TOOL:CURL is disabled by configuration";
