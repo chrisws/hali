@@ -72,15 +72,15 @@ std::string HaliConfig::kv_preset_to_string() const {
 // Returns the canonical settings path, or the -c override if set.
 //
 std::string HaliConfig::settings_path() const {
-  if (!config_.empty() && fs::exists(config_)) {
-    return config_;
+  if (!override_path_.empty() && fs::exists(override_path_)) {
+    return override_path_;
   }
   return sandbox_ + "/.hali/settings.json";
 }
 
 void HaliConfig::set_config(const std::string &config) {
   if (fs::exists(config)) {
-    config_ = config;
+    override_path_ = config;
   }
 }
 

@@ -50,8 +50,8 @@ struct HaliConfig {
   std::string model_path_;
   std::string embed_path_;
   bool  enabled_backups_ = false;
-  std::string sandbox_; // not a recorded setting
-  std::string config_;  // optional override path (set via -c flag)
+  std::string sandbox_;       // not a recorded setting
+  std::string override_path_; // optional -c override; empty means use settings.json
 
   float min_p_          = 0.0f;
   float penalty_freq_   = 0.0f;
