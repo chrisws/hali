@@ -320,17 +320,18 @@ bool Llama::mtp_round(llama_token anchor, vector<llama_token> &accepted, llama_t
       _mtp.verify_pos[i + 1]  = P + 1 + i;
     }
 
-    llama_batch batch = {
-      n,
-      _mtp.verify_toks.data(),
-      nullptr,
-      _mtp.verify_pos.data(),
-      _mtp.verify_n_seq.data(),
-      _mtp.verify_seq_ptrs.data(),
-      _mtp.verify_logits.data()
-    };
+    auto * batch = llama_batch_ext_init(_ctx);
+    for (int j = 0; j < n; j++) {
+      int32_t idx = llama_batch_ext_add_token(batch, _mtp.verify_seq_ptrs[j][0], _mtp.verify_toks[j]);
+      for (int s = 1; s < _mtp.verify_n_seq[j]; s++) {
+        llama_batch_ext_add_seq(batch, idx, _mtp.verify_seq_ptrs[j][s]);
+      }
+      llama_batch_ext_set_pos(batch, idx, &_mtp.verify_pos[j]);
+      llama_batch_ext_set_output_logits(batch, idx, _mtp.verify_logits[j] != 0);
+    }
 
-    const int rc = llama_decode(_ctx, batch);
+    const int rc = llama_process(_ctx, LLAMA_PROCESS_TYPE_DECODE, batch);
+    llama_batch_ext_free(batch);
     if (rc != 0) {
       if (log_is_enabled(LEVEL_DEBUG)) {
         log_write(LEVEL_DEBUG, "mtp", "HALI: MTP: verify decode failed rc=%d (k=%d pos=%d)", rc, k, (int)P);
@@ -760,10 +761,16 @@ bool Llama::configure_mtp_sampler() {
 
 bool Llama::decode_anchor(llama_token tok) {
   auto t0 = std::chrono::high_resolution_clock::now();
-  llama_batch batch = llama_batch_get_one(&tok, 1);
-  if (llama_decode(_ctx, batch)) {
+  auto * batch = llama_batch_ext_init(_ctx);
+  int32_t idx = llama_batch_ext_add_token(batch, 0, tok);
+  llama_pos pos = _tokens_physically_used;
+  llama_batch_ext_set_pos(batch, idx, &pos);
+  llama_batch_ext_set_output_logits(batch, idx, true);
+  if (llama_process(_ctx, LLAMA_PROCESS_TYPE_DECODE, batch)) {
+    llama_batch_ext_free(batch);
     return false;
   }
+  llama_batch_ext_free(batch);
   _tokens_physically_used += 1;
   sync_and_capture_mtp(&tok, 1, (llama_pos)(_tokens_physically_used - 1));
   _mtp.time_cpu += std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - t0).count();

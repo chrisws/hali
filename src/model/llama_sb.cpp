@@ -400,11 +400,17 @@ bool Llama::add_message(LlamaIter &iter, const string &role, const string &conte
       decoder_start_token_id = llama_vocab_bos(_vocab);
     }
 
-    llama_batch decoder_batch = llama_batch_get_one(&decoder_start_token_id, 1);
-    if (llama_decode(_ctx, decoder_batch)) {
+    auto * decoder_batch = llama_batch_ext_init(_ctx);
+    int32_t d_idx = llama_batch_ext_add_token(decoder_batch, 0, decoder_start_token_id);
+    llama_pos d_pos = _tokens_physically_used;
+    llama_batch_ext_set_pos(decoder_batch, d_idx, &d_pos);
+    llama_batch_ext_set_output_logits(decoder_batch, d_idx, true);
+    if (llama_process(_ctx, LLAMA_PROCESS_TYPE_DECODE, decoder_batch)) {
       set_last_error("Failed to evaluate decoder start token");
+      llama_batch_ext_free(decoder_batch);
       return false;
     }
+    llama_batch_ext_free(decoder_batch);
     _tokens_physically_used += 1;
   }
 
@@ -610,27 +616,39 @@ bool Llama::batch_decode_tokens(vector<llama_token> &tokens) {
   uint32_t n_batch = llama_n_batch(_ctx);
   for (size_t i = 0; i < tokens.size(); i += n_batch) {
     size_t batch_size = std::min((size_t)n_batch, tokens.size() - i);
-    llama_batch batch = llama_batch_get_one(tokens.data() + i, batch_size);
-    int result = llama_decode(_ctx, batch);
+    auto * batch = llama_batch_ext_init(_ctx);
+    for (size_t j = 0; j < batch_size; j++) {
+      int32_t idx = llama_batch_ext_add_token(batch, 0, tokens[i + j]);
+      llama_pos pos = _tokens_physically_used + (llama_pos)j;
+      llama_batch_ext_set_pos(batch, idx, &pos);
+      // Only the last token in the final batch needs logits for sampling
+      if (j == batch_size - 1 && i + batch_size == tokens.size()) {
+        llama_batch_ext_set_output_logits(batch, idx, true);
+      }
+    }
+    int result = llama_process(_ctx, LLAMA_PROCESS_TYPE_DECODE, batch);
     if (result == 1) {
       // KV full - make_space_for_tokens will either confirm there's room,
       // or force a full reset (clearing system tokens too) and signal
       // _memory_flush so the caller knows to replay the system prompt.
       if (!make_space_for_tokens((int)batch_size)) {
         set_decode_error(result, (int)i, (int)tokens.size());
+        llama_batch_ext_free(batch);
         return false;
       }
-      result = llama_decode(_ctx, batch);
+      result = llama_process(_ctx, LLAMA_PROCESS_TYPE_DECODE, batch);
     }
     if (result != 0) {
       // No more fallback: if this still fails after a confirmed-clear or
       // confirmed-room retry, it's a genuine, unexpected failure, not
       // something a second flush would fix.
       set_decode_error(result, (int)i, (int)tokens.size());
+      llama_batch_ext_free(batch);
       return false;
     }
     _tokens_physically_used += batch_size;
     sync_and_capture_mtp(tokens.data() + i, (int)batch_size, (llama_pos)(_tokens_physically_used - batch_size));
+    llama_batch_ext_free(batch);
   }
   return true;
 }
