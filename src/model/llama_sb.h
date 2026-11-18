@@ -14,6 +14,7 @@
 #include <string>
 #include <utility>
 #include <vector>
+#include "engine.h"
 #include "llama.h"
 #include "speculative.h"
 #include "sampling.h"
@@ -26,80 +27,9 @@ struct RagDB;
 struct RagSession;
 struct RagLibrary;
 
-enum class KVCachePreset {
-  F16,       // ggml_type F16/F16, flash attn on - max quality, most VRAM
-  Balanced,  // type Q8_0/Q8_0, flash attn on - good middle ground
-  Compact,   // type Q4_0/Q4_0, flash attn on - max memory savings
-};
-
-struct LlamaMemoryInfo {
-  // KV cache
-  int     kv_used;        // slots currently used
-  int     kv_total;       // total slots (== n_ctx)
-  float   kv_percent;     // kv_used / kv_total
-
-  // GPU VRAM (via ggml backend)
-  size_t  vram_used;      // bytes
-  size_t  vram_total;     // bytes
-  float   vram_percent;
-
-  // Model layers (offloadable tensor slots: n_layer_all + 1)
-  int     n_layers_total; // total offloadable slots (transformer layers + output tensor)
-  int     n_layers_gpu;   // slots offloaded to GPU
-  int     n_layers_cpu;   // slots on CPU
-  int     model_native_max_ctx;
-
-  // Advice
-  string  advice;
-};
-
-struct LlamaIter {
-  explicit LlamaIter();
-  ~LlamaIter() = default;
-
-  // move constructor
-  LlamaIter(LlamaIter &&other) noexcept;
-
-  // delete the copy
-  LlamaIter(const LlamaIter &) = delete;
-  LlamaIter &operator=(const LlamaIter &) = delete;
-
-  Llama *_llama;
-  string _last_word;
-  string _tail;
-  chrono::high_resolution_clock::time_point _t_start;
-  int _repetition_count;
-  int _tokens_generated;
-  bool _has_next;
-  bool _ignore_stop;
-};
-
-struct LlamaLoad {
-  string model_path;
-  int n_ctx;
-  int n_batch;
-  int n_ubatch;
-  int n_gpu_layers;
-  int log_level;
-  bool offload_kqv;
-  int n_threads;        // threads for single-token generation
-  int n_threads_batch;  // threads for prompt / batch processing
-  // Context extension (relevant when VRAM caps n_ctx)
-  enum llama_rope_scaling_type rope_scaling_type = LLAMA_ROPE_SCALING_TYPE_UNSPECIFIED;
-  float rope_freq_scale = 0.0f;  // 0 = use model default
-  KVCachePreset kv_cache_preset;
-  // MTP (Multi-Token Prediction) speculative decoding
-  bool mtp_enabled = true;   // auto-detect if true, force off if false
-  int  mtp_n_max = 3;        // max draft tokens per step
-  int  mtp_n_min = 0;        // min accepted tokens to use MTP
-  float mtp_p_min = 0.0f;    // min probability threshold for draft acceptance
-  float mtp_pos_threshold = 0.30f; // initial per-position acceptance threshold
-  bool mtp_adaptive = true;  // enable self-tuning of MTP parameters
-  // Suffix drafting (plan 08)
-  bool suffix_enabled = false;
-  int  suffix_ngram = 4;
-  int  suffix_max_draft = 2;
-};
+using LlamaMemoryInfo = ModelMemoryInfo;
+using LlamaIter = ModelIter;
+using LlamaLoad = ModelLoad;
 
 // ---------------------------------------------------------------------------
 // MTP (Multi-Token Prediction) speculative decoding state
@@ -270,7 +200,7 @@ struct MtpState {
   }
 };
 
-struct Llama {
+struct Llama : public Engine {
   explicit Llama();
 
   // move constructor
@@ -308,7 +238,7 @@ struct Llama {
   const char *last_error() const { return _last_error.c_str(); }
   void set_log_level(int level) { _log_level = level; }
   void reset();
-  bool is_memory_flush();
+  bool is_memory_flush() const override;
   bool is_can_shift() const { return _can_shift; }
   bool is_gemma_4() const { return _is_gemma4; }
 
@@ -406,7 +336,7 @@ private:
   bool _is_gemma4;
   bool _sampler_dirty;
   bool _can_shift;
-  bool _memory_flush;
+  mutable bool _memory_flush;
   unsigned int _seed;
 
   // MTP (Multi-Token Prediction) speculative decoding state

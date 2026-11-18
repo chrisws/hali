@@ -125,6 +125,13 @@ struct Engine {
   virtual bool is_gemma_4() const { return false; }
   virtual bool is_can_shift() const { return false; }
 
+  // --- MTP best-settings (for persistence on exit) -------------------------
+  virtual bool  mtp_has_best() const { return false; }
+  virtual int   mtp_best_n_max() const { return 0; }
+  virtual int   mtp_best_n_min() const { return 0; }
+  virtual float mtp_best_p_min() const { return 0.0f; }
+  virtual float mtp_best_pos_threshold() const { return 0.0f; }
+
   // --- capabilities (agent.cpp gates features on these) ---------------------
   virtual bool supports_rag() const { return false; }
   virtual bool supports_mtp_tuning() const { return false; }

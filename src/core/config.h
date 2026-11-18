@@ -12,8 +12,7 @@
 #include <string>
 #include <vector>
 #include <filesystem>
-#include "llama.h"
-#include "llama_sb.h"
+#include "engine.h"
 #include "run_allowed.h"
 
 namespace fs = std::filesystem;
@@ -67,7 +66,7 @@ struct HaliConfig {
   bool  disable_move_     = false;
   bool  disable_save_on_exit_ = false;
   bool  thinking_       = true;
-  int   log_level_      = GGML_LOG_LEVEL_CONT;
+  int   log_level_      = 5; // GGML_LOG_LEVEL_CONT
   int   n_batch_        = 512;
   int   n_ubatch_       = 0;
   int   n_ctx_          = 65536;
@@ -119,7 +118,7 @@ struct HaliConfig {
 
   // Context extension (relevant when VRAM caps n_ctx)
   // NONE / LINEAR / YARN / LONGROPE
-  enum llama_rope_scaling_type rope_scaling_type_ = LLAMA_ROPE_SCALING_TYPE_UNSPECIFIED;
+  int rope_scaling_type_ = 0;
 
   // TOOL:RUN allowlist - if non-empty, only these program base names may run.
   // Empty means "allow anything inside the sandbox" (original behaviour).

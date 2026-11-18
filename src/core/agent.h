@@ -14,7 +14,8 @@
 #include <string>
 #include <unordered_map>
 
-#include "llama_sb_rag.h"
+#include "engine.h"
+#include "engine_factory.h"
 #include "config.h"
 #include "tui.h"
 #include "mcp_client.h"
@@ -95,8 +96,7 @@ struct Agent {
   std::string memory_info_text() const;
   void apply_generation_params() const;
   bool model_loaded() const { return model_loaded_; }
-  const LlamaMemoryInfo &last_mem_info() const { return cached_mem_info_; }
-  Llama *embed_model() const { return knowledge_.embed_model(); }
+  const ModelMemoryInfo &last_mem_info() const { return cached_mem_info_; }
   void save_mtp_best_settings();
   void dump_usage_log(const std::string &path) const;
   void generate_badge(const std::string &sandbox);
@@ -144,8 +144,8 @@ struct Agent {
   Tui &tui_;
   mcp::Client &mcp_client_;
 
-  std::unique_ptr<Llama> llama_;
-  std::unique_ptr<LlamaIter> iter_;
+  std::unique_ptr<Engine> engine_;
+  std::unique_ptr<ModelIter> iter_;
   ToolMap tools_;
   bool model_loaded_ = false;
   std::string system_prompt_;
@@ -156,8 +156,8 @@ struct Agent {
   TurnState turn_;
   BroadcastState broadcast_;
   std::chrono::steady_clock::time_point last_mem_update_{};
-  LlamaMemoryInfo cached_mem_info_{};
-  LlamaMemoryInfo get_mem_info();
+  ModelMemoryInfo cached_mem_info_{};
+  ModelMemoryInfo get_mem_info();
   KnowledgeManager knowledge_;
 
   public:

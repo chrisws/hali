@@ -79,7 +79,7 @@ static void apply_profile(HaliConfig &cfg, const SamplingProfile &p) {
 // Smart defaults: inspect VRAM + layers after model load and auto-tune.
 // Changes that require a reload are saved but noted as "next load".
 //
-static void apply_smart_defaults(HaliConfig &cfg, const LlamaMemoryInfo &mem, Tui &tui) {
+static void apply_smart_defaults(HaliConfig &cfg, const ModelMemoryInfo &mem, Tui &tui) {
   std::string changes;
 
   // If VRAM has headroom and layers are on CPU, push all layers to GPU.
@@ -739,7 +739,7 @@ static void slash_tool(const std::string &rest, Agent &agent, Tui &tui) {
 static void index_zim_file(const std::string &path, Agent &agent, Tui &tui,
                            const std::function<void(const std::string &)> &progress,
                            KnowledgeManager &km) {
-  if (!agent.embed_model()) {
+  if (!km.embed_model()) {
     tui.append_line(ICON_ERR + "No embedding model loaded. Use /embed first.");
     tui.redraw_all();
     return;
@@ -753,7 +753,7 @@ static void index_zim_file(const std::string &path, Agent &agent, Tui &tui,
   tui.append_line(ICON_SYS + "Indexing " + path + "…");
   tui.redraw_all();
   std::string build_err;
-  if (km.build_from_path(path, *agent.embed_model(), tui, progress, &build_err)) {
+  if (km.build_from_path(path, *km.embed_model(), tui, progress, &build_err)) {
     fs::path zp(path);
     std::string id = zp.stem().string();
     if (km.load(id)) {
@@ -1132,7 +1132,7 @@ static void slash_task(const std::string &rest, HaliConfig &cfg, Agent &agent, T
       bool new_state = !cfg.modes_.knowledge;
       if (new_state) {
         cfg.rag_enabled_ = true;
-        if (agent.embed_model() == nullptr && !cfg.embed_path_.empty()) {
+        if (agent.knowledge().embed_model() == nullptr && !cfg.embed_path_.empty()) {
           tui.append_line(ICON_SYS + "Loading embedding model…");
           tui.redraw_all();
           if (!agent.setup_embed(cfg.embed_path_)) {
@@ -1141,7 +1141,7 @@ static void slash_task(const std::string &rest, HaliConfig &cfg, Agent &agent, T
             return;
           }
         }
-        if (agent.embed_model() == nullptr) {
+        if (agent.knowledge().embed_model() == nullptr) {
           tui.append_line(ICON_ERR + "Knowledge mode requires an embedding model.");
           tui.append_line(ICON_ERR + "Load one first: /embed <path>");
           return;

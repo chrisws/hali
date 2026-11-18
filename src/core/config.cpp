@@ -35,20 +35,20 @@ static KVCachePreset to_kv_preset(const std::string &str) {
   return KVCachePreset::Compact;
 }
 
-static std::string rope_type_to_string(llama_rope_scaling_type t) {
+static std::string rope_type_to_string(int t) {
   switch (t) {
-    case LLAMA_ROPE_SCALING_TYPE_LINEAR:   return "linear";
-    case LLAMA_ROPE_SCALING_TYPE_YARN:     return "yarn";
-    case LLAMA_ROPE_SCALING_TYPE_LONGROPE: return "longrope";
-    default:                               return "none";
+    case 1:  return "linear";
+    case 2:  return "yarn";
+    case 3:  return "longrope";
+    default: return "none";
   }
 }
 
-static llama_rope_scaling_type to_rope_type(const std::string &str) {
-  if (str == "linear")   return LLAMA_ROPE_SCALING_TYPE_LINEAR;
-  if (str == "yarn")     return LLAMA_ROPE_SCALING_TYPE_YARN;
-  if (str == "longrope") return LLAMA_ROPE_SCALING_TYPE_LONGROPE;
-  return LLAMA_ROPE_SCALING_TYPE_UNSPECIFIED;
+static int to_rope_type(const std::string &str) {
+  if (str == "linear")   return 1;
+  if (str == "yarn")     return 2;
+  if (str == "longrope") return 3;
+  return 0;
 }
 
 HaliConfig::HaliConfig() {

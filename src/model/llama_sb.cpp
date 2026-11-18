@@ -38,25 +38,6 @@ static bool read_vram(size_t &used, size_t &total) {
   return false;
 }
 
-LlamaIter::LlamaIter() :
-  _llama(nullptr),
-  _repetition_count(0),
-  _tokens_generated(0),
-  _has_next(false),
-  _ignore_stop(false) {
-}
-
-LlamaIter::LlamaIter(LlamaIter &&other) noexcept
-  : _llama(std::exchange(other._llama, nullptr))
-  , _last_word(std::move(other._last_word))
-  , _tail(std::move(other._tail))
-  , _t_start(std::move(other._t_start))
-  , _repetition_count(other._repetition_count)
-  , _tokens_generated(other._tokens_generated)
-  , _has_next(other._has_next)
-  , _ignore_stop(other._ignore_stop) {
-}
-
 Llama::Llama() :
   _model(nullptr),
   _ctx(nullptr),
@@ -177,7 +158,7 @@ void Llama::reset() {
   mtp_reset_state();
 }
 
-bool Llama::is_memory_flush() {
+bool Llama::is_memory_flush() const {
   auto result = _memory_flush;
   if (result) {
     _memory_flush = false;
@@ -236,7 +217,7 @@ bool Llama::load_model(const LlamaLoad &load) {
     cparams.no_perf = true;
     cparams.attention_type = LLAMA_ATTENTION_TYPE_UNSPECIFIED;
     cparams.flash_attn_type = LLAMA_FLASH_ATTN_TYPE_ENABLED;
-    cparams.rope_scaling_type = load.rope_scaling_type;
+    cparams.rope_scaling_type = static_cast<llama_rope_scaling_type>(load.rope_scaling_type);
     cparams.rope_freq_scale   = load.rope_freq_scale;
 
     switch (load.kv_cache_preset) {
@@ -417,7 +398,7 @@ bool Llama::add_message(LlamaIter &iter, const string &role, const string &conte
   iter._tokens_generated = 0;
   iter._tail.clear();
   iter._t_start = std::chrono::high_resolution_clock::now();
-  iter._llama = this;
+  iter._engine = this;
   iter._has_next = true;
   return true;
 }

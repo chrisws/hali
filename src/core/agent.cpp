@@ -29,8 +29,8 @@
 #include "config.h"
 #include "file.h"
 #include "icon.h"
-#include "llama_sb.h"
-#include "llama_sb_rag.h"
+#include "engine.h"
+#include "engine_factory.h"
 #include "logging.h"
 #include "planner.h"
 #include "string_utils.h"
@@ -46,18 +46,18 @@ static void broadcast_message(const HaliConfig &cfg, Tui &tui, const std::string
 }
 
 void Agent::apply_generation_params() const {
-  llama_->add_stop("<|turn|>");
-  llama_->add_stop("<|im_end|>");
-  llama_->set_max_tokens(512000);
-  llama_->set_temperature(cfg_.temperature_);
-  llama_->set_top_k(cfg_.top_k_);
-  llama_->set_top_p(cfg_.top_p_);
-  llama_->set_min_p(cfg_.min_p_);
-  llama_->set_penalty_repeat(cfg_.penalty_repeat_);
-  llama_->set_penalty_freq(cfg_.penalty_freq_);
-  llama_->set_penalty_present(cfg_.penalty_present_);
-  llama_->set_penalty_last_n(cfg_.penalty_last_n_);
-  llama_->set_log_level(cfg_.log_level_);
+  engine_->add_stop("<|turn|>");
+  engine_->add_stop("<|im_end|>");
+  engine_->set_max_tokens(512000);
+  engine_->set_temperature(cfg_.temperature_);
+  engine_->set_top_k(cfg_.top_k_);
+  engine_->set_top_p(cfg_.top_p_);
+  engine_->set_min_p(cfg_.min_p_);
+  engine_->set_penalty_repeat(cfg_.penalty_repeat_);
+  engine_->set_penalty_freq(cfg_.penalty_freq_);
+  engine_->set_penalty_present(cfg_.penalty_present_);
+  engine_->set_penalty_last_n(cfg_.penalty_last_n_);
+  engine_->set_log_level(cfg_.log_level_);
 }
 
 //
@@ -78,11 +78,11 @@ bool Agent::setup_model() {
   // Freeing llama while iter is still alive causes use-after-free / load failure.
   iter_.reset();
   model_loaded_ = false;
-  llama_ = std::make_unique<Llama>();
+  engine_ = create_engine();
 
   apply_generation_params();
 
-  LlamaLoad load;
+  ModelLoad load;
   load.model_path = cfg_.model_path_;
   load.n_ctx = cfg_.n_ctx_;
   load.n_batch = cfg_.n_batch_;
@@ -103,14 +103,14 @@ bool Agent::setup_model() {
   load.suffix_ngram = cfg_.suffix_ngram_;
   load.suffix_max_draft = cfg_.suffix_max_draft_;
 
-  if (!llama_->load_model(load)) {
+  if (!engine_->load_model(load)) {
     tui_.dismiss_modal_popup();
-    tui_.append_line(ICON_ERR + llama_->last_error());
+    tui_.append_line(ICON_ERR + engine_->last_error());
     tui_.redraw_all();
     return false;
   }
 
-  LlamaMemoryInfo mem = llama_->memory_info();
+  ModelMemoryInfo mem = engine_->memory_info();
   cached_mem_info_ = mem;
   last_mem_update_ = std::chrono::steady_clock::now();
   tui_.dismiss_modal_popup();
@@ -121,21 +121,25 @@ bool Agent::setup_model() {
 }
 
 bool Agent::setup_embed(const std::string &path) {
+  if (!engine_->supports_rag()) {
+    tui_.append_line(ICON_SYS + "Embedding not supported by current engine");
+    return false;
+  }
   return knowledge_.setup_embed(path, tui_);
 }
 
 void Agent::reset_conversation(const std::string &sysprompt) {
   system_prompt_ = sysprompt;
-  llama_->reset();
+  engine_->reset();
   cfg_.load_settings();
   apply_generation_params();
   loaded_skills_.clear();
-  iter_ = std::make_unique<LlamaIter>();
-  if (!llama_->add_message(*iter_, "system", system_prompt_)) {
-    tui_.append_line(ICON_ERR + "System prompt injection: " + llama_->last_error());
+  iter_ = std::make_unique<ModelIter>();
+  if (!engine_->add_message(*iter_, "system", system_prompt_)) {
+    tui_.append_line(ICON_ERR + "System prompt injection: " + engine_->last_error());
     tui_.redraw_all();
   } else {
-    tui_.update_usage(tokens_per_sec(), llama_->memory_info());
+    tui_.update_usage(tokens_per_sec(), engine_->memory_info());
   }
 }
 
@@ -143,8 +147,8 @@ void Agent::notify(const std::string &msg) {
   if (!model_loaded_ || !iter_) {
     return;
   }
-  if (!llama_->add_message(*iter_, "user", msg)) {
-    tui_.append_line(ICON_ERR + "notify: " + llama_->last_error());
+  if (!engine_->add_message(*iter_, "user", msg)) {
+    tui_.append_line(ICON_ERR + "notify: " + engine_->last_error());
     tui_.redraw_all();
   }
 }
@@ -163,10 +167,10 @@ float Agent::tokens_per_sec() const {
   return static_cast<float>(iter_->_tokens_generated / elapsed);
 }
 
-LlamaMemoryInfo Agent::get_mem_info() {
+ModelMemoryInfo Agent::get_mem_info() {
   auto now = std::chrono::steady_clock::now();
   if (now - last_mem_update_ > std::chrono::seconds(1)) {
-    cached_mem_info_ = llama_->memory_info();
+    cached_mem_info_ = engine_->memory_info();
     last_mem_update_ = now;
   }
   return cached_mem_info_;
@@ -198,14 +202,14 @@ void Agent::flush_broadcast() {
 }
 
 std::string Agent::memory_info_status() const {
-  float kv_percent = llama_->memory_kv_percent();
+  float kv_percent = engine_->memory_kv_percent();
   auto message = kv_percent > 75 ? "(Warning: Approaching limit)" : "";
   return std::format("\n[KV-INFO] KV Cache: {}%{} [/KV-INFO]", kv_percent, message);
 }
 
 std::string Agent::memory_info_text() const {
   if (!model_loaded_) return "No model loaded.";
-  LlamaMemoryInfo m = llama_->memory_info();
+  ModelMemoryInfo m = engine_->memory_info();
   std::ostringstream oss;
   oss << "KV cache  : " << m.kv_used << " / " << m.kv_total
       << "  (" << m.kv_percent << "%)\n";
@@ -220,14 +224,23 @@ std::string Agent::memory_info_text() const {
 }
 
 std::string Agent::rag_tool(const std::string &agent_query) {
+  if (!engine_->supports_rag()) {
+    return "RAG not supported by current engine";
+  }
   return knowledge_.query(agent_query, cfg_.rag_top_k_, cfg_.n_ctx_);
 }
 
 std::string Agent::rag_inspect() const {
+  if (!engine_->supports_rag()) {
+    return "RAG not supported by current engine";
+  }
   return knowledge_.inspect(cfg_.rag_top_k_);
 }
 
 std::string Agent::handle_ragindex(const std::string &zim_path) {
+  if (!engine_->supports_rag()) {
+    return "RAG not supported by current engine";
+  }
   if (zim_path.empty()) {
     return "ERROR: usage: TOOL:RAGINDEX <zim_file_path> | --validate <rag_file> | --repair <rag_file>";
   }
@@ -283,7 +296,7 @@ std::string Agent::handle_ragindex(const std::string &zim_path) {
   }
 
   /* normal indexing mode */
-  if (!embed_model()) {
+  if (!knowledge_.embed_model()) {
     return "ERROR: no embedding model loaded. Use /embed first.";
   }
 
@@ -362,7 +375,7 @@ std::string Agent::handle_ragindex(const std::string &zim_path) {
   auto progress = [this](const std::string &msg) {
     tui_.show_tool(msg);
   };
-  bool ok = knowledge_.build_from_path(path, *embed_model(), tui_, progress, &err, filter_path, target_name);
+  bool ok = knowledge_.build_from_path(path, *knowledge_.embed_model(), tui_, progress, &err, filter_path, target_name);
   if (ok) {
     fs::path zp(path);
     std::string id = target_name.empty() ? zp.stem().string() : target_name;
@@ -491,13 +504,13 @@ void Agent::invoke_tool(const std::string &buffer, const std::string_view templa
   }
   const std::string content = TOOL_RESULT + std::vformat(template_str, std::make_format_args(result)) + memory_info_status();
   tui_.update_usage(tokens_per_sec(), get_mem_info());
-  if (!llama_->add_message(*iter_, "tool_result", content)) {
-    tui_.append_line(ICON_ERR + "tool result inject: " + llama_->last_error());
+  if (!engine_->add_message(*iter_, "tool_result", content)) {
+    tui_.append_line(ICON_ERR + "tool result inject: " + engine_->last_error());
   }
   if (!iter_->_has_next) {
-    tui_.append_line(ICON_ERR + "failed to evoke tool response: " + llama_->last_error());
+    tui_.append_line(ICON_ERR + "failed to evoke tool response: " + engine_->last_error());
   }
-  if (llama_->is_memory_flush()) {
+  if (engine_->is_memory_flush()) {
     if (++broadcast_.flush_count > MAX_FLUSH_RETRIES) {
       tui_.append_line(ICON_ERR + "Multiple memory flushes detected. Stopping auto-continue.");
       tui_.redraw_all();
@@ -506,7 +519,7 @@ void Agent::invoke_tool(const std::string &buffer, const std::string_view templa
     tui_.append_line(ICON_ERR + "Warning! - memory has been flushed!");
     reset_conversation(cfg_.build_system_prompt() + "\n" + format_session_md(tui_.get_chat()));
     const std::string retry_content = TOOL_RESULT + result + memory_info_status();
-    if (!llama_->add_message(*iter_, "tool_result", retry_content)) {
+    if (!engine_->add_message(*iter_, "tool_result", retry_content)) {
       tui_.append_line(ICON_ERR + "failed to re-inject tool result after flush");
     }
     tui_.append_line(ICON_SYS + "Auto-continuing after memory flush...");
@@ -539,7 +552,7 @@ bool Agent::run_turn(const std::string &user_message) {
   knowledge_.reset_cache();
   last_response_.clear();
   tui_.set_thinking(true);
-  if (!llama_->add_message(*iter_, "user", effective_message)) {
+  if (!engine_->add_message(*iter_, "user", effective_message)) {
     tui_.set_thinking(false);
     if (!handle_memory_flush()) {
       return false;
@@ -552,14 +565,14 @@ bool Agent::run_turn(const std::string &user_message) {
   auto turn_start = iter_->_t_start;
   int turn_tokens = 0;
 
-  ThinkParser thinker(cfg_.thinking_, llama_->is_gemma_4());
+  ThinkParser thinker(cfg_.thinking_, engine_->is_gemma_4());
   std::string buffer;
   int tick_count = 0;
 
   auto fetch_tool = [&]() -> void {
     iter_->_ignore_stop = true;
     while (iter_->_has_next && !tui_.is_escape()) {
-      const std::string tok = llama_->next(*iter_);
+      const std::string tok = engine_->next(*iter_);
       buffer += tok;
       tui_.tick_spinner();
       if (++tick_count % 5 == 0) {
@@ -570,13 +583,13 @@ bool Agent::run_turn(const std::string &user_message) {
   };
 
   while (iter_->_has_next && !tui_.is_escape()) {
-    if (std::string tok = llama_->next(*iter_); tok == "<") {
+    if (std::string tok = engine_->next(*iter_); tok == "<") {
       // fetch the complete tag (capped to avoid runaway if '>' is missing)
       std::vector<std::string> tokens;
       tokens.push_back(tok);
       size_t total_len = 1;
       while (iter_->_has_next && total_len < 32) {
-        std::string next = llama_->next(*iter_);
+        std::string next = engine_->next(*iter_);
         tokens.push_back(next);
         total_len += next.size();
         if (next == ">") {
@@ -685,7 +698,7 @@ std::string Agent::build_effective_message(const std::string &user_message) {
 }
 
 bool Agent::handle_memory_flush() {
-  if (llama_->is_memory_flush()) {
+  if (engine_->is_memory_flush()) {
     if (++broadcast_.flush_count > MAX_FLUSH_RETRIES) {
       tui_.append_line(ICON_ERR + "Multiple memory flushes detected. Stopping auto-continue.");
       tui_.redraw_all();
@@ -693,7 +706,7 @@ bool Agent::handle_memory_flush() {
     }
     tui_.append_line(ICON_ERR + "Warning! - memory has been flushed!");
     reset_conversation(cfg_.build_system_prompt() + "\n" + format_session_md(tui_.get_chat()));
-    bool flushed = llama_->add_message(*iter_, "user",
+    bool flushed = engine_->add_message(*iter_, "user",
                                        "The session context was restored after a memory flush. "
                                        "Continue with the pending actions from the session state.");
     if (!flushed) {
@@ -704,7 +717,7 @@ bool Agent::handle_memory_flush() {
     tui_.redraw_all();
     return true;
   }
-  tui_.append_line(ICON_ERR + "add_message: " + llama_->last_error());
+  tui_.append_line(ICON_ERR + "add_message: " + engine_->last_error());
   tui_.redraw_all();
   return false;
 }
@@ -730,7 +743,7 @@ void Agent::record_turn_metrics(double turn_elapsed, int turn_tokens) {
   metrics.completion_tokens = turn_tokens;
   metrics.tool_call_count   = turn_.tool_calls;
   metrics.tool_error_count  = turn_.tool_errors;
-  metrics.kv_usage_pct      = llama_->memory_kv_percent();
+  metrics.kv_usage_pct      = engine_->memory_kv_percent();
   metrics.files_read        = turn_.files_read;
   metrics.files_written     = turn_.files_written;
   usage_log_.record_turn(metrics);
@@ -748,8 +761,8 @@ bool Agent::run_turn_with_skill(const std::string &skill_text, const std::string
   }
   // Inject skill text as a tool_result message
   std::string content = "Skill loaded:\n" + skill_text;
-  if (!llama_->add_message(*iter_, "tool_result", content)) {
-    tui_.append_line(ICON_ERR + "skill inject: " + llama_->last_error());
+  if (!engine_->add_message(*iter_, "tool_result", content)) {
+    tui_.append_line(ICON_ERR + "skill inject: " + engine_->last_error());
     tui_.redraw_all();
     return false;
   }
@@ -792,13 +805,13 @@ void Agent::generate_badge(const std::string &sandbox) {
 }
 
 void Agent::save_mtp_best_settings() {
-  if (!model_loaded_ || !llama_->mtp_has_best()) {
+  if (!model_loaded_ || !engine_->mtp_has_best()) {
     return;
   }
-  cfg_.mtp_n_max_ = llama_->mtp_best_n_max();
-  cfg_.mtp_n_min_ = llama_->mtp_best_n_min();
-  cfg_.mtp_p_min_ = llama_->mtp_best_p_min();
-  cfg_.mtp_pos_threshold_ = llama_->mtp_best_pos_threshold();
+  cfg_.mtp_n_max_ = engine_->mtp_best_n_max();
+  cfg_.mtp_n_min_ = engine_->mtp_best_n_min();
+  cfg_.mtp_p_min_ = engine_->mtp_best_p_min();
+  cfg_.mtp_pos_threshold_ = engine_->mtp_best_pos_threshold();
   cfg_.save_settings();
   log_write(LEVEL_INFO, "agent", "MTP best settings saved: n_max=%d n_min=%d p_min=%.3f pos_threshold=%.3f",
             cfg_.mtp_n_max_, cfg_.mtp_n_min_, cfg_.mtp_p_min_, cfg_.mtp_pos_threshold_);
