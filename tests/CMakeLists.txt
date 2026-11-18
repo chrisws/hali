@@ -92,6 +92,7 @@ add_executable(hali_tests
   src/tui_stub.cpp
   src/agent_stub.cpp
   src/webview_stub.cpp
+  src/basalt_stub.cpp
   src/utf8_test.cpp
   src/file_test.cpp
   src/file_test_io.cpp
@@ -126,6 +127,7 @@ add_executable(hali_tests
   src/llama_iter_test.cpp
   src/line_edit_test.cpp
   src/pom_test.cpp
+  src/basalt_test.cpp
 
   src/main.cpp
 )
