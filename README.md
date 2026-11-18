@@ -360,11 +360,14 @@ hali/
 │   │   ├── knowledge.cpp/.h    # KnowledgeManager: embedding model, RAG query, index load/build, tracking
 │   │   ├── zim.cpp             # ZIM build pipeline: extraction, chunking, embedding, case-insensitive resolution
 │   │   └── run_allowed.h       # persistent user-approved TOOL:RUN allowlist
-│   ├── model/              # llama.cpp integration
-│   │   ├── llama_sb.cpp/.h     # llama.cpp wrapper
+│   ├── model/              # inference engine abstraction + backends
+│   │   ├── engine.h/.cpp         # Engine base class, ModelIter, ModelLoad, ModelMemoryInfo
+│   │   ├── engine_factory.h/.cpp # create_engine() factory (selects backend at runtime)
+│   │   ├── llama_sb.cpp/.h     # Llama : Engine (llama.cpp concrete implementation)
 │   │   ├── llama_sb_mtp.cpp    # MTP speculative decoding
 │   │   ├── llama_sb_suffix.cpp/.h # n-gram SuffixDrafter
-│   │   └── llama_sb_rag.cpp/.h # RAG session, chunker, indexer
+│   │   ├── llama_sb_rag.cpp/.h # RAG session, chunker, indexer
+│   │   └── basalt.cpp/.h       # Basalt : Engine (CUDA NVFP4 backend)
 │   ├── tools/              # tool implementations
 │   │   ├── audit.cpp/.h        # /audit codebase scanner, false-positive tracking
 │   │   ├── build.cpp/.h        # TOOL:BUILD (CMake/Gradle/Maven/Python auto-detect)
