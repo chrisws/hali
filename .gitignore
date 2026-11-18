@@ -3,6 +3,7 @@ build/
 
 # Old files directory
 old/
+scratch
 
 # Log files
 *.log
@@ -33,6 +34,14 @@ Makefile
 *.swo
 *~
 
+# Runtime data
+.hali/*.log
+.hali/*.txt
+.hali/*.md
+
 # OS files
 .DS_Store
 Thumbs.db
+
+plans
+tmp

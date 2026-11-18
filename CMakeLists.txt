@@ -240,3 +240,8 @@ endif()
 set_target_properties(hali PROPERTIES
   RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin
 )
+
+# -----------------------------
+# Engine selection (llama | basalt)
+# -----------------------------
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/engine.cmake)

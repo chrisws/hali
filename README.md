@@ -260,7 +260,32 @@ cmake --build build-tests -j
 ctest --test-dir build-tests
 ```
 
-### Backend selection
+### Inference engine selection
+
+Hali supports two inference backends, selected at CMake configure time:
+
+| `-DHALI_ENGINE=` | Backend | Notes |
+| --- | --- | --- |
+| `llama` (default) | [llama.cpp](https://github.com/ggml-org/llama.cpp) | GGUF models, CPU/CUDA, MTP, suffix drafting, RAG |
+| `basalt` | [Basalt](https://github.com/chrisws/basalt) (fork) | Native CUDA (sm_120), NVFP4 tensor cores, in-process C++ API |
+
+The engine is selected via `cmake/engine.cmake`, included at the end of `CMakeLists.txt`. The `basalt` engine requires CUDA 13.0+ and an NVIDIA Blackwell GPU (compute capability 12.0).
+
+```
+# llama (default)
+cmake -B build -DHALI_ENGINE=llama
+cmake --build build -j
+
+# basalt
+cmake -B build -DHALI_ENGINE=basalt
+cmake --build build -j
+```
+
+`setup.sh` accepts `--engine=llama|basalt` to initialise the correct submodule and pass the right CMake flag.
+
+### llama.cpp backend selection
+
+Within the llama engine, the compute backend is selected separately:
 
 | `-DLLAMA_BACKEND=` | Behavior |
 | --- | --- |

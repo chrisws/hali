@@ -4,3 +4,6 @@
 [submodule "yyjson"]
 	path = yyjson
 	url = https://github.com/ibireme/yyjson.git
+[submodule "engine/basalt"]
+	path = engine/basalt
+	url = https://github.com/jesdga95/basalt.git

@@ -33,16 +33,46 @@ warn()  { echo "  ${YLW}⚠ ${1}${R}"; }
 fail()  { echo "  ${RED}✗ ${1}${R}"; exit 1; }
 have()  { command -v "$1" &>/dev/null; }
 
+# ── argument parsing ─────────────────────────────────────────────────────────
+ENGINE="llama"
+for arg in "$@"; do
+  case "$arg" in
+    --engine=*)
+      ENGINE="${arg#--engine=}"
+      if [[ "$ENGINE" != "llama" && "$ENGINE" != "basalt" && "$ENGINE" != "both" ]]; then
+        echo "${RED}error: --engine must be llama, basalt, or both${R}"
+        exit 1
+      fi
+      ;;
+    --test)
+      ;;
+    *)
+      ;;
+  esac
+done
+
 # ── main ─────────────────────────────────────────────────────────────────────
 mascot
 
 # 1. git submodules
-step "git submodules"
+step "git submodules (engine: ${ENGINE})"
 if ! have git; then
   fail "git not found — install git first"
 fi
-git submodule update --init --recursive
-ok "submodules ready (llama.cpp, yyjson)"
+case "$ENGINE" in
+  llama)
+    git submodule update --init --recursive llama.cpp yyjson
+    ok "submodules ready (llama.cpp, yyjson)"
+    ;;
+  basalt)
+    git submodule update --init --recursive engine/basalt yyjson
+    ok "submodules ready (engine/basalt, yyjson)"
+    ;;
+  both)
+    git submodule update --init --recursive llama.cpp engine/basalt yyjson
+    ok "submodules ready (llama.cpp, engine/basalt, yyjson)"
+    ;;
+esac
 
 # 2. build deps
 step "checking dependencies"
@@ -72,8 +102,8 @@ else
 fi
 
 # 3. build
-step "building (LLAMA_BACKEND=${LLAMA_BACKEND:-AUTO})"
-cmake -B build -DLLAMA_BACKEND="${LLAMA_BACKEND:-AUTO}"
+step "building (engine: ${ENGINE}, LLAMA_BACKEND=${LLAMA_BACKEND:-AUTO})"
+cmake -B build -DHALI_ENGINE="${ENGINE}" -DLLAMA_BACKEND="${LLAMA_BACKEND:-AUTO}"
 cmake --build build -j"$(nproc)"
 ok "build complete → build/bin/hali"
 
