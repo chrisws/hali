@@ -555,12 +555,24 @@ ScriptResult play_script(const std::string &notes_str) {
 }
 
 void play_test() {
-  // C-F-G-C progression with register shift and 4-note variation on the final chord
+  // Full suite of tones: C major scale (C4–C5) played individually
+  // with a brief pause between each note.
   static const NoteEvent events[] = {
-    { {261.63, 0.4}, {329.63, 0.4}, {392.00, 0.4} },              // C major
-    { {349.23, 0.4}, {440.00, 0.4}, {523.25, 0.4} },              // F major
-    { {392.00, 0.4}, {493.88, 0.4}, {587.33, 0.4} },              // G major
-    { {523.25, 0.6}, {659.25, 0.6}, {783.99, 0.6}, {1046.50, 0.6} }, // C major (high, 4-note)
+    { {261.63, 0.35} },   // C4
+    { {0.0,    0.10} },   // pause
+    { {293.66, 0.35} },   // D4
+    { {0.0,    0.10} },   // pause
+    { {329.63, 0.35} },   // E4
+    { {0.0,    0.10} },   // pause
+    { {349.23, 0.35} },   // F4
+    { {0.0,    0.10} },   // pause
+    { {392.00, 0.35} },   // G4
+    { {0.0,    0.10} },   // pause
+    { {440.00, 0.35} },   // A4
+    { {0.0,    0.10} },   // pause
+    { {493.88, 0.35} },   // B4
+    { {0.0,    0.10} },   // pause
+    { {523.25, 0.50} },   // C5 (longer final note)
   };
   play_events(std::vector<NoteEvent>(std::begin(events), std::end(events)));
 }

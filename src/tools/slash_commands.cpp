@@ -216,10 +216,21 @@ static void slash_audio(const std::string &rest, HaliConfig &cfg, Agent &agent, 
 
     // Save the test waveform to hali.wav for inspection
     static const audio::NoteEvent test_events[] = {
-      { {261.63, 0.4}, {329.63, 0.4}, {392.00, 0.4} },
-      { {349.23, 0.4}, {440.00, 0.4}, {523.25, 0.4} },
-      { {392.00, 0.4}, {493.88, 0.4}, {587.33, 0.4} },
-      { {523.25, 0.6}, {659.25, 0.6}, {783.99, 0.6}, {1046.50, 0.6} },
+      { {261.63, 0.35} },   // C4
+      { {0.0,    0.10} },   // pause
+      { {293.66, 0.35} },   // D4
+      { {0.0,    0.10} },   // pause
+      { {329.63, 0.35} },   // E4
+      { {0.0,    0.10} },   // pause
+      { {349.23, 0.35} },   // F4
+      { {0.0,    0.10} },   // pause
+      { {392.00, 0.35} },   // G4
+      { {0.0,    0.10} },   // pause
+      { {440.00, 0.35} },   // A4
+      { {0.0,    0.10} },   // pause
+      { {493.88, 0.35} },   // B4
+      { {0.0,    0.10} },   // pause
+      { {523.25, 0.50} },   // C5
     };
     std::string hali_dir = cfg.sandbox_ + "/.hali";
     std::error_code ec;
@@ -227,7 +238,7 @@ static void slash_audio(const std::string &rest, HaliConfig &cfg, Agent &agent, 
     std::string wav_path = hali_dir + "/hali.wav";
     if (audio::save_wav(std::vector<audio::NoteEvent>(std::begin(test_events), std::end(test_events)), wav_path)) {
       tui.append_line(ICON_SYS + "Waveform saved to " + wav_path);
-      agent.notify("Inspect " + wav_path + " using TOOL:HEX to verify the waveform is a valid WAV file with the expected C-F-G-C chord progression.");
+      agent.notify("Inspect " + wav_path + " using TOOL:HEX to verify the waveform is a valid WAV file with the expected C major scale (C4–C5) with pauses between notes.");
     } else {
       tui.append_line(ICON_ERR + "Failed to save " + wav_path);
     }
@@ -252,9 +263,19 @@ static void slash_audio(const std::string &rest, HaliConfig &cfg, Agent &agent, 
         audio::play_tool_tick(new_theme);
       }
     } else {
-      tui.append_line(ICON_SYS + "Current theme: " + cfg.audio_theme_);
-      tui.append_line(ICON_SYS + "Available: hali, r2d2, startrek, stargate");
-      tui.append_line(ICON_SYS + "Usage: /audio theme <name>");
+      // No theme name given — show an interactive selection list.
+      static const std::vector<std::string> themes = {"hali", "r2d2", "startrek", "stargate"};
+      int idx = tui.list_picker(themes, "Audio Theme");
+      if (idx >= 0) {
+        cfg.audio_theme_ = themes[idx];
+        cfg.save_settings();
+        tui.append_line(ICON_SYS + "Audio theme set to '" + cfg.audio_theme_ + "'");
+        if (audio::is_enabled()) {
+          audio::play_tool_tick(cfg.audio_theme_);
+        }
+      } else {
+        tui.append_line(ICON_SYS + "Theme selection cancelled. Current: " + cfg.audio_theme_);
+      }
     }
   } else {
     tui.append_line(ICON_ERR + "Usage: /audio [test | volume <v> | theme <name>]");
