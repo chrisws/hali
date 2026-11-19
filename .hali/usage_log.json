@@ -1,17 +1,19 @@
 {
-  "total_turns": 2,
-  "total_llm_ms": 10104.7,
-  "total_tool_calls": 2,
-  "total_tool_errors": 0,
-  "peak_kv_pct": 8.46421,
-  "total_tokens": 511,
-  "cumulative_tokens": 1284747,
-  "cumulative_tool_calls": 5918,
-  "cumulative_tool_errors": 159,
-  "cumulative_turns": 628,
-  "cumulative_llm_ms": 4.41343e+07,
+  "total_turns": 4,
+  "total_llm_ms": 146664,
+  "total_tool_calls": 43,
+  "total_tool_errors": 3,
+  "peak_kv_pct": 34.7636,
+  "total_tokens": 5905,
+  "cumulative_tokens": 1431313,
+  "cumulative_tool_calls": 6355,
+  "cumulative_tool_errors": 176,
+  "cumulative_turns": 658,
+  "cumulative_llm_ms": 5.21047e+07,
   "turns": [
-    {"turn": 1, "llm_ms": 1552.87, "tokens": 86, "tool_calls": 0, "tool_errors": 0, "kv_pct": 6.95751, "files_read": 0, "files_written": 0},
-    {"turn": 2, "llm_ms": 8551.82, "tokens": 425, "tool_calls": 2, "tool_errors": 0, "kv_pct": 8.46421, "files_read": 1, "files_written": 0}
+    {"turn": 1, "llm_ms": 78116.8, "tokens": 2559, "tool_calls": 17, "tool_errors": 2, "kv_pct": 16.8447, "files_read": 3, "files_written": 1},
+    {"turn": 2, "llm_ms": 44832.6, "tokens": 2210, "tool_calls": 18, "tool_errors": 0, "kv_pct": 29.546, "files_read": 13, "files_written": 3},
+    {"turn": 3, "llm_ms": 16811.5, "tokens": 826, "tool_calls": 6, "tool_errors": 1, "kv_pct": 32.1329, "files_read": 0, "files_written": 1},
+    {"turn": 4, "llm_ms": 6903.13, "tokens": 310, "tool_calls": 2, "tool_errors": 0, "kv_pct": 34.7636, "files_read": 2, "files_written": 0}
   ]
 }

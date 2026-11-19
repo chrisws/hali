@@ -102,8 +102,13 @@ else
 fi
 
 # 3. build
-step "building (engine: ${ENGINE}, LLAMA_BACKEND=${LLAMA_BACKEND:-AUTO})"
-cmake -B build -DHALI_ENGINE="${ENGINE}" -DLLAMA_BACKEND="${LLAMA_BACKEND:-AUTO}"
+if [[ "$ENGINE" == "llama" ]]; then
+  step "building (engine: llama, LLAMA_BACKEND=${LLAMA_BACKEND:-AUTO})"
+  cmake -B build -DHALI_ENGINE=llama -DLLAMA_BACKEND="${LLAMA_BACKEND:-AUTO}"
+else
+  step "building (engine: ${ENGINE})"
+  cmake -B build -DHALI_ENGINE="${ENGINE}"
+fi
 cmake --build build -j"$(nproc)"
 ok "build complete → build/bin/hali"
 
