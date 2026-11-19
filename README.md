@@ -411,9 +411,8 @@ hali/
  ├── tests/                  # unit tests, CTest-driven
 ├── yyjson/                 # vendored JSON library
 ├── engine/                 # inference engine submodules
-│   ├── llama.cpp/          # llama.cpp submodule
+ │   ├── llama.cpp/          # llama.cpp submodule
 │   └── basalt/             # basalt submodule
-└── forks/                  # forked upstream projects (e.g. Strata)
 ```
 
 ## Apps
