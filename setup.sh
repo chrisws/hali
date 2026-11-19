@@ -61,16 +61,16 @@ if ! have git; then
 fi
 case "$ENGINE" in
   llama)
-    git submodule update --init --recursive llama.cpp yyjson
-    ok "submodules ready (llama.cpp, yyjson)"
+    git submodule update --init --recursive engine/llama.cpp yyjson
+    ok "submodules ready (engine/llama.cpp, yyjson)"
     ;;
   basalt)
     git submodule update --init --recursive engine/basalt yyjson
     ok "submodules ready (engine/basalt, yyjson)"
     ;;
   both)
-    git submodule update --init --recursive llama.cpp engine/basalt yyjson
-    ok "submodules ready (llama.cpp, engine/basalt, yyjson)"
+    git submodule update --init --recursive engine/llama.cpp engine/basalt yyjson
+    ok "submodules ready (engine/llama.cpp, engine/basalt, yyjson)"
     ;;
 esac
 

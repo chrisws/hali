@@ -408,9 +408,11 @@ hali/
 │       ├── shell_util.cpp/.h   # shell command execution, metacharacter detection
 │       ├── string_utils.cpp/.h # Unicode-aware string helpers
 │       └── utf8.h              # UTF-8 utilities
-├── tests/                  # unit tests, CTest-driven
+ ├── tests/                  # unit tests, CTest-driven
 ├── yyjson/                 # vendored JSON library
-├── llama.cpp/              # submodule
+├── engine/                 # inference engine submodules
+│   ├── llama.cpp/          # llama.cpp submodule
+│   └── basalt/             # basalt submodule
 └── forks/                  # forked upstream projects (e.g. Strata)
 ```
 
