@@ -1,9 +1,9 @@
-[submodule "llama.cpp"]
-	path = llama.cpp
-	url = https://github.com/ggerganov/llama.cpp
-[submodule "yyjson"]
+ [submodule "yyjson"]
 	path = yyjson
 	url = https://github.com/ibireme/yyjson.git
 [submodule "engine/basalt"]
 	path = engine/basalt
 	url = https://github.com/jesdga95/basalt.git
+[submodule "engine/llama.cpp"]
+	path = engine/llama.cpp
+	url = https://github.com/ggerganov/llama.cpp
