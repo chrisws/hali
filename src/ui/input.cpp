@@ -77,7 +77,7 @@ void Input::build_cursor_handlers() {
       accept_completion(tui);
       return true;
     }
-    if (cursor_pos_ < static_cast<int>(input_buf_.size())) {
+    if (cursor_pos_ < input_buf_.size()) {
       ++cursor_pos_;
       tui.redraw_input();
       tui.render();

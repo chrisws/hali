@@ -49,9 +49,9 @@ static std::string html_to_text(const std::string &html) {
   }
 
   // 2. Remove <script>…</script> and <style>…</style>
-  for (const std::string &tag : {"script", "style"}) {
-    std::string open  = "<" + tag;
-    std::string close = "</" + tag + ">";
+  for (const char *tag : {"script", "style"}) {
+    std::string open  = std::string("<") + tag;
+    std::string close = std::string("</") + tag + ">";
     std::string lo = s;
     std::ranges::transform(lo, lo.begin(), ::tolower);
     for (;;) {

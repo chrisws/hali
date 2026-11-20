@@ -62,7 +62,7 @@ static size_t header_callback(const char *buffer, size_t size, const size_t nIte
 //
 // SSE stream: we don't care about server-pushed content, just discard it.
 //
-static size_t sse_write_callback(char *ptr, size_t size, size_t nmemb, void*) {
+static size_t sse_write_callback(char*, size_t size, size_t nmemb, void*) {
   // const size_t total = size * nmemb;
   // log_write(DEBUG_LEVEL, "SSE: [%.*s]", (int)total, ptr);
   return size * nmemb;

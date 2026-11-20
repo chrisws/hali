@@ -670,8 +670,7 @@ static BuildResult setup_maven(const std::string &sandbox,
   return {ok, result};
 }
 
-static BuildResult setup_gradle(const std::string &sandbox,
-                                const std::function<void(const std::string &)> &status) {
+static BuildResult setup_gradle(const std::string &sandbox) {
   std::string result;
   bool ok = true;
 
@@ -1111,7 +1110,7 @@ BuildResult build_run(const std::string &sandbox, const std::string &mode,
     switch (sys) {
       case BuildSystem::CMAKE:  return setup_cmake(root, status);
       case BuildSystem::MAVEN:  return setup_maven(root, status);
-      case BuildSystem::GRADLE: return setup_gradle(root, status);
+      case BuildSystem::GRADLE: return setup_gradle(root);
       case BuildSystem::PYTHON: return setup_python(root, status);
       default:                  return {false, "ERROR: unsupported build system"};
     }

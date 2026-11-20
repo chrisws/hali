@@ -23,7 +23,7 @@ struct LintWarning {
 struct BuildResult {
   bool success_;
   std::string output_;
-  std::vector<LintWarning> lint_details_;
+  std::vector<LintWarning> lint_details_{};
 };
 
 // Find pom.xml in sandbox root or immediate subdirectories.

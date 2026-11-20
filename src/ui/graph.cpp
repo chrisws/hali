@@ -69,10 +69,10 @@ class Canvas {
     buffer_.resize(height, std::vector<std::string>(width, " "));
   }
 
-  void draw_vline(int x, int y1, int y2);
-  void draw_hline(int x, int y1, int x2);
-  void draw_text(int x, int y, const std::string &str);
-  void draw_char(int x, int y, const std::string &str);
+  void draw_vline(size_t x, size_t y1, size_t y2);
+  void draw_hline(size_t x, size_t y1, size_t x2);
+  void draw_text(size_t x, size_t y, const std::string &str);
+  void draw_char(size_t x, size_t y, const std::string &str);
 
   // Set a unicode character (as string) at position (y, x)
   void insert_at(size_t y, size_t x, const std::string &str);
@@ -80,13 +80,13 @@ class Canvas {
   // Render the canvas by concatenating all columns into rows
   std::vector<std::string> render() const;
 
-  int get_width() const { return width_; }
-  int get_height() const { return height_; }
+  size_t get_width() const { return width_; }
+  size_t get_height() const { return height_; }
 
   private:
   std::vector<std::vector<std::string>> buffer_;
-  int width_ = 0;
-  int height_ = 0;
+  size_t width_ = 0;
+  size_t height_ = 0;
 };
 
 std::vector<std::string> Canvas::render() const {
@@ -105,45 +105,45 @@ std::vector<std::string> Canvas::render() const {
 }
 
 void Canvas::insert_at(size_t y, size_t x, const std::string &str) {
-  if (x < 0 || x >= width_ || y < 0 || y >= height_) {
+  if (x >= width_ || y >= height_) {
     return;
   }
   buffer_[y][x] = str;
 }
 
-void Canvas::draw_vline(int x, int y1, int y2) {
-  if (x < 0 || x >= width_) return;
-  int startY = std::max(0, y1);
-  int endY = std::min(height_ - 1, y2);
-  for (int y = startY; y <= endY; ++y) {
+void Canvas::draw_vline(size_t x, size_t y1, size_t y2) {
+  if (x >= width_) return;
+  size_t startY = y1;
+  size_t endY = (y2 + 1 < height_) ? y2 : height_ - 1;
+  for (size_t y = startY; y <= endY; ++y) {
     insert_at(y, x, g_vert_bar);
   }
 }
 
-void Canvas::draw_hline(int x, int y1, int x2) {
-  if (y1 < 0 || y1 >= height_) {
+void Canvas::draw_hline(size_t x, size_t y1, size_t x2) {
+  if (y1 >= height_) {
     return;
   }
-  int startX = std::max(0, x);
-  int endX = std::min(width_ - 1, x2);
-  for (int i = startX; i <= endX; ++i) {
+  size_t startX = x;
+  size_t endX = (x2 + 1 < width_) ? x2 : width_ - 1;
+  for (size_t i = startX; i <= endX; ++i) {
     insert_at(y1, i, g_horz_bar);
   }
 }
 
-void Canvas::draw_text(int x, int y, const std::string &str) {
-  if (y < 0 || y >= height_) {
+void Canvas::draw_text(size_t x, size_t y, const std::string &str) {
+  if (y >= height_) {
     return;
   }
   for (size_t i = 0; i < str.length(); ++i) {
-    int pos = x + static_cast<int>(i);
-    if (pos >= 0 && pos < width_) {
+    size_t pos = x + i;
+    if (pos < width_) {
       buffer_[y][pos] = str[i];
     }
   }
 }
 
-void Canvas::draw_char(int x, int y, const std::string &str) {
+void Canvas::draw_char(size_t x, size_t y, const std::string &str) {
   insert_at(y, x, str);
 }
 
@@ -335,7 +335,7 @@ static void render_tree_node(Canvas &canvas, const GraphData &data, const TreeNo
   canvas.draw_text(1, y, line.str());
   y++;
 
-  for (int i = 0; i < node.children.size(); i++) {
+  for (size_t i = 0; i < node.children.size(); i++) {
     std::string child_prefix;
     for (int j = 0; j < indent; j++) {
       if ((!last_parent || j == 0) && j % 4 == 0) {
@@ -357,7 +357,7 @@ static void render_tree_node(Canvas &canvas, const GraphData &data, const TreeNo
 
 static void render_tree_view(Canvas &canvas, const GraphData &data) {
   int y = 3;
-  for (int i = 0; i < data.tree_nodes_.size(); i++) {
+  for (size_t i = 0; i < data.tree_nodes_.size(); i++) {
     std::string child_prefix;
     if (i == 0) {
       child_prefix = g_tree_top;

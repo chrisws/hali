@@ -16,6 +16,7 @@
 #include <cstdio>
 
 #include "basalt/model/adapter.hpp"
+#include "basalt/models/builtin.hpp"
 #include "basalt/kernels/sampler.hpp"
 #include "basalt/program/gpu_select.hpp"
 
@@ -61,6 +62,9 @@ const char *Basalt::last_error() const {
 bool Basalt::load_model(const ModelLoad &load) {
   _last_error[0] = '\0';
 
+  // Register all built-in model adapters (idempotent).
+  basalt::models::register_builtin_models();
+
   // Find the adapter for the model file.
   // For now we try the known architectures; a production build would
   // inspect the .basalt file header.
@@ -83,7 +87,7 @@ bool Basalt::load_model(const ModelLoad &load) {
   req.max_context = load.n_ctx > 0 ? load.n_ctx : 0;
   req.sessions = 1;
   req.vision = false;
-  req.draft = true;  // use the model's built-in drafter
+  req.draft = false;  // qwen4exp runs its own start
 
   // Start the model.
   Started started;

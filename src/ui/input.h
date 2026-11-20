@@ -28,7 +28,7 @@ class Input {
   std::string get_input_buf() const { return input_buf_; }
   int get_scroll_offset() const { return scroll_offset_; }
   void set_scroll_offset(int offset) { scroll_offset_ = offset; }
-  int get_cursor_pos() const { return cursor_pos_; }
+  size_t get_cursor_pos() const { return cursor_pos_; }
   bool completion_active() const { return completion_active_; }
   const std::string &completion_suffix() const { return completion_suffix_; }
   void load(const std::string &path) { history_.load(path); }
@@ -58,7 +58,7 @@ class Input {
   bool mouse_mode_;
   bool insert_mode_;
   bool ctrl_x_mode_;
-  int cursor_pos_;
+  size_t cursor_pos_;
   int scroll_offset_;
   InputHistory history_;
   std::unordered_map<std::string, Handler> dispatch_;
