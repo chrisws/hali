@@ -5,6 +5,22 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_C_STANDARD 11)
 
+#
+# sudo apt install nvidia-open cuda-toolkit   (for CUDA backend)
+# export CUDACXX=/usr/local/cuda/bin/nvcc
+#
+
+# --- Fallback logic for CUDA compiler path ---
+if(NOT DEFINED CMAKE_CUDA_COMPILER AND NOT DEFINED ENV{CUDACXX})
+  find_program(CUDA_NVCC_EXECUTABLE nvcc
+    HINTS /usr/local/cuda/bin /usr/local/cuda/targets/x86_64-linux/bin
+    DOC "Path to the CUDA compiler"
+  )
+  if(CUDA_NVCC_EXECUTABLE)
+    set(CMAKE_CUDA_COMPILER ${CUDA_NVCC_EXECUTABLE} CACHE FILEPATH "CUDA compiler")
+  endif()
+endif()
+
 # -----------------------------
 # Dependency discovery
 # -----------------------------

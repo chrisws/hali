@@ -18,7 +18,10 @@
 #include "shell_util.h"
 #include "util/json.h"
 #include "util/logging.h"
+#include "engine_factory.h"
+#ifndef HALI_ENGINE_BASALT
 #include "llama_sb.h"
+#endif
 #include "string_utils.h"
 #include "agent_utils.h"
 #include "ui/tui.h"
@@ -39,14 +42,23 @@ KnowledgeManager::KnowledgeManager() {
 bool KnowledgeManager::setup_embed(const std::string &path, Tui &tui) {
   tui.show_loading_modal_popup("embedding model: " + fs::path(path).filename().string());
   tui.redraw_all();
-  embed_llama_ = std::make_unique<Llama>();
-  if (!embed_llama_->load_embedding_model(path)) {
+  embed_engine_ = create_engine();
+#ifndef HALI_ENGINE_BASALT
+  auto *llama = static_cast<Llama *>(embed_engine_.get());
+  if (!llama->load_embedding_model(path)) {
     tui.dismiss_modal_popup();
-    tui.append_line(ICON_ERR + embed_llama_->last_error());
+    tui.append_line(ICON_ERR + embed_engine_->last_error());
     tui.redraw_all();
-    embed_llama_.reset();
+    embed_engine_.reset();
     return false;
   }
+#else
+  tui.dismiss_modal_popup();
+  tui.append_line(ICON_ERR + "Embedding models not supported with basalt engine");
+  tui.redraw_all();
+  embed_engine_.reset();
+  return false;
+#endif
   tui.dismiss_modal_popup();
   tui.append_line(ICON_SYS + "Embedding model ready.");
   int loaded = load_all();
@@ -70,10 +82,15 @@ std::string KnowledgeManager::query(const std::string &text, int top_k, int n_ct
   }
   std::string result;
   if (active()) {
-    result = embed_llama_->rag_retrieve_multi(library_, text, top_k, n_ctx);
+#ifndef HALI_ENGINE_BASALT
+    auto *llama = static_cast<Llama *>(embed_engine_.get());
+    result = llama->rag_retrieve_multi(library_, text, top_k, n_ctx);
     if (result.empty()) {
-      result = std::string("RAG: no context found: ") + embed_llama_->last_error();
+      result = std::string("RAG: no context found: ") + embed_engine_->last_error();
     }
+#else
+    result = "RAG: not supported with basalt engine";
+#endif
   } else {
     result = "RAG: not enabled";
   }
@@ -129,14 +146,16 @@ bool KnowledgeManager::index_path(const std::string &path, Tui &tui, const std::
     return false;
   }
 
+#ifndef HALI_ENGINE_BASALT
+  auto *llama = static_cast<Llama *>(embed_engine_.get());
   RagDB db;
-  db.embed_dim = embed_llama_->get_embed_dim();
+  db.embed_dim = llama->get_embed_dim();
 
   auto index_one = [&](const std::string &filepath) {
     tui.append_line(ICON_SYS + "  indexing: " + filepath);
     tui.redraw_all();
-    if (!embed_llama_->rag_index(db, filepath)) {
-      tui.append_line(ICON_ERR + "rag_load: " + embed_llama_->last_error());
+    if (!llama->rag_index(db, filepath)) {
+      tui.append_line(ICON_ERR + "rag_load: " + embed_engine_->last_error());
       tui.redraw_all();
     }
   };
@@ -167,6 +186,11 @@ bool KnowledgeManager::index_path(const std::string &path, Tui &tui, const std::
   tui.append_line(ICON_SYS + "saving index: " + save_path);
   tui.redraw_all();
   return db.save(save_path);
+#else
+  tui.append_line(ICON_ERR + "Indexing not supported with basalt engine");
+  tui.redraw_all();
+  return false;
+#endif
 }
 
 //

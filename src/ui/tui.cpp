@@ -29,7 +29,7 @@
 #include "string_utils.h"
 #include "logging.h"
 #include "file.h"
-#include "llama_sb.h"
+#include "engine.h"
 
 // max scan for NCTYPE_PRESS in kity-term or NCTYPE_UNKNOWN in gnome terminal
 #define MAX_FIND_PRESS 4
@@ -468,7 +468,7 @@ void Tui::set_thinking(bool on) {
   notcurses_render(nc_);
 }
 
-void Tui::update_usage(float tokens_sec, const LlamaMemoryInfo &mem) {
+void Tui::update_usage(float tokens_sec, const ModelMemoryInfo &mem) {
   tokens_per_sec_ = tokens_sec;
   kv_used_    = mem.kv_used;
   kv_total_   = mem.kv_total;
@@ -1374,7 +1374,7 @@ bool Tui::is_escape() {
   return false;
 }
 
-void Tui::setup_model(const std::string &model_name, const LlamaMemoryInfo &mem, bool thinking) {
+void Tui::setup_model(const std::string &model_name, const ModelMemoryInfo &mem, bool thinking) {
   update_usage(0.0f, mem);
   current_model_ = model_name;
   append_line(ICON_SYS + "Model ready: " + current_model_);

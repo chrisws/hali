@@ -25,6 +25,13 @@
 
 constexpr int MAX_REPEAT = 50;
 
+//
+// Global abort callback (engine.h interface)
+//
+void engine_set_abort_callback(void (*cb)(const char *msg)) {
+  ggml_set_abort_callback(cb);
+}
+
 static bool read_vram(size_t &used, size_t &total) {
   size_t free = 0;
   total = 0;

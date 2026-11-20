@@ -14,6 +14,10 @@ exec gdb \
   -ex "set width 0" \
   -ex "set height 0" \
   -ex "set print thread-events off" \
+  -ex "set scheduler-locking on" \
+  -ex "set non-stop off" \
+  -ex "set follow-fork-mode child" \
+  -ex "set follow-exec-mode new" \
   -ex "set print frame-arguments none" \
   -ex "set print object off" \
   -ex "set print static off" \
@@ -21,6 +25,5 @@ exec gdb \
   -ex "set print address off" \
   -ex "set print elements 0" \
   -ex "set print sevenbit-strings off" \
-  -ex "set print thread-events off" \
   "$@" \
   "$BIN"

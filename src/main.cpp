@@ -15,7 +15,7 @@
 #include <format>
 #include <system_error>
 
-#include "ggml.h"
+#include "engine.h"
 
 #include "config.h"
 #include "tui.h"
@@ -113,7 +113,7 @@ extern "C" void abort_callback(const char *error_message) {
 int main(int argc, char **argv) {
   HaliConfig cfg;
 
-  ggml_set_abort_callback(abort_callback);
+  engine_set_abort_callback(abort_callback);
 
   // ── Parse arguments (command-line overrides saved settings) ──────
   bool do_mcp_test = false;

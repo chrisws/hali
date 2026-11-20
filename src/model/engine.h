@@ -160,4 +160,13 @@ struct ModelIter {
   bool _ignore_stop;
 };
 
+// ---------------------------------------------------------------------------
+// Global engine callbacks
+// ---------------------------------------------------------------------------
+
+// Set a global abort callback. Called by the backend when a fatal
+// engine-level error occurs (e.g. OOM in ggml). Each backend
+// (llama, basalt) provides its own implementation.
+void engine_set_abort_callback(void (*cb)(const char *msg));
+
 #endif // ENGINE_H

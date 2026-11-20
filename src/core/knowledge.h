@@ -15,6 +15,7 @@
 #include <utility>
 #include <vector>
 #include "llama_sb_rag.h"
+#include "engine.h"
 
 struct Llama;
 struct Tui;
@@ -100,12 +101,12 @@ struct KnowledgeManager {
   //
   // Access the embedding model (nullptr if not loaded)
   //
-  Llama *embed_model() const { return embed_llama_.get(); }
+  Engine *embed_model() const { return embed_engine_.get(); }
 
   //
   // Check if the RAG subsystem is active (embed model loaded)
   //
-  bool active() const { return embed_llama_ != nullptr; }
+  bool active() const { return embed_engine_ != nullptr; }
 
   //
   // --- Query / retrieval ---
@@ -178,7 +179,7 @@ struct KnowledgeManager {
   // instead of the ZIM filename stem (for appending to existing .rag).
   //
   bool build_from_path(const std::string &zim_path,
-                       Llama &llama,
+                       Engine &engine,
                        Tui &tui,
                        const ProgressFn &progress,
                        std::string *error = nullptr,
@@ -293,7 +294,7 @@ private:
                   std::string &extract_dir);
 
   bool batch_embed(const std::vector<std::filesystem::path> &files,
-                   Llama &llama,
+                   Engine &engine,
                    Tui &tui,
                    const ProgressFn &progress,
                    BuildContext &ctx,
@@ -320,7 +321,7 @@ private:
   std::string                rag_dir_ = ".hali/rag";
   std::string                index_json_path_ = ".hali/kiwix-index.json";
   std::vector<std::string>   active_rag_files_;
-  std::unique_ptr<Llama>     embed_llama_;
+  std::unique_ptr<Engine>     embed_engine_;
   mutable std::string        last_query_;
   mutable std::string        last_result_;
 };

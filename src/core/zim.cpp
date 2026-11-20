@@ -24,7 +24,9 @@
 #include "util/platform.h"
 #include "shell_util.h"
 #include "util/logging.h"
+#ifndef HALI_ENGINE_BASALT
 #include "llama_sb.h"
+#endif
 #include "string_utils.h"
 #include "ui/tui.h"
 #include "agent_utils.h"
@@ -702,7 +704,7 @@ void KnowledgeManager::report_build_stats(const std::vector<fs::path> &text_file
 // only one batch of chunks is held in RAM at a time.
 //
 bool KnowledgeManager::build_from_path(const std::string &zim_path,
-                                       Llama &llama,
+                                       Engine &engine,
                                        Tui &tui,
                                        const ProgressFn &progress,
                                        std::string *error,
@@ -800,7 +802,7 @@ bool KnowledgeManager::build_from_path(const std::string &zim_path,
   g_case_cache.clear();
 
   // Phase 3: Batch embed with incremental disk writes
-  if (!batch_embed(text_files, llama, tui, progress, ctx, error)) {
+  if (!batch_embed(text_files, engine, tui, progress, ctx, error)) {
     shell_remove_all(ctx.extract_dir);
     fs::remove(ctx.rag_file);
     return false;
@@ -854,7 +856,7 @@ bool KnowledgeManager::build_from_path(const std::string &zim_path,
 // incrementally to bound memory usage.
 //
 bool KnowledgeManager::batch_embed(const std::vector<fs::path> &files,
-                                   Llama &llama,
+                                   Engine &engine,
                                    Tui &tui,
                                    const ProgressFn &progress,
                                    BuildContext &ctx,
@@ -873,7 +875,12 @@ bool KnowledgeManager::batch_embed(const std::vector<fs::path> &files,
   fs::create_directories(rag_dir_);
 
   RagDB batch_db;
-  batch_db.embed_dim = llama.get_embed_dim();
+#ifndef HALI_ENGINE_BASALT
+  auto *llama_impl = static_cast<Llama *>(&engine);
+  batch_db.embed_dim = llama_impl->get_embed_dim();
+#else
+  batch_db.embed_dim = 0;
+#endif
   if (!ctx.append) {
     if (!batch_db.init_file(ctx.rag_file)) {
       fail("failed to init " + ctx.rag_file);
@@ -942,8 +949,12 @@ bool KnowledgeManager::batch_embed(const std::vector<fs::path> &files,
       }
 
       int before = batch_db.size();
-      llama.rag_index_prose(batch_db, content,
-                            files[j].filename().string());
+#ifndef HALI_ENGINE_BASALT
+      llama_impl->rag_index_prose(batch_db, content,
+                                  files[j].filename().string());
+#else
+      (void)llama;
+#endif
       if (batch_db.size() == before) {
         ctx.skip_no_chunks++;
       }

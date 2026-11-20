@@ -29,6 +29,13 @@ Basalt::Basalt() = default;
 
 Basalt::~Basalt() = default;
 
+//
+// Global abort callback (engine.h interface) — no-op for basalt
+//
+void engine_set_abort_callback(void (*cb)(const char *msg)) {
+  (void)cb;
+}
+
 // ---------------------------------------------------------------------------
 // Error tracking
 // ---------------------------------------------------------------------------

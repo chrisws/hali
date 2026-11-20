@@ -77,7 +77,7 @@ else()
   message(FATAL_ERROR "Invalid LLAMA_BACKEND value: ${LLAMA_BACKEND}")
 endif()
 
-set(LLAMA_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../llama.cpp)
+set(LLAMA_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../engine/llama.cpp)
 add_subdirectory(${LLAMA_DIR}/ggml ${CMAKE_BINARY_DIR}/llama.cpp/ggml)
 add_subdirectory(${LLAMA_DIR} ${CMAKE_BINARY_DIR}/llama.cpp)
 
@@ -148,11 +148,11 @@ target_include_directories(hali_tests PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/../src/ui
   ${CMAKE_CURRENT_SOURCE_DIR}/../src/tools
   ${CMAKE_CURRENT_SOURCE_DIR}/../src/util
-  ${CMAKE_CURRENT_SOURCE_DIR}/../llama.cpp/include
-  ${CMAKE_CURRENT_SOURCE_DIR}/../llama.cpp/ggml/include
-  ${CMAKE_CURRENT_SOURCE_DIR}/../llama.cpp/common
+  ${CMAKE_CURRENT_SOURCE_DIR}/../engine/llama.cpp/include
+  ${CMAKE_CURRENT_SOURCE_DIR}/../engine/llama.cpp/ggml/include
+  ${CMAKE_CURRENT_SOURCE_DIR}/../engine/llama.cpp/common
   ${CMAKE_CURRENT_SOURCE_DIR}/../libs
-  ${CMAKE_CURRENT_SOURCE_DIR}/../llama.cpp/vendor
+  ${CMAKE_CURRENT_SOURCE_DIR}/../engine/llama.cpp/vendor
 )
 
 find_package(CURL REQUIRED)
