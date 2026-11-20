@@ -6,8 +6,14 @@
 // Download the GNU Public License (GPL) from www.gnu.org
 //
 
-#ifndef LLAMA_SB_RAG_H
-#define LLAMA_SB_RAG_H
+// rag.h - RAG data structures (engine-agnostic)
+//
+// Pure data types for the RAG subsystem: chunk storage, on-disk
+// file format, session dedup, and multi-DB library.
+// No dependency on llama.h or any inference backend.
+
+#ifndef RAG_H
+#define RAG_H
 
 #include <cstdint>
 #include <map>
@@ -209,4 +215,4 @@ struct RagLibrary {
   bool save_dir(const std::string &dir) const;
 };
 
-#endif
+#endif // RAG_H

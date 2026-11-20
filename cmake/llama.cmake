@@ -104,8 +104,8 @@ target_include_directories(hali PRIVATE
 # llama source files
 # -----------------------------
 target_sources(hali PRIVATE
-  ${CMAKE_CURRENT_SOURCE_DIR}/src/model/llama_sb.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/src/model/llama_sb_mtp.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/src/model/llama_sb_rag.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/src/model/llama_sb_suffix.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/model/llama/llama_sb.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/model/llama/llama_sb_mtp.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/model/llama/llama_sb_rag.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/model/llama/llama_sb_suffix.cpp
 )

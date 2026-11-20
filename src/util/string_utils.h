@@ -38,13 +38,6 @@ namespace utils {
   }
 
   //
-  // Helper: is the character a word character?
-  //
-  static bool is_word_char(const unsigned char c) {
-    return isalnum(c) || c == '_';
-  }
-
-  //
   // Trims whitespace from both ends of a string
   //
   std::string trim(std::string_view str);

@@ -213,8 +213,8 @@ struct Llama : public Engine {
   ~Llama();
 
   // init
-  bool load_model(const LlamaLoad &load);
-  bool load_embedding_model(const string &model_path);
+  bool load_model(const LlamaLoad &load) override;
+  bool load_embedding_model(const string &model_path) override;
 
   // generation
   bool add_message(LlamaIter &iter, const string &role, const string &content);
@@ -247,24 +247,24 @@ struct Llama : public Engine {
   float memory_kv_percent() const;
 
   // creates an embedding vector of the given dimension for the given text
-  bool embed_text(const std::string &text, std::vector<float> &out, int embed_dim);
+  bool embed_text(const std::string &text, std::vector<float> &out, int embed_dim) override;
 
   // retrieves rag query context information from the rag database
-  std::string rag_retrieve(const RagDB &db, const std::string &query, int top_k, RagSession &session);
+  std::string rag_retrieve(const RagDB &db, const std::string &query, int top_k, RagSession &session) override;
 
   // retrieves from all DBs in a RagLibrary, sharing a token budget
   std::string rag_retrieve_multi(RagLibrary &lib, const std::string &query,
-                                 int top_k, int ctx_size);
+                                 int top_k, int ctx_size) override;
 
   // indexes the details from the given file
-  bool rag_index(RagDB &db, const std::string &filepath);
+  bool rag_index(RagDB &db, const std::string &filepath) override;
 
   // indexes prose text (from ZIM extraction or plain text)
   bool rag_index_prose(RagDB &db, const std::string &text,
-                       const std::string &source);
+                       const std::string &source) override;
 
   //  returns the embedding dimension for the loaded model
-  int get_embed_dim() const { return _model != nullptr ? llama_model_n_embd(_model) : 0; }
+  int get_embed_dim() const override { return _model != nullptr ? llama_model_n_embd(_model) : 0; }
 
   // MTP (Multi-Token Prediction) speculative decoding
   bool is_mtp_enabled() const { return _mtp.enabled; }

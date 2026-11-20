@@ -38,13 +38,6 @@
 #include "usage_log.h"
 #include "webview.h"
 
-static void broadcast_message(const HaliConfig &cfg, Tui &tui, const std::string &message) {
-  if (cfg.web_enabled_ && !utils::is_blank(message)) {
-    tui.show_tool("send to browser");
-    webview::broadcast_message(message);
-  }
-}
-
 void Agent::apply_generation_params() const {
   engine_->add_stop("<|turn|>");
   engine_->add_stop("<|im_end|>");

@@ -24,8 +24,11 @@ add_subdirectory(${BASALT_DIR} ${CMAKE_BINARY_DIR}/basalt)
 
 # --- Link basalt into hali ---
 target_link_libraries(hali PRIVATE models)
-target_include_directories(hali PRIVATE ${BASALT_DIR}/include)
+target_include_directories(hali PRIVATE
+  ${BASALT_DIR}/include
+  ${CMAKE_SOURCE_DIR}/src/model/basalt
+)
 target_compile_definitions(hali PRIVATE HALI_ENGINE_BASALT)
 
 # Compile basalt.cpp
-target_sources(hali PRIVATE ${CMAKE_SOURCE_DIR}/src/model/basalt.cpp)
+target_sources(hali PRIVATE ${CMAKE_SOURCE_DIR}/src/model/basalt/basalt.cpp)

@@ -24,9 +24,6 @@
 #include "util/platform.h"
 #include "shell_util.h"
 #include "util/logging.h"
-#ifndef HALI_ENGINE_BASALT
-#include "llama_sb.h"
-#endif
 #include "string_utils.h"
 #include "ui/tui.h"
 #include "agent_utils.h"
@@ -875,12 +872,7 @@ bool KnowledgeManager::batch_embed(const std::vector<fs::path> &files,
   fs::create_directories(rag_dir_);
 
   RagDB batch_db;
-#ifndef HALI_ENGINE_BASALT
-  auto *llama_impl = static_cast<Llama *>(&engine);
-  batch_db.embed_dim = llama_impl->get_embed_dim();
-#else
-  batch_db.embed_dim = 0;
-#endif
+  batch_db.embed_dim = engine.get_embed_dim();
   if (!ctx.append) {
     if (!batch_db.init_file(ctx.rag_file)) {
       fail("failed to init " + ctx.rag_file);
@@ -949,12 +941,7 @@ bool KnowledgeManager::batch_embed(const std::vector<fs::path> &files,
       }
 
       int before = batch_db.size();
-#ifndef HALI_ENGINE_BASALT
-      llama_impl->rag_index_prose(batch_db, content,
-                                  files[j].filename().string());
-#else
-      (void)llama;
-#endif
+      engine.rag_index_prose(batch_db, content, files[j].filename().string());
       if (batch_db.size() == before) {
         ctx.skip_no_chunks++;
       }

@@ -16,12 +16,14 @@
 #include <sstream>
 
 #include "ggml-cuda.h"
+#include "ggml-backend.h"
 #include "llama.h"
 #include "log.h"
 
 #include "llama_sb.h"
 #include "logging.h"
 #include "string_utils.h"
+#include "gpu_info.h"
 
 constexpr int MAX_REPEAT = 50;
 
@@ -43,6 +45,17 @@ static bool read_vram(size_t &used, size_t &total) {
   }
 #endif
   return false;
+}
+
+static uint64_t vram_bytes() {
+  ggml_backend_dev_t dev = ggml_backend_dev_by_type(GGML_BACKEND_DEVICE_TYPE_GPU);
+  if (!dev) {
+    return 0;
+  }
+  size_t free_bytes = 0;
+  size_t total_bytes = 0;
+  ggml_backend_dev_memory(dev, &free_bytes, &total_bytes);
+  return static_cast<uint64_t>(total_bytes);
 }
 
 Llama::Llama() :
@@ -282,6 +295,8 @@ bool Llama::load_model(const LlamaLoad &load) {
     }
   }
 
+  gpu_info::set_vram_bytes(vram_bytes());
+  
   return _last_error.empty();
 }
 
@@ -388,7 +403,7 @@ bool Llama::add_message(LlamaIter &iter, const string &role, const string &conte
       decoder_start_token_id = llama_vocab_bos(_vocab);
     }
 
-    auto * decoder_batch = llama_batch_ext_init(_ctx);
+    auto *decoder_batch = llama_batch_ext_init(_ctx);
     int32_t d_idx = llama_batch_ext_add_token(decoder_batch, 0, decoder_start_token_id);
     llama_pos d_pos = _tokens_physically_used;
     llama_batch_ext_set_pos(decoder_batch, d_idx, &d_pos);

@@ -68,8 +68,6 @@ struct BroadcastState {
   }
 };
 
-
-
 //
 // Agent
 //

@@ -9,9 +9,9 @@
 #include "engine_factory.h"
 
 #ifdef HALI_ENGINE_BASALT
-#include "basalt.h"
+#include "basalt/basalt.h"
 #else
-#include "llama_sb.h"
+#include "llama/llama_sb.h"
 #endif
 
 std::unique_ptr<Engine> create_engine() {

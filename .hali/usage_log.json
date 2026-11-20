@@ -1,19 +1,21 @@
 {
-  "total_turns": 4,
-  "total_llm_ms": 146664,
-  "total_tool_calls": 43,
+  "total_turns": 6,
+  "total_llm_ms": 1.19174e+06,
+  "total_tool_calls": 110,
   "total_tool_errors": 3,
-  "peak_kv_pct": 34.7636,
-  "total_tokens": 5905,
-  "cumulative_tokens": 1431313,
-  "cumulative_tool_calls": 6355,
-  "cumulative_tool_errors": 176,
-  "cumulative_turns": 658,
-  "cumulative_llm_ms": 5.21047e+07,
+  "peak_kv_pct": 87.3027,
+  "total_tokens": 28993,
+  "cumulative_tokens": 1467168,
+  "cumulative_tool_calls": 6493,
+  "cumulative_tool_errors": 182,
+  "cumulative_turns": 672,
+  "cumulative_llm_ms": 5.34263e+07,
   "turns": [
-    {"turn": 1, "llm_ms": 78116.8, "tokens": 2559, "tool_calls": 17, "tool_errors": 2, "kv_pct": 16.8447, "files_read": 3, "files_written": 1},
-    {"turn": 2, "llm_ms": 44832.6, "tokens": 2210, "tool_calls": 18, "tool_errors": 0, "kv_pct": 29.546, "files_read": 13, "files_written": 3},
-    {"turn": 3, "llm_ms": 16811.5, "tokens": 826, "tool_calls": 6, "tool_errors": 1, "kv_pct": 32.1329, "files_read": 0, "files_written": 1},
-    {"turn": 4, "llm_ms": 6903.13, "tokens": 310, "tool_calls": 2, "tool_errors": 0, "kv_pct": 34.7636, "files_read": 2, "files_written": 0}
+    {"turn": 1, "llm_ms": 921626, "tokens": 21327, "tool_calls": 74, "tool_errors": 1, "kv_pct": 78.8903, "files_read": 34, "files_written": 24},
+    {"turn": 2, "llm_ms": 15843.3, "tokens": 475, "tool_calls": 3, "tool_errors": 0, "kv_pct": 80.7597, "files_read": 1, "files_written": 1},
+    {"turn": 3, "llm_ms": 5426.87, "tokens": 119, "tool_calls": 1, "tool_errors": 1, "kv_pct": 81.1942, "files_read": 0, "files_written": 0},
+    {"turn": 4, "llm_ms": 77098.1, "tokens": 213, "tool_calls": 1, "tool_errors": 0, "kv_pct": 87.3027, "files_read": 0, "files_written": 0},
+    {"turn": 5, "llm_ms": 145575, "tokens": 5546, "tool_calls": 27, "tool_errors": 0, "kv_pct": 26.9033, "files_read": 8, "files_written": 13},
+    {"turn": 6, "llm_ms": 26167.6, "tokens": 1313, "tool_calls": 4, "tool_errors": 1, "kv_pct": 30.957, "files_read": 0, "files_written": 0}
   ]
 }
