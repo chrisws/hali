@@ -30,5 +30,8 @@ target_include_directories(hali PRIVATE
 )
 target_compile_definitions(hali PRIVATE HALI_ENGINE_BASALT)
 
-# Compile basalt.cpp
-target_sources(hali PRIVATE ${CMAKE_SOURCE_DIR}/src/model/basalt/basalt.cpp)
+# Compile basalt.cpp + no-op RAG stubs
+target_sources(hali PRIVATE
+  ${CMAKE_SOURCE_DIR}/src/model/basalt/basalt.cpp
+  ${CMAKE_SOURCE_DIR}/src/model/basalt/basalt_rag.cpp
+)
