@@ -578,7 +578,7 @@ static void slash_security_audit(HaliConfig &cfg, Tui &tui) {
 //
 // /skill [name] [kickoff] – load a skill into the conversation
 //
-static void slash_skill(const std::string &rest_in, HaliConfig &cfg,
+static void slash_skill(const std::string &rest_in, HaliConfig &,
                         Agent &agent, Tui &tui) {
   std::string rest = rest_in;
   if (rest.empty()) {
@@ -612,7 +612,7 @@ static void slash_skill(const std::string &rest_in, HaliConfig &cfg,
 //
 // /lint – list source files and run clang-tidy lint
 //
-static void slash_lint(const std::string &rest, HaliConfig &cfg, Agent &agent, Tui &tui) {
+static void slash_lint(const std::string &, HaliConfig &cfg, Agent &agent, Tui &tui) {
   const std::string sandbox = cfg.sandbox_;
   const std::string src_dir = sandbox + "/src";
 
@@ -757,7 +757,7 @@ static void slash_tool(const std::string &rest, Agent &agent, Tui &tui) {
 //
 // ── Index a .zim file and load it ──────────────────────────────────────────
 //
-static void index_zim_file(const std::string &path, Agent &agent, Tui &tui,
+static void index_zim_file(const std::string &path, Agent &, Tui &tui,
                            const std::function<void(const std::string &)> &progress,
                            KnowledgeManager &km) {
   if (!km.embed_model()) {

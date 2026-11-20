@@ -18,8 +18,8 @@
 #include <format>
 
 #include "knowledge.h"
-#include "llama_sb.h"
-#include "llama_sb_rag.h"
+#include "engine.h"
+#include "rag.h"
 #include "string_utils.h"
 
 namespace fs = std::filesystem;

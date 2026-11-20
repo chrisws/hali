@@ -115,7 +115,7 @@ std::string Agent::handle_build(const std::string &a1, const std::string &a2) {
   });
 }
 
-std::string Agent::handle_tune(const std::string &a1, const std::string &a2) {
+std::string Agent::handle_tune(const std::string &a1, const std::string &) {
   tui_.show_tool("tune");
   if (a1.empty()) return "ERROR: usage: TOOL:TUNE key=value [key=value ...]";
   std::istringstream iss(a1);
@@ -590,30 +590,30 @@ std::string Agent::handle_gui(const std::string &a1, const std::string &a2) {
 ToolMap Agent::build_tool_dispatch() {
   ToolMap tools;
 
-  tools["TOOL:DATE"] = [this](const std::string &a1, const std::string &a2) -> std::string {
+  tools["TOOL:DATE"] = [this](const std::string &, const std::string &) -> std::string {
     tui_.show_tool("date");
     char buf[32]; time_t t = time(nullptr);
     strftime(buf, sizeof(buf), "%Y-%m-%d", localtime(&t));
     return buf;
   };
-  tools["TOOL:TIME"] = [this](const std::string &a1, const std::string &a2) -> std::string {
+  tools["TOOL:TIME"] = [this](const std::string &, const std::string &) -> std::string {
     tui_.show_tool("time");
     char buf[32]; time_t t = time(nullptr);
     strftime(buf, sizeof(buf), "%H:%M:%S", localtime(&t));
     return buf;
   };
-  tools["TOOL:RND"] = [this](const std::string &a1, const std::string &a2) -> std::string {
+  tools["TOOL:RND"] = [this](const std::string &, const std::string &) -> std::string {
     tui_.show_tool("rnd");
     return std::to_string(static_cast<double>(rand()) / RAND_MAX);
   };
   tools["TOOL:TUNE"] = [this](const std::string &a1, const std::string &a2) -> std::string {
     return handle_tune(a1, a2);
   };
-  tools["TOOL:RAG"] = [this](const std::string &a1, const std::string &a2) -> std::string {
+  tools["TOOL:RAG"] = [this](const std::string &a1, const std::string &) -> std::string {
     tui_.show_tool("rag");
     return rag_tool(a1);
   };
-  tools["TOOL:RAGINFO"] = [this](const std::string &a1, const std::string &a2) -> std::string {
+  tools["TOOL:RAGINFO"] = [this](const std::string &, const std::string &) -> std::string {
     tui_.show_tool("raginfo");
     return rag_inspect();
   };
@@ -624,7 +624,7 @@ ToolMap Agent::build_tool_dispatch() {
     }
     return handle_ragindex(combined);
   };
-  tools["TOOL:LIST"] = [this](const std::string &a1, const std::string &a2) -> std::string {
+  tools["TOOL:LIST"] = [this](const std::string &a1, const std::string &) -> std::string {
     std::string dir = utils::resolve_path(cfg_.sandbox_, a1);
     if (!utils::path_allowed(cfg_.sandbox_, cfg_.extra_dirs_, dir)) {
       return "ERROR: path outside sandbox";
@@ -632,7 +632,7 @@ ToolMap Agent::build_tool_dispatch() {
     tui_.show_tool("listing: " + dir);
     return list_dir(dir);
   };
-  tools["TOOL:EXISTS"] = [this](const std::string &a1, const std::string &a2) -> std::string {
+  tools["TOOL:EXISTS"] = [this](const std::string &a1, const std::string &) -> std::string {
     std::string p = utils::resolve_path(cfg_.sandbox_, a1);
     if (!utils::path_allowed(cfg_.sandbox_, cfg_.extra_dirs_, p)) {
       return "ERROR: path outside sandbox";
@@ -704,7 +704,7 @@ ToolMap Agent::build_tool_dispatch() {
                                return tool_append(path, a2);
                              });
   };
-  tools["TOOL:MKDIR"] = [this](const std::string &a1, const std::string &a2) -> std::string {
+  tools["TOOL:MKDIR"] = [this](const std::string &a1, const std::string &) -> std::string {
     if (auto err = utils::validate_path_arg(a1); !err.empty()) {
       return err;
     }
@@ -739,14 +739,14 @@ ToolMap Agent::build_tool_dispatch() {
     }
     return tool_move(src, dst);
   };
-  tools["TOOL:CURL"] = [this](const std::string &a1, const std::string &a2) -> std::string {
+  tools["TOOL:CURL"] = [this](const std::string &a1, const std::string &) -> std::string {
     if (cfg_.disable_curl_) {
       return "ERROR: TOOL:CURL is disabled by configuration";
     }
     tui_.show_tool("curl: " + a1);
     return tool_curl(a1);
   };
-  tools["TOOL:INTROSPECT"] = [this](const std::string &a1, const std::string &a2) -> std::string {
+  tools["TOOL:INTROSPECT"] = [this](const std::string &a1, const std::string &) -> std::string {
     tui_.show_tool("introspecting: " + a1);
     return cfg_.introspect();
   };
@@ -756,7 +756,7 @@ ToolMap Agent::build_tool_dispatch() {
     if (cfg_.audio_user_prompt_) { audio::play_user_prompt(); }
     return tui_.readline();
   };
-  tools["TOOL:RESTART"] = [this](const std::string &a1, const std::string &a2) -> std::string {
+  tools["TOOL:RESTART"] = [this](const std::string &, const std::string &) -> std::string {
     tui_.show_tool("restart ...");
     return restart();
   };
@@ -775,7 +775,7 @@ ToolMap Agent::build_tool_dispatch() {
   tools["TOOL:BUILD"] = [this](const std::string &a1, const std::string &a2) -> std::string {
     return handle_build(a1, a2);
   };
-  tools["TOOL:STAT"] = [this](const std::string &a1, const std::string &a2) -> std::string {
+  tools["TOOL:STAT"] = [this](const std::string &a1, const std::string &) -> std::string {
     tui_.show_tool("stat " + a1);
     const auto path = utils::resolve_path(cfg_.sandbox_, a1);
     if (!utils::path_allowed(cfg_.sandbox_, cfg_.extra_dirs_, path)) {
@@ -783,7 +783,7 @@ ToolMap Agent::build_tool_dispatch() {
     }
     return stat_file(path);
   };
-  tools["TOOL:SYSINFO"] = [this](const std::string &a1, const std::string &a2) -> std::string {
+  tools["TOOL:SYSINFO"] = [this](const std::string &, const std::string &) -> std::string {
     tui_.show_tool("sysinfo");
     return sysinfo_text();
   };
@@ -804,7 +804,7 @@ ToolMap Agent::build_tool_dispatch() {
   tools["TOOL:REPLACE"] = [this](const std::string &a1, const std::string &a2) -> std::string {
     return handle_file_write("replace", a1, a2, true,
                              nullptr,
-                             [this, &a1, &a2](const std::string &path) -> std::string {
+                             [this, &a1, &a2](const std::string &) -> std::string {
                                return tool_replace(cfg_.sandbox_, a1, a2);
                              });
   };

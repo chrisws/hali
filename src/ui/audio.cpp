@@ -166,7 +166,7 @@ static void clear_queue() {
 
 // ── Data callback (runs on the audio thread) ────────────────────────────────
 
-static void data_callback(ma_device *device, void *output,
+static void data_callback(ma_device *, void *output,
                           const void *input, ma_uint32 frame_count) {
   (void)input;
   float *out = static_cast<float *>(output);

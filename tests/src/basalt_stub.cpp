@@ -1,5 +1,5 @@
 // Test stub for Basalt engine - avoids basalt library dependencies.
-#include "basalt.h"
+#include "basalt/basalt.h"
 
 #include <cstring>
 

@@ -17,6 +17,9 @@
 
 #include "basalt/model/adapter.hpp"
 #include "basalt/kernels/sampler.hpp"
+#include "basalt/program/gpu_select.hpp"
+
+#include "gpu_info.h"
 
 using namespace basalt::model;
 using namespace basalt::kernels;
@@ -96,6 +99,15 @@ bool Basalt::load_model(const ModelLoad &load) {
   if (!_session) {
     set_error("basalt start produced no sessions");
     return false;
+  }
+
+  // Report VRAM to the gpu_info module.
+  {
+    bool known = false;
+    auto cards = basalt::program::visible_gpus(known);
+    if (!cards.empty() && cards[0].vram > 0) {
+      gpu_info::set_vram_bytes(cards[0].vram);
+    }
   }
 
   // Reset token state.

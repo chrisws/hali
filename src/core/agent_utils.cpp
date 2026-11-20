@@ -149,7 +149,7 @@ ToolArgs split_tool_args(const std::string &rest) {
   // Existing behaviour: split on first space or newline
   auto NL = rest.find('\n');
   auto SP = rest.find(' ');
-  int sep;
+  auto sep = std::string::npos;
   if (NL != std::string::npos && (SP == std::string::npos || NL < SP)) {
     sep = NL;
   } else {

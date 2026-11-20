@@ -194,7 +194,7 @@ std::string hex_dump(const std::string &path, const std::string &offset_str) {
   std::ostringstream oss;
   for (long i = 0; i < actual; i += 16) {
     // Offset
-    char off_buf[16];
+    char off_buf[24];
     snprintf(off_buf, sizeof(off_buf), "%08lx: ", (unsigned long)(offset + i));
     oss << off_buf;
 

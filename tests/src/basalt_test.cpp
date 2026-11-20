@@ -11,7 +11,7 @@
 #include <cassert>
 #include <cstdio>
 #include <cstring>
-#include "basalt.h"
+#include "basalt/basalt.h"
 #include "engine.h"
 
 static int tests_run = 0;

@@ -13,7 +13,7 @@
 #include <string>
 #include <vector>
 
-#include "llama_sb_rag.h"
+#include "llama/llama_sb_rag.h"
 
 using namespace std;
 

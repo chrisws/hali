@@ -3,6 +3,10 @@
 
 namespace gpu_info {
 
+void set_vram_bytes(uint64_t bytes) {
+  (void)bytes;
+}
+
 uint64_t vram_bytes() {
   return 0;
 }

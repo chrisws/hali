@@ -140,16 +140,16 @@ struct Engine {
   virtual bool supports_kv_control() const { return false; }
 
   // --- RAG / embedding (no-op defaults; basalt returns false/empty) ---------
-  virtual bool load_embedding_model(const string &path) { return false; }
+  virtual bool load_embedding_model(const string &) { return false; }
   virtual int  get_embed_dim() const { return 0; }
-  virtual bool embed_text(const string &text, vector<float> &out, int dim) { return false; }
-  virtual string rag_retrieve(const RagDB &db, const string &query,
-                               int top_k, RagSession &session) { return ""; }
-  virtual string rag_retrieve_multi(RagLibrary &lib, const string &query,
-                                    int top_k, int ctx_size) { return ""; }
-  virtual bool rag_index(RagDB &db, const string &filepath) { return false; }
-  virtual bool rag_index_prose(RagDB &db, const string &text,
-                               const string &source) { return false; }
+  virtual bool embed_text(const string &, vector<float> &, int) { return false; }
+  virtual string rag_retrieve(const RagDB &, const string &,
+                               int, RagSession &) { return ""; }
+  virtual string rag_retrieve_multi(RagLibrary &, const string &,
+                                    int, int) { return ""; }
+  virtual bool rag_index(RagDB &, const string &) { return false; }
+  virtual bool rag_index_prose(RagDB &, const string &,
+                               const string &) { return false; }
 };
 
 // ---------------------------------------------------------------------------

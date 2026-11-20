@@ -10,7 +10,7 @@
 #include <cassert>
 #include <cstdio>
 #include <vector>
-#include "llama_sb_suffix.h"
+#include "llama/llama_sb_suffix.h"
 
 static int tests_run = 0;
 static int tests_passed = 0;

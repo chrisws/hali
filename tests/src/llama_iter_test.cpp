@@ -9,7 +9,7 @@
 
 #include <cassert>
 #include <cstdio>
-#include "llama_sb.h"
+#include "llama/llama_sb.h"
 
 static int tests_run = 0;
 static int tests_passed = 0;

@@ -328,7 +328,7 @@ void Tui::redraw_chat() {
   for (int i = start, row = 0; i < end; ++i, ++row) {
     ncplane_set_channels(chatpl_, visual[i].ch);
     const int result = ncplane_puttext(chatpl_, row, NCALIGN_LEFT, visual[i].text.c_str(), nullptr);
-    if (result > 0 && result > cols) {
+    if (result > 0 && result > (int)cols) {
       log_write(LEVEL_INFO, "tui", "ncplane_puttext wrapped text row:%d cols:%d result:%d", row, cols, result);
       const int extra = (result / cols);
       row += extra;
@@ -382,7 +382,7 @@ void Tui::redraw_input() const {
     int max_w = std::max(0, term_cols_ - prompt_cols - 1);
     std::string visible = input_.get_input_buf();
     int view_offset = 0;
-    if (visible.size() > max_w && max_w > 0) {
+    if (visible.size() > (size_t)max_w && max_w > 0) {
       view_offset = static_cast<int>(visible.size() - max_w);
       visible = visible.substr(view_offset);
     }
@@ -552,7 +552,7 @@ void Tui::dismiss_modal_popup() {
 //
 // ─── Progress Modal ─────────────────────────────────────────────────
 //
-void Tui::show_progress_modal(const std::string &title, int total) {
+void Tui::show_progress_modal(const std::string &, int total) {
   dismiss_modal_popup();
   progress_total_ = total;
   progress_current_ = 0;
@@ -1329,7 +1329,7 @@ bool Tui::confirm_dialog(const std::string &prompt) {
 bool Tui::has_input() const {
   // 10ms block
   int fd = notcurses_inputready_fd(nc_);
-  struct pollfd pfd = { .fd = fd, .events = POLLIN };
+  struct pollfd pfd = { .fd = fd, .events = POLLIN, .revents = 0 };
   return poll(&pfd, 1, 10) > 0 && (pfd.revents & POLLIN);
 }
 
