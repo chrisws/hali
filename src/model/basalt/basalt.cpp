@@ -19,6 +19,8 @@
 #include "basalt/models/builtin.hpp"
 #include "basalt/kernels/sampler.hpp"
 #include "basalt/program/gpu_select.hpp"
+#include "basalt/core/model_file.hpp"
+#include "basalt/artifact/gguf_reader.hpp"
 
 #include "gpu_info.h"
 
@@ -65,29 +67,67 @@ bool Basalt::load_model(const ModelLoad &load) {
   // Register all built-in model adapters (idempotent).
   basalt::models::register_builtin_models();
 
-  // Find the adapter for the model file.
-  // For now we try the known architectures; a production build would
-  // inspect the .basalt file header.
-  const char *archs[] = {
-    "qwen4exp",
-  };
-  _adapter = nullptr;
-  for (const char *a : archs) {
-    _adapter = find_adapter(a);
-    if (_adapter) break;
+  // Open the model file and resolve the adapter.
+  // Try .basalt first, then fall back to GGUF (single or multi-shard).
+  std::string err;
+  const ModelAdapter *adapter = nullptr;
+  std::vector<std::string> model_paths;
+
+  {
+    basalt::core::ModelFile file;
+    if (file.open(load.model_path, err) && file.load_meta(err)) {
+      // .basalt path: read architecture from the meta JSON.
+      const basalt::core::Json *kv = file.meta().get("gguf_kv");
+      const basalt::core::Json *arch = kv ? kv->get("general.architecture") : nullptr;
+      const std::string arch_name = arch && arch->is_string() ? arch->s : std::string();
+      adapter = find_adapter(arch_name);
+      if (!adapter) {
+        set_error("no basalt adapter for architecture '%s': %s",
+                  arch_name.c_str(),
+                  unavailable_architecture(arch_name).c_str());
+        return false;
+      }
+      model_paths.push_back(load.model_path);
+    } else {
+      // GGUF path: handles single-file and multi-shard models.
+      try {
+        basalt::GgufModel model = basalt::GgufModel::open(load.model_path);
+        adapter = adapter_for(model.meta(), err);
+        if (!adapter) {
+          set_error("no basalt adapter for GGUF model: %s", err.c_str());
+          return false;
+        }
+        for (size_t i = 0; i < model.size(); ++i)
+          model_paths.push_back(model.shard(i).path());
+      } catch (const std::exception &e) {
+        set_error("cannot open model file (neither .basalt nor GGUF): %s",
+                  e.what());
+        return false;
+      }
+    }
   }
-  if (!_adapter) {
-    set_error("no basalt adapter registered");
+
+  _adapter = adapter;
+
+  // Check that the adapter supports the standard in-process start path.
+  // Some models (e.g. qwen4exp) run their own start via run() and do not
+  // expose a LoadedModel, so make_model() returns nullptr and start()
+  // refuses.
+  if (!_adapter->make_model()) {
+    set_error("model '%s' does not support in-process loading "
+              "(it runs its own start); use the basalt CLI instead",
+              _adapter->arch());
     return false;
   }
 
   // Build the LoadRequest.
   LoadRequest req;
-  req.paths.push_back(load.model_path);
+  for (const auto &p : model_paths)
+    req.paths.push_back(p);
   req.max_context = load.n_ctx > 0 ? load.n_ctx : 0;
   req.sessions = 1;
   req.vision = false;
-  req.draft = false;  // qwen4exp runs its own start
+  req.draft = false;
 
   // Start the model.
   Started started;
