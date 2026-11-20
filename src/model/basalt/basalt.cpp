@@ -21,6 +21,7 @@
 #include "basalt/program/gpu_select.hpp"
 #include "basalt/core/model_file.hpp"
 #include "basalt/artifact/gguf_reader.hpp"
+#include "console_capture.h"
 
 #include "gpu_info.h"
 
@@ -114,8 +115,7 @@ bool Basalt::load_model(const ModelLoad &load) {
   // expose a LoadedModel, so make_model() returns nullptr and start()
   // refuses.
   if (!_adapter->make_model()) {
-    set_error("model '%s' does not support in-process loading "
-              "(it runs its own start); use the basalt CLI instead",
+    set_error("model '%s' does not support in-process loading ",
               _adapter->arch());
     return false;
   }

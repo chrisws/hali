@@ -34,4 +34,5 @@ target_compile_definitions(hali PRIVATE HALI_ENGINE_BASALT)
 target_sources(hali PRIVATE
   ${CMAKE_SOURCE_DIR}/src/model/basalt/basalt.cpp
   ${CMAKE_SOURCE_DIR}/src/model/basalt/basalt_rag.cpp
+  ${CMAKE_SOURCE_DIR}/src/model/basalt/console_capture.cpp
 )
