@@ -14,6 +14,15 @@
 
 #include <cstdarg>
 #include <cstdio>
+#include <string>
+
+#include "logging.h"
+
+// Redirect basalt console I/O into hali's logging system.
+// The #define renames fwrite/printf/fprintf in all basalt headers
+// (inline + template code) to our wrappers.  Undef'd after the last
+// basalt header so the rest of this translation unit is unaffected.
+#include "basalt_printf_redirect.h"
 
 #include "basalt/model/adapter.hpp"
 #include "basalt/models/builtin.hpp"
@@ -21,7 +30,10 @@
 #include "basalt/program/gpu_select.hpp"
 #include "basalt/core/model_file.hpp"
 #include "basalt/artifact/gguf_reader.hpp"
-#include "console_capture.h"
+
+#undef fwrite
+#undef printf
+#undef fprintf
 
 #include "gpu_info.h"
 
@@ -32,7 +44,12 @@ using namespace basalt::kernels;
 // Construction / destruction
 // ---------------------------------------------------------------------------
 
-Basalt::Basalt() = default;
+Basalt::Basalt() {
+  basalt_printf_redirect_set_sink([](const char *data, size_t len) {
+    std::string s(data, len);
+    log_write(LEVEL_INFO, "basalt", "%s", s.c_str());
+  });
+}
 
 Basalt::~Basalt() = default;
 
