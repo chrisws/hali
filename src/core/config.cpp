@@ -437,7 +437,7 @@ std::string HaliConfig::prompt_core() const {
     "  TOOL:TABLE  <R>x<C> <rows>  format pipe-delimited rows into an aligned table\n"
     "  TOOL:INTROSPECT            show current model settings\n";
   if (!disable_curl_) {
-    p += "  TOOL:CURL   <url>          HTTP GET, returns response body (max 32 KB)\n";
+    p += "  TOOL:CURL   <url> [path]   HTTP GET; with path, downloads to file\n";
   }
   p +=
     "  TOOL:PERMISSION            ask user for explicit permission\n"

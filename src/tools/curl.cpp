@@ -12,8 +12,12 @@
 #include <cctype>
 #include <utility>
 #include <cstdint>
+#include <cstdio>
+#include <sys/stat.h>
+#include <unistd.h>
 
 #include "curl.h"
+#include "util/logging.h"
 
 //
 // TOOL:CURL
@@ -257,6 +261,90 @@ std::string tool_curl(const std::string &url) {
   }
 
   return body;
+}
+
+//
+// TOOL:CURL download — write response to a file on disk
+//
+static size_t curl_file_write_cb(char *ptr, size_t size, size_t nmemb, void *userdata) {
+  FILE *f = static_cast<FILE*>(userdata);
+  return fwrite(ptr, size, nmemb, f);
+}
+
+struct DownloadProgress {
+  ProgressCb cb;
+  int percent_last = -1;
+};
+
+static int curl_progress_cb(void *userdata, curl_off_t dltotal, curl_off_t dlnow,
+                            curl_off_t, curl_off_t) {
+  auto *p = static_cast<DownloadProgress*>(userdata);
+  if (dltotal <= 0) return 0;
+  int pct = (int)(dlnow * 100 / dltotal);
+  if (pct != p->percent_last && (pct % 5 == 0 || pct == 100)) {
+    p->percent_last = pct;
+    if (p->cb) p->cb((int64_t)dlnow, (int64_t)dltotal);
+  }
+  return 0;
+}
+
+std::string tool_curl_download(const std::string &url, const std::string &output_path,
+                               ProgressCb progress) {
+  if (url.empty()) return "ERROR: TOOL:CURL requires a URL argument";
+  if (output_path.empty()) return "ERROR: download requires an output path";
+  if (is_blocked_url(url)) return "ERROR: URL blocked (private/link-local/loopback)";
+
+  CURL *curl = curl_easy_init();
+  if (!curl) return "ERROR: curl_easy_init failed";
+
+  FILE *f = fopen(output_path.c_str(), "wb");
+  if (!f) {
+    curl_easy_cleanup(curl);
+    return "ERROR: cannot open output file: " + output_path;
+  }
+
+  DownloadProgress dp;
+  dp.cb = std::move(progress);
+  curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+  curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, curl_file_write_cb);
+  curl_easy_setopt(curl, CURLOPT_WRITEDATA, f);
+  curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
+  curl_easy_setopt(curl, CURLOPT_MAXREDIRS, 5L);
+  curl_easy_setopt(curl, CURLOPT_TIMEOUT, 0L);  // no timeout for large downloads
+  curl_easy_setopt(curl, CURLOPT_USERAGENT, "hali/1.0");
+  curl_easy_setopt(curl, CURLOPT_ACCEPT_ENCODING, "");
+  curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
+  curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, curl_progress_cb);
+  curl_easy_setopt(curl, CURLOPT_XFERINFODATA, &dp);
+
+  CURLcode res = curl_easy_perform(curl);
+  long http_code = 0;
+  curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
+  curl_easy_cleanup(curl);
+  fclose(f);
+
+  if (res != CURLE_OK) {
+    remove(output_path.c_str());
+    return std::string("ERROR: curl: ") + curl_easy_strerror(res);
+  }
+  if (http_code >= 400) {
+    remove(output_path.c_str());
+    return "ERROR: HTTP " + std::to_string(http_code) + " from " + url;
+  }
+
+  // Get file size for the summary.
+  struct stat st;
+  int64_t bytes = 0;
+  if (stat(output_path.c_str(), &st) == 0) bytes = st.st_size;
+  double mb = bytes / (1024.0 * 1024.0);
+  double gb = bytes / (1024.0 * 1024.0 * 1024.0);
+
+  std::string summary;
+  if (gb >= 1.0)
+    summary = "Downloaded " + std::to_string((int)(gb * 10) / 10.0) + " GB to " + output_path;
+  else
+    summary = "Downloaded " + std::to_string((int)(mb * 10) / 10.0) + " MB to " + output_path;
+  return summary;
 }
 
 void curl_init() {

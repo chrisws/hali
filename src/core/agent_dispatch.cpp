@@ -739,9 +739,19 @@ ToolMap Agent::build_tool_dispatch() {
     }
     return tool_move(src, dst);
   };
-  tools["TOOL:CURL"] = [this](const std::string &a1, const std::string &) -> std::string {
+  tools["TOOL:CURL"] = [this](const std::string &a1, const std::string &a2) -> std::string {
     if (cfg_.disable_curl_) {
       return "ERROR: TOOL:CURL is disabled by configuration";
+    }
+    if (!a2.empty()) {
+      tui_.show_tool("download: " + a1 + " -> " + a2);
+      tui_.show_progress_modal("Downloading", 0);
+      auto result = tool_curl_download(a1, a2,
+        [this](int64_t cur, int64_t tot) {
+          tui_.update_progress((int)cur, (int)tot, 0);
+        });
+      tui_.dismiss_progress_modal();
+      return result;
     }
     tui_.show_tool("curl: " + a1);
     return tool_curl(a1);

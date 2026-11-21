@@ -125,11 +125,55 @@ static void test_html_to_text() {
   cout << "test_html_to_text passed" << endl;
 }
 
+//
+// Test: tool_curl_download with empty URL
+//
+static void test_curl_download_empty_url() {
+  string result = tool_curl_download("", "output.bin");
+  assert(result.find("ERROR") != string::npos);
+  assert(result.find("requires a URL") != string::npos);
+
+  cout << "test_curl_download_empty_url passed" << endl;
+}
+
+//
+// Test: tool_curl_download with empty output path
+//
+static void test_curl_download_empty_path() {
+  string result = tool_curl_download("https://example.com/file.bin", "");
+  assert(result.find("ERROR") != string::npos);
+  assert(result.find("output path") != string::npos);
+
+  cout << "test_curl_download_empty_path passed" << endl;
+}
+
+//
+// Test: tool_curl_download with blocked URL
+//
+static void test_curl_download_blocked_url() {
+  string result = tool_curl_download("http://169.254.169.254/latest/meta-data/", "output.bin");
+  assert(result.find("ERROR") != string::npos);
+  assert(result.find("blocked") != string::npos);
+
+  result = tool_curl_download("http://127.0.0.1/secret", "output.bin");
+  assert(result.find("ERROR") != string::npos);
+  assert(result.find("blocked") != string::npos);
+
+  result = tool_curl_download("http://localhost:8080/admin", "output.bin");
+  assert(result.find("ERROR") != string::npos);
+  assert(result.find("blocked") != string::npos);
+
+  cout << "test_curl_download_blocked_url passed" << endl;
+}
+
 void curl_test() {
   test_blocked_urls();
   test_allowed_urls();
   test_curl_empty_url();
   test_curl_blocked_url();
   test_html_to_text();
+  test_curl_download_empty_url();
+  test_curl_download_empty_path();
+  test_curl_download_blocked_url();
   cout << "\nAll CURL tests passed!\n" << endl;
 }
