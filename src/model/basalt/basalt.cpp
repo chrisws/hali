@@ -117,8 +117,9 @@ bool Basalt::load_model(const ModelLoad &load) {
           return false;
         }
         // Pre-validate token_embd for a clearer diagnostic than basalt's generic message.
-        if (const auto *te = model.find("token_embd.weight"); te && te->type != 30) {
-          set_error("token_embd.weight is %s (%lld elements); basalt requires bf16",
+        // Accept BF16 (30), F16 (1), Q4_K (12), and Q8_0 (8) — the latter two dequantized to F16 at load time.
+        if (const auto *te = model.find("token_embd.weight"); te && te->type != 30 && te->type != 1 && te->type != 12 && te->type != 8) {
+          set_error("token_embd.weight is %s (%lld elements); basalt requires bf16, f16, q4_k or q8_0",
                     te->type_name(), (long long)te->elements());
           return false;
         }
