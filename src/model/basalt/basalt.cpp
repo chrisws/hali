@@ -115,6 +115,12 @@ bool Basalt::load_model(const ModelLoad &load) {
           set_error("no basalt adapter for GGUF model: %s", err.c_str());
           return false;
         }
+        // Pre-validate token_embd for a clearer diagnostic than basalt's generic message.
+        if (const auto *te = model.find("token_embd.weight"); te && te->type != 30) {
+          set_error("token_embd.weight is %s (%lld elements); basalt requires bf16",
+                    te->type_name(), (long long)te->elements());
+          return false;
+        }
         for (size_t i = 0; i < model.size(); ++i)
           model_paths.push_back(model.shard(i).path());
       } catch (const std::exception &e) {
