@@ -28,6 +28,9 @@ namespace basalt::model {
   class ModelSession;
   struct TokenNames;
 }
+namespace basalt::program {
+  class Tokenizer;
+}
 
 struct Basalt : public Engine {
   Basalt();
@@ -73,6 +76,11 @@ private:
   const basalt::model::ModelAdapter *_adapter = nullptr;
   basalt::model::ModelSession *_session = nullptr;
 
+  // tokenizer (loaded from the .basalt pack's tokenizer sections)
+  std::unique_ptr<basalt::program::Tokenizer> _tokenizer;
+  bool _tokenizer_loaded = false;
+  std::string _model_path;
+
   // token buffer (hali-side, like Llama)
   std::vector<int32_t> _tokens;
   int64_t _pos = 0;
@@ -105,6 +113,7 @@ private:
 
   // helpers
   void set_error(const char *fmt, ...);
+  bool load_tokenizer();
   bool do_prefill();
   int32_t do_decode();
 };

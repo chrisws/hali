@@ -28,6 +28,7 @@
 #include "basalt/models/builtin.hpp"
 #include "basalt/kernels/sampler.hpp"
 #include "basalt/program/gpu_select.hpp"
+#include "basalt/program/tokenizer.hpp"
 #include "basalt/core/model_file.hpp"
 #include "basalt/artifact/gguf_reader.hpp"
 
@@ -168,6 +169,11 @@ bool Basalt::load_model(const ModelLoad &load) {
     return false;
   }
 
+  // Load the tokenizer from the .basalt pack (if available).
+  _model_path = load.model_path;
+  _tokenizer = std::make_unique<basalt::program::Tokenizer>();
+  _tokenizer_loaded = load_tokenizer();
+
   // Report VRAM to the gpu_info module.
   {
     bool known = false;
@@ -222,15 +228,23 @@ void Basalt::set_log_level(int) { /* no-op */ }
 bool Basalt::add_message(ModelIter &iter, const string &role,
                          const string &content) {
   (void)role;
-  // Tokenize the content using the adapter's pretokenizer.
-  // For the experimental build we use a simple byte-to-token mapping;
-  // a production build would call the pretokenizer's split function.
-  //
-  // TODO: use _adapter->pretokenizer().split() for real tokenization.
-  // For now, treat each byte as a token id (experimental only).
-  for (unsigned char c : content) {
-    _tokens.push_back(static_cast<int32_t>(c));
+
+  // Tokenize the content.
+  std::vector<int32_t> new_tokens;
+  if (_tokenizer_loaded && _tokenizer) {
+    std::string terr;
+    if (!_tokenizer->encode(content, true, {}, new_tokens, terr)) {
+      set_error("tokenization failed: %s", terr.c_str());
+      return false;
+    }
+  } else {
+    // Fallback: byte-level (experimental, produces garbage for the model).
+    for (unsigned char c : content) {
+      new_tokens.push_back(static_cast<int32_t>(c));
+    }
   }
+
+  _tokens.insert(_tokens.end(), new_tokens.begin(), new_tokens.end());
 
   // Run prefill on the accumulated tokens.
   if (!do_prefill()) {
@@ -266,9 +280,15 @@ string Basalt::next(ModelIter &iter) {
     iter._has_next = false;
   }
 
-  // Decode token to string (experimental: single byte).
-  // TODO: use proper token-to-string via the model's vocabulary.
-  string result(1, static_cast<char>(tok));
+  // Decode token to string via the vocabulary.
+  string result;
+  if (_tokenizer_loaded && _tokenizer) {
+    const std::string &bytes = _tokenizer->token_bytes(tok);
+    result = bytes;
+  } else {
+    // Fallback: single byte (experimental).
+    result = string(1, static_cast<char>(tok));
+  }
   iter._last_word = result;
   return result;
 }
@@ -299,6 +319,40 @@ bool Basalt::is_memory_flush() const {
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
+
+bool Basalt::load_tokenizer() {
+  if (!_adapter || _model_path.empty()) return false;
+
+  // Only .basalt packs carry the tokenizer sections.
+  basalt::core::ModelFile file;
+  std::string err;
+  if (!file.open(_model_path, err)) {
+    log_write(LEVEL_INFO, "basalt", "tokenizer: not a .basalt file, skipping");
+    return false;
+  }
+
+  // Read the tokenizer sections.
+  std::vector<uint8_t> vj, mj, tj;
+  if (!basalt::core::read_range(file.range("tokenizer/vocab.json"), vj, err) ||
+      !basalt::core::read_range(file.range("tokenizer/merges.txt"), mj, err) ||
+      !basalt::core::read_range(file.range("tokenizer/token_type.json"), tj, err)) {
+    log_write(LEVEL_INFO, "basalt", "tokenizer: missing sections (%s)", err.c_str());
+    return false;
+  }
+
+  // Set the pre-tokenizer from the adapter and load the tables.
+  auto pre = _adapter->pretokenizer();
+  _tokenizer->set_pretokenize(pre.split);
+  if (!_tokenizer->load(std::string_view((const char *)vj.data(), vj.size()),
+                        std::string_view((const char *)mj.data(), mj.size()),
+                        std::string_view((const char *)tj.data(), tj.size()), err)) {
+    log_write(LEVEL_INFO, "basalt", "tokenizer: load failed: %s", err.c_str());
+    return false;
+  }
+
+  log_write(LEVEL_INFO, "basalt", "tokenizer: loaded %zu tokens", _tokenizer->vocab_size());
+  return true;
+}
 
 bool Basalt::do_prefill() {
   if (_tokens.empty() || !_session) return true;

@@ -7,6 +7,12 @@
 namespace basalt::model {
   struct Started { int _stub; };
 }
+namespace basalt::program {
+  class Tokenizer {
+  public:
+    ~Tokenizer() = default;
+  };
+}
 
 Basalt::Basalt() = default;
 Basalt::~Basalt() = default;
@@ -67,6 +73,10 @@ float Basalt::memory_kv_percent() const {
 }
 
 bool Basalt::is_memory_flush() const {
+  return false;
+}
+
+bool Basalt::load_tokenizer() {
   return false;
 }
 
