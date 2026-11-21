@@ -595,7 +595,7 @@ void Tui::update_progress(int current, int total, int chunks) {
   int pct = (total > 0) ? (current * 100) / total : 0;
 
   // Line 1: title
-  ncplane_putstr_yx(modal_plane_, 0, 2, "Indexing…");
+  ncplane_putstr_yx(modal_plane_, 0, 2, "Working…");
 
   // Line 2: progress bar
   std::string bar;

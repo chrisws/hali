@@ -945,6 +945,8 @@ bool KnowledgeManager::batch_embed(const std::vector<fs::path> &files,
       if (batch_db.size() == before) {
         ctx.skip_no_chunks++;
       }
+
+      tui.update_progress((int)(j + 1), (int)files.size(), ctx.total_chunks);
     }
 
     log_write(LEVEL_INFO, "zim", "completed next batch");
