@@ -156,13 +156,8 @@ set_target_properties(hali PROPERTIES
 )
 
 # -----------------------------
-# Engine selection (llama | basalt)
+# Engine selection (llama)
 # -----------------------------
-set(HALI_ENGINE "llama" CACHE STRING "Inference engine: llama|basalt")
-set_property(CACHE HALI_ENGINE PROPERTY STRINGS llama basalt)
-
-if(HALI_ENGINE STREQUAL "basalt")
-  include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/basalt.cmake)
-else()
-  include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/llama.cmake)
-endif()
+set(HALI_ENGINE "llama" CACHE STRING "Inference engine: llama")
+set_property(CACHE HALI_ENGINE PROPERTY STRINGS llama)
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/llama.cmake)

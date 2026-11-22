@@ -95,7 +95,6 @@ add_executable(hali_tests
   src/tui_stub.cpp
   src/agent_stub.cpp
   src/webview_stub.cpp
-  src/basalt_stub.cpp
   src/utf8_test.cpp
   src/file_test.cpp
   src/file_test_io.cpp
@@ -130,8 +129,6 @@ add_executable(hali_tests
   src/llama_iter_test.cpp
   src/line_edit_test.cpp
   src/pom_test.cpp
-  src/basalt_test.cpp
-
   src/main.cpp
 )
 
@@ -151,13 +148,11 @@ target_include_directories(hali_tests PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/../src/ui
   ${CMAKE_CURRENT_SOURCE_DIR}/../src/tools
   ${CMAKE_CURRENT_SOURCE_DIR}/../src/util
-  ${CMAKE_CURRENT_SOURCE_DIR}/../engine/basalt/include
-  ${CMAKE_CURRENT_SOURCE_DIR}/../engine/basalt/src
   ${CMAKE_CURRENT_SOURCE_DIR}/../engine/llama.cpp/include
   ${CMAKE_CURRENT_SOURCE_DIR}/../engine/llama.cpp/ggml/include
   ${CMAKE_CURRENT_SOURCE_DIR}/../engine/llama.cpp/common
-  ${CMAKE_CURRENT_SOURCE_DIR}/../libs
   ${CMAKE_CURRENT_SOURCE_DIR}/../engine/llama.cpp/vendor
+  ${CMAKE_CURRENT_SOURCE_DIR}/../libs  
 )
 
 find_package(CURL REQUIRED)
@@ -169,7 +164,6 @@ target_link_libraries(hali_tests PRIVATE
   OpenSSL::Crypto
   CURL::libcurl
   ${NC_TARGET}
-  ${CMAKE_CURRENT_SOURCE_DIR}/../build/basalt/libplatform.a
 )
 
 set_target_properties(hali_tests PROPERTIES

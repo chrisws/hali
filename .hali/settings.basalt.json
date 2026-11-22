@@ -1,0 +1,81 @@
+{
+  "model": {
+    "path": "/home/chrisws/models/qwen/Qwen3.5-9B-Q8_0.gguf",
+    "kv_cache_preset": "balanced",
+    "n_ctx": 65536,
+    "n_batch": 512,
+    "n_ubatch": 0,
+    "n_gpu_layers": 999,
+    "n_threads": 16,
+    "n_threads_batch": 16,
+    "temperature": 0.2,
+    "top_p": 0.95,
+    "min_p": 0.0,
+    "top_k": 20,
+    "penalty_repeat": 1.0,
+    "penalty_freq": 0.0,
+    "penalty_present": 0.0,
+    "penalty_last_n": 256,
+    "offload_kqv": true,
+    "rope_scaling": "none",
+    "rope_freq_scale": 0.0,
+    "thinking": true
+  },
+  "rag": {
+    "embed_path": "",
+    "top_k": 5,
+    "enabled": true,
+    "files": []
+  },
+  "mtp": {
+    "enabled": true,
+    "n_max": 3,
+    "n_min": 1,
+    "p_min": 0.0,
+    "pos_threshold": 0.4,
+    "adaptive": true
+  },
+  "suffix": {
+    "enabled": true,
+    "ngram": 4,
+    "max_draft": 2
+  },
+  "audio": {
+    "enabled": true,
+    "volume": 0.5,
+    "tool_tick": false,
+    "user_prompt": false,
+    "enable_multi_track": false,
+    "theme": "stargate"
+  },
+  "mcp": {
+    "host": "",
+    "port": 0,
+    "filter": []
+  },
+  "logging": {
+    "level": "1",
+    "file": "basalt.log",
+    "filter": "",
+    "erase": true
+  },
+  "controls": {
+    "permission_prompt": false,
+    "disable_run": false,
+    "disable_curl": false,
+    "disable_move": false,
+    "disable_save_on_exit": false,
+    "disable_write_validate": false,
+    "disable_patch_validate": false,
+    "val_write_size_warn": 1000,
+    "enabled_backups": false
+  },
+  "web": {
+    "enabled": false,
+    "port": 8080
+  },
+  "extra_dirs": [
+    "/home/chrisws/models"
+  ],
+  "knowledge_files": []
+}

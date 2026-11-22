@@ -37,13 +37,6 @@ have()  { command -v "$1" &>/dev/null; }
 ENGINE="llama"
 for arg in "$@"; do
   case "$arg" in
-    --engine=*)
-      ENGINE="${arg#--engine=}"
-      if [[ "$ENGINE" != "llama" && "$ENGINE" != "basalt" && "$ENGINE" != "both" ]]; then
-        echo "${RED}error: --engine must be llama, basalt, or both${R}"
-        exit 1
-      fi
-      ;;
     --test)
       ;;
     *)
@@ -59,20 +52,9 @@ step "git submodules (engine: ${ENGINE})"
 if ! have git; then
   fail "git not found — install git first"
 fi
-case "$ENGINE" in
-  llama)
-    git submodule update --init --recursive engine/llama.cpp yyjson
-    ok "submodules ready (engine/llama.cpp, yyjson)"
-    ;;
-  basalt)
-    git submodule update --init --recursive engine/basalt yyjson
-    ok "submodules ready (engine/basalt, yyjson)"
-    ;;
-  both)
-    git submodule update --init --recursive engine/llama.cpp engine/basalt yyjson
-    ok "submodules ready (engine/llama.cpp, engine/basalt, yyjson)"
-    ;;
-esac
+
+git submodule update --init --recursive engine/llama.cpp yyjson
+ok "submodules ready (engine/llama.cpp, yyjson)"
 
 # 2. build deps
 step "checking dependencies"

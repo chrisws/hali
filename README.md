@@ -33,37 +33,37 @@ Most agentic shells assume a hosted API and treat context as free. Hali assumes 
 - **Command completions** — tab-completion for slash commands in the TUI input line. With multiple matches, repeated Tab presses cycle through the options (wrapping around); a single match is accepted immediately.
 - **A full sandboxed tool suite** — every file operation is scoped to a sandbox root (the directory Hali is launched in, or an explicit path argument):
 
-  | Tool                                                    | Purpose                                                                                                                                                                                                                                                |
-  |---------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-  | `TOOL:LIST`, `TOOL:READ`, `TOOL:EXISTS`                 | Inspect files inside the sandbox (read access also extends to `extra_dirs`)                                                                                                                                                                           |
-  | `TOOL:SEARCH`                                           | Search file contents by pattern with rich flags: `--recursive`, `--line-numbers`, `--count`, `--line-count`, `--files-only`, `--name` (match filenames), `--include=<glob>`, `--context=<n>` (surrounding lines), `--lines=<start>,<end>` (line range) |
-  | `TOOL:WRITE`, `TOOL:APPEND`, `TOOL:PATCH`, `TOOL:MKDIR` | Modify files inside the sandbox                                                                                                                                                                                                                        |
-  | `TOOL:REPLACE`                                          | Replace text in a file with `--all` and `--count` flags                                                                                                                                                                                                |
-  | `TOOL:RUN`                                              | Run a program inside the sandbox, gated by an optional `run_allowed` allowlist and shell-metacharacter detection                                                                                                                                       |
-  | `TOOL:BUILD`                                            | Auto-detect and run project build systems (CMake, Gradle, Maven, Python) with modes: `setup`, `build`, `test`, `clean`, `lint` (clang-tidy). Maven projects are detected via `pom.xml` (root or one level deep) and support `mvn compile`, `mvn test`, `mvn clean`. |
-  | `TOOL:CURL`                                             | HTTP GET via libcurl, with HTML-to-text stripping and a 32 KB response size cap                                                                                                                                                                        |
-  | `TOOL:RAG`                                              | Query the local RAG index for extra context                                                                                                                                                                                                            |
-  | `TOOL:RAGINFO`                                          | Inspect RAG subsystem state: loaded databases, chunk counts, embedding model, config                                                                                                                                                                    |
-  | `TOOL:RAGINDEX <zim_file>`                              | Index a ZIM file into the RAG knowledge base. Also supports `--validate <rag_file>` to check an existing index and `--repair <rag_file>` to fix a stale chunk count in the header |
-  | `TOOL:ASK`                                              | Ask the user directly, for interactive/agentic flows                                                                                                                                                                                                   |
-  | `TOOL:GRAPH`                                            | Render bar charts and tree diagrams as ASCII art from a small JSON schema                                                                                                                                                                              |
-  | `TOOL:TABLE`                                            | Format pipe-delimited rows into an aligned text table                                                                                                                                                                                                  |
-  | `TOOL:MCP`                                              | Invoke a tool on a connected MCP server                                                                                                                                                                                                                |
-  | `TOOL:PERMISSION`                                       | Explicit user confirmation before destructive or irreversible actions                                                                                                                                                                                  |
-  | `TOOL:RESTART`                                          | Hand off to a fresh session, writing current task context to `SESSION.md` first                                                                                                                                                                        |
-  | `TOOL:PLAY`                                             | Play a melody from a note-script (sine tones, chords, tempo/volume/length control)                                                                                                                             |
-  | `TOOL:MUSIC`                                            | Multi-track music project: `create`, `load`, `list`, `add <track> <script>`, `set <n> <vol\|pan\|script> <v>`, `remove <n>`, `tempo <bpm>`, `play`, `show`, `save`, `export`, `clear`. Supports pitch notes, drum tokens (K/S/H/O/T), chords, per-track volume/pan. |
-  | `TOOL:PLAN`                                             | Structured goal/step planning: `set <goal>`, `add <step>`, `advance`, `skip <idx>`                                                                                                                             |
-  | `TOOL:CHOICE`                                           | Multiple-choice popup: `TOOL:CHOICE "question" "opt1|opt2|opt3"`                                                                                                                                              |
-  | `TOOL:STAT`                                             | File metadata: size, type, permissions, line/word/char count                                                                                                                                                   |
-  | `TOOL:SYSINFO`                                          | System info: user, uid, hostname, OS, kernel, arch, cwd                                                                                                                                                        |
-  | `TOOL:GIT`                                              | Run whitelisted git subcommands (`status`, `log`, `diff`, `add`, `commit`, `branch`, `show`) in the sandbox                                                                                                   |
-  | `TOOL:HEX`                                              | xxd-style hex dump with optional offset and length, capped at 256 lines                                                                                                                                        |
-  | `TOOL:TUNE`                                             | Adjust sampling settings live: `temperature`, `top_p`, `min_p`, `top_k`, `penalty_repeat`, `penalty_freq`, `penalty_present`, `penalty_last_n` (values are clamped to valid ranges) |
-  | `TOOL:DATE`, `TOOL:TIME`, `TOOL:RND`, `TOOL:INTROSPECT` | Small utility/introspection tools                                                                                                                                                                                                                      |
+  | Tool                                                    | Purpose                                                                                                                                                                                                                                                                                                                                                                                |
+  |---------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+  | `TOOL:LIST`, `TOOL:READ`, `TOOL:EXISTS`                 | Inspect files inside the sandbox (read access also extends to `extra_dirs`)                                                                                                                                                                                                                                                                                                            |
+  | `TOOL:SEARCH`                                           | Search file contents by pattern with rich flags: `--recursive`, `--line-numbers`, `--count`, `--line-count`, `--files-only`, `--name` (match filenames), `--include=<glob>`, `--context=<n>` (surrounding lines), `--lines=<start>,<end>` (line range)                                                                                                                                 |
+  | `TOOL:WRITE`, `TOOL:APPEND`, `TOOL:PATCH`, `TOOL:MKDIR` | Modify files inside the sandbox                                                                                                                                                                                                                                                                                                                                                        |
+  | `TOOL:REPLACE`                                          | Replace text in a file with `--all` and `--count` flags                                                                                                                                                                                                                                                                                                                                |
+  | `TOOL:RUN`                                              | Run a program inside the sandbox, gated by an optional `run_allowed` allowlist and shell-metacharacter detection                                                                                                                                                                                                                                                                       |
+  | `TOOL:BUILD`                                            | Auto-detect and run project build systems (CMake, Gradle, Maven, Python) with modes: `setup`, `build`, `test`, `clean`, `lint` (clang-tidy). Maven projects are detected via `pom.xml` (root or one level deep) and support `mvn compile`, `mvn test`, `mvn clean`.                                                                                                                    |
+  | `TOOL:CURL`                                             | HTTP GET via libcurl, with HTML-to-text stripping and a 32 KB response size cap                                                                                                                                                                                                                                                                                                        |
+  | `TOOL:RAG`                                              | Query the local RAG index for extra context                                                                                                                                                                                                                                                                                                                                            |
+  | `TOOL:RAGINFO`                                          | Inspect RAG subsystem state: loaded databases, chunk counts, embedding model, config                                                                                                                                                                                                                                                                                                   |
+  | `TOOL:RAGINDEX <zim_file>`                              | Index a ZIM file into the RAG knowledge base. Also supports `--validate <rag_file>` to check an existing index and `--repair <rag_file>` to fix a stale chunk count in the header                                                                                                                                                                                                      |
+  | `TOOL:ASK`                                              | Ask the user directly, for interactive/agentic flows                                                                                                                                                                                                                                                                                                                                   |
+  | `TOOL:GRAPH`                                            | Render bar charts and tree diagrams as ASCII art from a small JSON schema                                                                                                                                                                                                                                                                                                              |
+  | `TOOL:TABLE`                                            | Format pipe-delimited rows into an aligned text table                                                                                                                                                                                                                                                                                                                                  |
+  | `TOOL:MCP`                                              | Invoke a tool on a connected MCP server                                                                                                                                                                                                                                                                                                                                                |
+  | `TOOL:PERMISSION`                                       | Explicit user confirmation before destructive or irreversible actions                                                                                                                                                                                                                                                                                                                  |
+  | `TOOL:RESTART`                                          | Hand off to a fresh session, writing current task context to `SESSION.md` first                                                                                                                                                                                                                                                                                                        |
+  | `TOOL:PLAY`                                             | Play a melody from a note-script (sine tones, chords, tempo/volume/length control)                                                                                                                                                                                                                                                                                                     |
+  | `TOOL:MUSIC`                                            | Multi-track music project: `create`, `load`, `list`, `add <track> <script>`, `set <n> <vol\|pan\|script> <v>`, `remove <n>`, `tempo <bpm>`, `play`, `show`, `save`, `export`, `clear`. Supports pitch notes, drum tokens (K/S/H/O/T), chords, per-track volume/pan.                                                                                                                    |
+  | `TOOL:PLAN`                                             | Structured goal/step planning: `set <goal>`, `add <step>`, `advance`, `skip <idx>`                                                                                                                                                                                                                                                                                                     |
+  | `TOOL:CHOICE`                                           | Multiple-choice popup: `TOOL:CHOICE "question" "opt1|opt2|opt3"`                                                                                                                                                                                                                                                                                                                       |
+  | `TOOL:STAT`                                             | File metadata: size, type, permissions, line/word/char count                                                                                                                                                                                                                                                                                                                           |
+  | `TOOL:SYSINFO`                                          | System info: user, uid, hostname, OS, kernel, arch, cwd                                                                                                                                                                                                                                                                                                                                |
+  | `TOOL:GIT`                                              | Run whitelisted git subcommands (`status`, `log`, `diff`, `add`, `commit`, `branch`, `show`) in the sandbox                                                                                                                                                                                                                                                                            |
+  | `TOOL:HEX`                                              | xxd-style hex dump with optional offset and length, capped at 256 lines                                                                                                                                                                                                                                                                                                                |
+  | `TOOL:TUNE`                                             | Adjust sampling settings live: `temperature`, `top_p`, `min_p`, `top_k`, `penalty_repeat`, `penalty_freq`, `penalty_present`, `penalty_last_n` (values are clamped to valid ranges)                                                                                                                                                                                                    |
+  | `TOOL:DATE`, `TOOL:TIME`, `TOOL:RND`, `TOOL:INTROSPECT` | Small utility/introspection tools                                                                                                                                                                                                                                                                                                                                                      |
   | `TOOL:GUI`                                              | Open a browser tab at `http://localhost:8080/ai` (requires `-p, --web-port <port>` at startup), then just tell Hali what to show — a chart, a diagram, a form, anything. Hali renders your HTML in the browser and can read input back from it. Subcommands: `<html_fragment>` (display HTML), `input` (read pending browser input), `clear` (reset the display), `help` (show usage). |
-  | `TOOL:LINE_EDIT`                                        | Line-level file editing (1-based lines): `read <file> [start,end]`, `write <file> <line> <content>`, `insert <file> <line> <content>`, `delete <file> <start,end>`, `copy <file> <start,end>`, `cut <file> <start,end>`, `paste <file> <line>`, `show`, `clear`. Edit operations include surrounding context with line numbers. |
-  | `TOOL:SCREEN`                                           | Save/restore TUI display snapshots: `save [name]`, `show [name]`, `restore [name]`, `list`, `clear [name]`. |
+  | `TOOL:LINE_EDIT`                                        | Line-level file editing (1-based lines): `read <file> [start,end]`, `write <file> <line> <content>`, `insert <file> <line> <content>`, `delete <file> <start,end>`, `copy <file> <start,end>`, `cut <file> <start,end>`, `paste <file> <line>`, `show`, `clear`. Edit operations include surrounding context with line numbers.                                                        |
+  | `TOOL:SCREEN`                                           | Save/restore TUI display snapshots: `save [name]`, `show [name]`, `restore [name]`, `list`, `clear [name]`.                                                                                                                                                                                                                                                                            |
 
 - **Persistent run-allowlist** — user-approved `TOOL:RUN` program names are saved to `.hali/user-approved.txt` under the sandbox with timestamps and a 30-day TTL, so approvals survive across sessions without re-prompting. Revoke individual approvals with `/revoke <name>`.
 - **MCP client** — connect to external Model Context Protocol servers (e.g. JetBrains IDE built-in MCP servers) with `--mcp`, filter which tools get exposed with `--mcp-filter`, and dry-run the resulting system context with `--mcp-test`. Server connection details live in `mcp.json`.
@@ -138,33 +138,33 @@ The `log_erase` config option (or `--log-erase`) truncates the log file at start
 
 Inside the TUI, type a leading `/` to run a built-in command. Tab-completion is available for command names.
 
-| Command              | Description                                                                             |
-|----------------------|-----------------------------------------------------------------------------------------|
-| `/model [path]`      | Load or hot-reload a GGUF model (opens a file picker if no path given)                  |
-| `/embed [path]`      | Load an embedding model for RAG (file picker if no path)                                |
-| `/rag [path]`        | Index a file or directory for RAG, or load an existing `.bin` index (picker if no path) |
-| `/memory`            | Show KV cache, VRAM, and layer offload stats                                            |
-| `/clear`             | Reset the conversation (rebuilds the system prompt)                                     |
-| `/theme`             | Cycle through the Dark / Light / Navy themes (F12 also works)                           |
-| `/audio [test\|volume <v>\|theme <n>]` | Enable/disable audio, test tone, set volume, select sound theme                        |
-| `/task [name]`       | Direct agent behavior toward a mode: `web`, `music`, `audio`, `knowledge`, or `default` |
-| `/save [file]`       | Save the current chat transcript to a file                                              |
-| `/session [file]`    | Save a structured session snapshot (task, pending actions, errors, last output)          |
-| `/settings`          | Display the current runtime settings                                                    |
-| `/set <key> <value>` | Change a setting live (e.g. `/set temperature 0.7`)                                     |
-| `/allow [path]`      | Grant read access to a directory outside the sandbox                                    |
-| `/allow-list`        | List all directories with read access                                                   |
-| `/allow-remove [path]` | Remove read access to a directory                                                     |
-| `/revoke <name>`     | Remove an approved `TOOL:RUN` program from the allowlist                                |
-| `/audit [path]`      | Scan the codebase for issues that are hard for an LLM to handle                         |
-| `/security-audit`    | Mark the sandbox as security-audited (compile-time salt prevents model forgery)         |
-| `/lint`              | List source files and run clang-tidy lint checks                                        |
-| `/skill [name] [kickoff]` | Load a skill file into the conversation (optionally with a kickoff prompt)          |
-| `/tool [TOOL:NAME [args]]` | Invoke a tool directly (no args lists all available tools)                       |
-| `/plan [text]`       | Open a multiline text editor for a plan                                                 |
-| `/index [name\|status\|remove\|load\|unload]` | Manage knowledge sources (ZIM/Wikipedia)                        |
-| `/help`              | Show this command list                                                                  |
-| `exit` / `quit`      | Leave Hali                                                                              |
+| Command                                       | Description                                                                             |
+|-----------------------------------------------|-----------------------------------------------------------------------------------------|
+| `/model [path]`                               | Load or hot-reload a GGUF model (opens a file picker if no path given)                  |
+| `/embed [path]`                               | Load an embedding model for RAG (file picker if no path)                                |
+| `/rag [path]`                                 | Index a file or directory for RAG, or load an existing `.bin` index (picker if no path) |
+| `/memory`                                     | Show KV cache, VRAM, and layer offload stats                                            |
+| `/clear`                                      | Reset the conversation (rebuilds the system prompt)                                     |
+| `/theme`                                      | Cycle through the Dark / Light / Navy themes (F12 also works)                           |
+| `/audio [test\|volume <v>\|theme <n>]`        | Enable/disable audio, test tone, set volume, select sound theme                         |
+| `/task [name]`                                | Direct agent behavior toward a mode: `web`, `music`, `audio`, `knowledge`, or `default` |
+| `/save [file]`                                | Save the current chat transcript to a file                                              |
+| `/session [file]`                             | Save a structured session snapshot (task, pending actions, errors, last output)         |
+| `/settings`                                   | Display the current runtime settings                                                    |
+| `/set <key> <value>`                          | Change a setting live (e.g. `/set temperature 0.7`)                                     |
+| `/allow [path]`                               | Grant read access to a directory outside the sandbox                                    |
+| `/allow-list`                                 | List all directories with read access                                                   |
+| `/allow-remove [path]`                        | Remove read access to a directory                                                       |
+| `/revoke <name>`                              | Remove an approved `TOOL:RUN` program from the allowlist                                |
+| `/audit [path]`                               | Scan the codebase for issues that are hard for an LLM to handle                         |
+| `/security-audit`                             | Mark the sandbox as security-audited (compile-time salt prevents model forgery)         |
+| `/lint`                                       | List source files and run clang-tidy lint checks                                        |
+| `/skill [name] [kickoff]`                     | Load a skill file into the conversation (optionally with a kickoff prompt)              |
+| `/tool [TOOL:NAME [args]]`                    | Invoke a tool directly (no args lists all available tools)                              |
+| `/plan [text]`                                | Open a multiline text editor for a plan                                                 |
+| `/index [name\|status\|remove\|load\|unload]` | Manage knowledge sources (ZIM/Wikipedia)                                                |
+| `/help`                                       | Show this command list                                                                  |
+| `exit` / `quit`                               | Leave Hali                                                                              |
 
 Settable keys via `/set`: `temperature`, `top_p`, `top_k`, `min_p`, `penalty_repeat`, `penalty_last_n`, `rag_top_k`, `rag_enabled`, `n_gpu_layers`, `offload_kqv`, `run_allowed` (comma-separated list of allowed program basenames, or `none` to clear), `mtp_enabled`, `mtp_n_max`, `mtp_n_min`, `mtp_p_min`, `mtp_adaptive`, `mtp_pos_threshold`, `rope_freq_scale`, `rope_scaling_type`, `audio_enabled`, `audio_volume`, `audio_tool_tick`, `audio_user_prompt`, `audio_theme`, `val_write_validate`, `val_patch_validate`, `val_write_size_warn`, `log_erase`, `disable_run`, `disable_curl`, `disable_save_on_exit`.
 
@@ -260,29 +260,6 @@ cmake --build build-tests -j
 ctest --test-dir build-tests
 ```
 
-### Inference engine selection
-
-Hali supports two inference backends, selected at CMake configure time:
-
-| `-DHALI_ENGINE=` | Backend | Notes |
-| --- | --- | --- |
-| `llama` (default) | [llama.cpp](https://github.com/ggml-org/llama.cpp) | GGUF models, CPU/CUDA, MTP, suffix drafting, RAG |
-| `basalt` | [Basalt](https://github.com/chrisws/basalt) (fork) | Native CUDA (sm_120), NVFP4 tensor cores, in-process C++ API |
-
-The engine is selected via `cmake/engine.cmake`, included at the end of `CMakeLists.txt`. The `basalt` engine requires CUDA 13.0+ and an NVIDIA Blackwell GPU (compute capability 12.0).
-
-```
-# llama (default)
-cmake -B build -DHALI_ENGINE=llama
-cmake --build build -j
-
-# basalt
-cmake -B build -DHALI_ENGINE=basalt
-cmake --build build -j
-```
-
-`setup.sh` accepts `--engine=llama|basalt` to initialise the correct submodule and pass the right CMake flag.
-
 ### llama.cpp backend selection
 
 Within the llama engine, the compute backend is selected separately:
@@ -367,7 +344,6 @@ hali/
 │   │   ├── llama_sb_mtp.cpp    # MTP speculative decoding
 │   │   ├── llama_sb_suffix.cpp/.h # n-gram SuffixDrafter
 │   │   ├── llama_sb_rag.cpp/.h # RAG session, chunker, indexer
-│   │   └── basalt.cpp/.h       # Basalt : Engine (CUDA NVFP4 backend)
 │   ├── tools/              # tool implementations
 │   │   ├── audit.cpp/.h        # /audit codebase scanner, false-positive tracking
 │   │   ├── build.cpp/.h        # TOOL:BUILD (CMake/Gradle/Maven/Python auto-detect)
@@ -408,11 +384,10 @@ hali/
 │       ├── shell_util.cpp/.h   # shell command execution, metacharacter detection
 │       ├── string_utils.cpp/.h # Unicode-aware string helpers
 │       └── utf8.h              # UTF-8 utilities
- ├── tests/                  # unit tests, CTest-driven
+├── tests/                  # unit tests, CTest-driven
 ├── yyjson/                 # vendored JSON library
 ├── engine/                 # inference engine submodules
- │   ├── llama.cpp/          # llama.cpp submodule
-│   └── basalt/             # basalt submodule
+│   ├── llama.cpp/          # llama.cpp submodule
 ```
 
 ## Apps

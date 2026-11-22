@@ -8,8 +8,8 @@
 
 // engine.h - abstract inference engine interface (dependency inversion)
 //
-// agent.cpp depends on Engine, not on Llama or Basalt directly.
-// Each backend (llama.cpp, basalt) provides a concrete implementation.
+// agent.cpp depends on Engine, not on Llama directly.
+// Each backend (llama.cpp) provides a concrete implementation.
 
 #ifndef ENGINE_H
 #define ENGINE_H
@@ -44,7 +44,7 @@ struct ModelMemoryInfo {
   size_t  vram_total;
   float   vram_percent;
 
-  // Model layers (llama.cpp only; basalt leaves these 0)
+  // Model layers (llama.cpp only)
   int     n_layers_total;
   int     n_layers_gpu;
   int     n_layers_cpu;
@@ -64,18 +64,15 @@ struct ModelLoad {
   bool offload_kqv;
   int n_threads;
   int n_threads_batch;
-  // Context extension (llama.cpp only; basalt ignores)
   int   rope_scaling_type = 0;   // 0 = unspecified
   float rope_freq_scale = 0.0f;
   KVCachePreset kv_cache_preset;
-  // MTP speculative decoding (llama.cpp only; basalt ignores)
   bool mtp_enabled = true;
   int  mtp_n_max = 3;
   int  mtp_n_min = 0;
   float mtp_p_min = 0.0f;
   float mtp_pos_threshold = 0.30f;
   bool mtp_adaptive = true;
-  // Suffix drafting (llama.cpp only; basalt ignores)
   bool suffix_enabled = false;
   int  suffix_ngram = 4;
   int  suffix_max_draft = 2;
@@ -139,12 +136,12 @@ struct Engine {
   virtual bool supports_mtp_tuning() const { return false; }
   virtual bool supports_kv_control() const { return false; }
 
-  // --- RAG / embedding (no-op defaults; basalt returns false/empty) ---------
+  // --- RAG / embedding (no-op defaults) ---------
   virtual bool load_embedding_model(const string &) { return false; }
   virtual int  get_embed_dim() const { return 0; }
   virtual bool embed_text(const string &, vector<float> &, int) { return false; }
   virtual string rag_retrieve(const RagDB &, const string &,
-                               int, RagSession &) { return ""; }
+                              int, RagSession &) { return ""; }
   virtual string rag_retrieve_multi(RagLibrary &, const string &,
                                     int, int) { return ""; }
   virtual bool rag_index(RagDB &, const string &) { return false; }
@@ -180,7 +177,7 @@ struct ModelIter {
 
 // Set a global abort callback. Called by the backend when a fatal
 // engine-level error occurs (e.g. OOM in ggml). Each backend
-// (llama, basalt) provides its own implementation.
+// (llama) provides its own implementation.
 void engine_set_abort_callback(void (*cb)(const char *msg));
 
 #endif // ENGINE_H

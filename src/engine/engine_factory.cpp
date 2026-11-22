@@ -7,17 +7,8 @@
 //
 
 #include "engine_factory.h"
-
-#ifdef HALI_ENGINE_BASALT
-#include "basalt/basalt.h"
-#else
 #include "llama/llama_sb.h"
-#endif
 
 std::unique_ptr<Engine> create_engine() {
-#ifdef HALI_ENGINE_BASALT
-  return std::make_unique<Basalt>();
-#else
   return std::make_unique<Llama>();
-#endif
 }
