@@ -122,18 +122,24 @@ bool Agent::setup_embed(const std::string &path) {
 }
 
 void Agent::reset_conversation(const std::string &sysprompt) {
+  log_write(LEVEL_INFO, "agent", "reset_conversation: start, sysprompt %zu bytes", sysprompt.size());
   system_prompt_ = sysprompt;
   engine_->reset();
+  log_write(LEVEL_INFO, "agent", "reset_conversation: engine reset done");
   cfg_.load_settings();
   apply_generation_params();
   loaded_skills_.clear();
   iter_ = std::make_unique<ModelIter>();
+  log_write(LEVEL_INFO, "agent", "reset_conversation: calling add_message(system)");
   if (!engine_->add_message(*iter_, "system", system_prompt_)) {
+    log_write(LEVEL_INFO, "agent", "reset_conversation: add_message FAILED: %s", engine_->last_error());
     tui_.append_line(ICON_ERR + "System prompt injection: " + engine_->last_error());
     tui_.redraw_all();
   } else {
+    log_write(LEVEL_INFO, "agent", "reset_conversation: add_message ok");
     tui_.update_usage(tokens_per_sec(), engine_->memory_info());
   }
+  log_write(LEVEL_INFO, "agent", "reset_conversation: done");
 }
 
 void Agent::notify(const std::string &msg) {
@@ -666,6 +672,11 @@ bool Agent::run_turn(const std::string &user_message) {
   flush_broadcast();
 
   turn_tokens += iter_->_tokens_generated;
+
+  if (turn_tokens == 0) {
+    log_write(LEVEL_ERROR, "agent", "run_turn: zero tokens generated (decode likely failed)");
+    tui_.append_line(ICON_ERR + "No response generated. Check basalt.log for decode errors.");
+  }
 
   auto turn_end = std::chrono::high_resolution_clock::now();
   double turn_elapsed = std::chrono::duration<double>(turn_end - turn_start).count();
