@@ -35,6 +35,7 @@
 #include "skills_generated.h"
 #include "security_audit.h"
 #include "knowledge.h"
+#include "string_utils.h"
 
 namespace fs = std::filesystem;
 
@@ -547,9 +548,24 @@ static void slash_audit(const std::string &rest, HaliConfig &cfg, Tui &tui, Agen
 }
 
 //
-// /security-audit – mark the sandbox as security-audited
+// /security-audit – mechanical scan + agent inspection for suspicious code
 //
-static void slash_security_audit(HaliConfig &cfg, Tui &tui) {
+struct SecPattern {
+  const char *category;
+  const char *pattern;
+};
+
+static const SecPattern SEC_PATTERNS[] = {
+  {"network",     "curl|wget|socket|connect\\(|http://|https://|fetch\\(|request\\(|send\\(|recv\\("},
+  {"telemetry",   "telemetry|analytics|tracking|beacon|metrics|upload|exfiltrat"},
+  {"exfiltration","base64|obfuscat|eval\\(|exec\\(|system\\(|popen\\("},
+  {"sensitive",   "/etc/passwd|\\.ssh|\\.aws|id_rsa|credential|api_key"},
+  {"process",     "fork\\(|spawn|subprocess|popen"},
+  {"crypto",      "encrypt|decrypt|cipher|obfusc"},
+};
+
+static void slash_security_audit(const std::string &rest, HaliConfig &cfg,
+                                 Tui &tui, Agent &agent) {
   if (sec_audit::is_audited(cfg.sandbox_)) {
     tui.append_line(ICON_SYS + "Sandbox is already marked as security-audited.");
     tui.append_line(ICON_SYS + sec_audit::status_message(cfg.sandbox_));
@@ -557,21 +573,136 @@ static void slash_security_audit(HaliConfig &cfg, Tui &tui) {
     return;
   }
 
-  if (!tui.confirm_dialog("Mark this sandbox as security-audited?\n\n"
-                          "This should only be done after running the\n"
-                          "security-audit skill and verifying no\n"
-                          "prompt-injection or malicious content exists.")) {
-    tui.append_line(ICON_SYS + "Cancelled.");
+  const std::string root = rest.empty() ? cfg.sandbox_ : cfg.sandbox_ + "/" + rest;
+  tui.append_line(ICON_SYS + "Scanning " + root + " for suspicious patterns…");
+  tui.redraw_all();
+
+  // ── Mechanical scan ──────────────────────────────────────────────────
+  struct Finding {
+    std::string category;
+    std::string file;
+    int line;
+    std::string snippet;
+  };
+  std::vector<Finding> findings;
+
+  for (const auto &sp : SEC_PATTERNS) {
+    auto raw = run_with_spinner(tui, [&]() -> std::string {
+      return tool_search(cfg.sandbox_, sp.pattern, root,
+                         "--recursive --line-numbers --include=*.cpp --include=*.h --include=*.hpp --include=*.c --include=*.py --include=*.sh --include=*.js --include=*.ts --include=*.java");
+    });
+    if (raw == "no matches" || raw.empty()) {
+      continue;
+    }
+    // Parse "file:\n  N:snippet" lines
+    std::istringstream iss(raw);
+    std::string current_file;
+    std::string line;
+    while (std::getline(iss, line)) {
+      // File header line ends with ':'
+      if (!line.empty() && line.back() == ':' && line.find("  ") == std::string::npos) {
+        current_file = line;
+        continue;
+      }
+      // Match line: "  N:content"
+      auto colon = line.find(':');
+      if (colon != std::string::npos && current_file.empty() == false) {
+        auto num_end = line.find(':', 2);
+        if (num_end != std::string::npos) {
+          int ln = 0;
+          try { ln = std::stoi(line.substr(2, num_end - 2)); } catch (...) {}
+          std::string snippet = utils::trim(line.substr(num_end + 1));
+          if (snippet.size() > 120) {
+            snippet = snippet.substr(0, 120) + "…";
+          }
+          findings.push_back({sp.category, current_file, ln, snippet});
+        }
+      }
+    }
+  }
+
+  tui.append_line(ICON_SYS + std::to_string(findings.size()) + " potential finding(s)");
+
+  if (findings.empty()) {
+    tui.append_line(ICON_SYS + "No suspicious patterns detected.");
+    if (tui.confirm_dialog("Mark sandbox as security-audited?")) {
+      if (sec_audit::mark_audited(cfg.sandbox_)) {
+        tui.append_line(ICON_SYS + "Sandbox marked as security-audited.");
+      } else {
+        tui.append_line(ICON_ERR + "Failed to write audit marker.");
+      }
+    }
     tui.redraw_all();
     return;
   }
 
-  if (sec_audit::mark_audited(cfg.sandbox_)) {
-    tui.append_line(ICON_SYS + "Sandbox marked as security-audited.");
-    tui.append_line(ICON_SYS + sec_audit::status_message(cfg.sandbox_));
-  } else {
-    tui.append_line(ICON_ERR + "Failed to write audit marker.");
+  // ── Display findings table ───────────────────────────────────────────
+  {
+    int show = std::min(static_cast<int>(findings.size()), 30);
+    std::string dims = std::to_string(show) + "x4";
+    std::string data = "#|Category|File:Line|Snippet\n";
+    for (int i = 0; i < show; i++) {
+      const auto &f = findings[i];
+      std::string loc = f.file + ":" + std::to_string(f.line);
+      data += std::to_string(i + 1) + "|" + f.category + "|" + loc + "|" + f.snippet + "\n";
+    }
+    auto table = tool_table(dims, data);
+    if (table.error.empty()) {
+      for (const auto &row : table.rows) {
+        tui.append_line(row);
+      }
+      if (static_cast<int>(findings.size()) > show) {
+        tui.append_line("… and " + std::to_string(findings.size() - show) + " more");
+      }
+    }
   }
+  tui.redraw_all();
+
+  // ── Agent inspection ─────────────────────────────────────────────────
+  if (!tui.confirm_dialog("Allow Hali to inspect these findings for red flags?")) {
+    tui.append_line(ICON_SYS + "Cancelled - sandbox NOT marked as audited.");
+    tui.redraw_all();
+    return;
+  }
+
+  std::string prompt = "You are performing a security audit. Below are mechanical scan "
+    "findings from the codebase. Inspect each one and determine if it represents a "
+    "genuine security risk (network exfiltration, telemetry, data leakage, "
+    "obfuscation, unauthorized process spawning) or is a false positive (normal "
+    "application code, test fixtures, documentation).\n\n"
+    "For each finding, respond with one of:\n"
+    "  SAFE <n> - finding <n> is a false positive\n"
+    "  RISK <n> <reason> - finding <n> is a genuine security concern\n\n"
+    "After reviewing all findings, end with:\n"
+    "  VERDICT: CLEAN - no security risks found\n"
+    "  VERDICT: FLAGGED - security risks detected\n\n"
+    "Findings:\n";
+  for (size_t i = 0; i < findings.size(); i++) {
+    const auto &f = findings[i];
+    prompt += std::to_string(i + 1) + ". [" + f.category + "] " +
+      f.file + ":" + std::to_string(f.line) + "  " + f.snippet + "\n";
+  }
+
+  tui.append_line(ICON_SYS + "Handing findings to model for inspection…");
+  tui.redraw_all();
+  agent.run_turn(prompt);
+
+  // ── Parse verdict ────────────────────────────────────────────────────
+  std::string response = agent.last_response();
+  bool flagged = response.find("VERDICT: FLAGGED") != std::string::npos;
+
+  if (flagged) {
+    tui.append_line(ICON_ERR + "Security audit: FLAGGED - risks detected. "
+      "Sandbox NOT marked as audited.");
+  } else {
+    tui.append_line(ICON_SYS + "Security audit: CLEAN - no risks detected.");
+    if (sec_audit::mark_audited(cfg.sandbox_)) {
+      tui.append_line(ICON_SYS + "Sandbox marked as security-audited.");
+    } else {
+      tui.append_line(ICON_ERR + "Failed to write audit marker.");
+    }
+  }
+  tui.append_line(ICON_SYS + sec_audit::status_message(cfg.sandbox_));
   tui.redraw_all();
 }
 
@@ -1306,7 +1437,7 @@ void handle_slash(const std::string &input, HaliConfig &cfg, Agent &agent, Tui &
     return;
   }
   if (verb == "/security-audit") {
-    slash_security_audit(cfg, tui);
+    slash_security_audit(rest, cfg, tui, agent);
     return;
   }
   if (verb == "/skill") {
