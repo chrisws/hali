@@ -2,7 +2,7 @@
   "model": {
     "path": "/home/chrisws/models/Swift-1.5-Qwen3.8-27B-GSQ-RCO-IQ3_S-mtp.gguf",
     "kv_cache_preset": "balanced",
-    "n_ctx": 50000,
+    "n_ctx": 65536,
     "n_batch": 512,
     "n_ubatch": 0,
     "n_gpu_layers": 999,
@@ -18,11 +18,14 @@
     "penalty_last_n": 256,
     "offload_kqv": true,
     "rope_scaling": "none",
-    "rope_freq_scale": 0.0
+    "rope_freq_scale": 0.0,
+    "thinking": true
   },
   "rag": {
     "embed_path": "",
-    "top_k": 5
+    "top_k": 5,
+    "enabled": true,
+    "files": []
   },
   "mtp": {
     "enabled": true,
@@ -41,34 +44,38 @@
     "enabled": true,
     "volume": 0.5,
     "tool_tick": false,
-    "user_prompt": false
+    "user_prompt": false,
+    "enable_multi_track": false,
+    "theme": "stargate"
   },
   "mcp": {
-    "host": "127.0.0.1",
-    "port": 64342
+    "host": "",
+    "port": 0,
+    "filter": []
   },
   "logging": {
-    "level": "debug",
-    "file": "text.log",
-    "filter": "tui",
-    "erase": true
+    "level": "1",
+    "file": "",
+    "filter": "",
+    "erase": false
   },
-  "permission_prompt": false,
-  "disable_run": false,
-  "disable_save_on_exit": false,
-  "validation": {
-    "disable_write_validate": true,
-    "disable_patch_validate": true
+  "controls": {
+    "permission_prompt": false,
+    "disable_run": false,
+    "disable_curl": false,
+    "disable_move": false,
+    "disable_save_on_exit": false,
+    "disable_write_validate": false,
+    "disable_patch_validate": false,
+    "val_write_size_warn": 1000,
+    "enabled_backups": false
+  },
+  "web": {
+    "enabled": false,
+    "port": 8080
   },
   "extra_dirs": [
-    "/usr/local/include/notcurses"
+    "/home/chrisws/models"
   ],
-  "thinking": true,
-  "web_port": -1,
-  "enabled_backups": false,
-  "knowledge_files": [
-    "AGENTS.md"
-  ],
-  "mcp_filter": [],
-  "val_write_size_warn": 4000
+  "knowledge_files": []
 }
