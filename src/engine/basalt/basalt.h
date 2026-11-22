@@ -116,7 +116,12 @@ private:
 
   // helpers
   void set_error(const char *fmt, ...);
+  bool resolve_adapter(const ModelLoad &load, std::vector<std::string> &model_paths);
+  bool start_model(const ModelLoad &load, const std::vector<std::string> &model_paths);
   bool load_tokenizer();
+  void resolve_eos_tokens();
+  void report_vram();
+  void check_cuda_errors();
   bool do_prefill();
   int32_t do_decode();
 };

@@ -19,6 +19,7 @@
 #include <cuda_runtime.h>
 
 #include "logging.h"
+#include "util/json_escape.h"
 
 // Redirect basalt console I/O into hali's logging system.
 // The #define renames fwrite/printf/fprintf in all basalt headers
@@ -85,14 +86,42 @@ const char *Basalt::last_error() const {
 bool Basalt::load_model(const ModelLoad &load) {
   _last_error[0] = '\0';
 
+  std::vector<std::string> model_paths;
+  if (!resolve_adapter(load, model_paths)) return false;
+  if (!start_model(load, model_paths)) return false;
+
+  _model_path = load.model_path;
+  log_write(LEVEL_INFO, "basalt", "model: %s", _model_path.c_str());
+  _tokenizer = std::make_unique<basalt::program::Tokenizer>();
+  _tokenizer_loaded = load_tokenizer();
+  if (!_tokenizer_loaded) {
+    set_error("tokenizer failed to load");
+    return false;
+  }
+
+  resolve_eos_tokens();
+  report_vram();
+
+  // Reset token state.
+  _tokens.clear();
+  _pos = 0;
+  _prompt_done = false;
+  _finished = false;
+  _tokens_generated = 0;
+
+  check_cuda_errors();
+
+  log_write(LEVEL_INFO, "basalt", "load_model: complete, session=%p", (void *) _session);
+  return true;
+}
+
+bool Basalt::resolve_adapter(const ModelLoad &load,
+                             std::vector<std::string> &model_paths) {
   // Register all built-in model adapters (idempotent).
   basalt::models::register_builtin_models();
 
-  // Open the model file and resolve the adapter.
-  // Try .basalt first, then fall back to GGUF (single or multi-shard).
   std::string err;
   const ModelAdapter *adapter = nullptr;
-  std::vector<std::string> model_paths;
 
   {
     basalt::core::ModelFile file;
@@ -120,7 +149,8 @@ bool Basalt::load_model(const ModelLoad &load) {
         }
         // Pre-validate token_embd for a clearer diagnostic than basalt's generic message.
         // Accept BF16 (30), F16 (1), Q4_K (12), and Q8_0 (8) — the latter two dequantized to F16 at load time.
-        if (const auto *te = model.find("token_embd.weight"); te && te->type != 30 && te->type != 1 && te->type != 12 && te->type != 8) {
+        if (const auto *te = model.find("token_embd.weight");
+            te && te->type != 30 && te->type != 1 && te->type != 12 && te->type != 8) {
           set_error("token_embd.weight is %s (%lld elements); basalt requires bf16, f16, q4_k or q8_0",
                     te->type_name(), (long long)te->elements());
           return false;
@@ -136,13 +166,17 @@ bool Basalt::load_model(const ModelLoad &load) {
   }
 
   _adapter = adapter;
+  return true;
+}
 
+bool Basalt::start_model(const ModelLoad &load,
+                         const std::vector<std::string> &model_paths) {
   // Check that the adapter supports the standard in-process start path.
   // Some models (e.g. qwen4exp) run their own start via run() and do not
   // expose a LoadedModel, so make_model() returns nullptr and start()
   // refuses.
   if (!_adapter->make_model()) {
-    set_error("model '%s' does not support in-process loading ",
+    set_error("model '%s' does not support in-process loading",
               _adapter->arch());
     return false;
   }
@@ -171,13 +205,10 @@ bool Basalt::load_model(const ModelLoad &load) {
     set_error("basalt start produced no sessions");
     return false;
   }
+  return true;
+}
 
-  // Load the tokenizer from the .basalt pack (if available).
-  _model_path = load.model_path;
-  _tokenizer = std::make_unique<basalt::program::Tokenizer>();
-  _tokenizer_loaded = load_tokenizer();
-
-  // Resolve EOS token IDs from the adapter's token names.
+void Basalt::resolve_eos_tokens() {
   _eos_ids.clear();
   if (_tokenizer_loaded && _tokenizer) {
     const TokenNames names = _adapter->token_names();
@@ -190,37 +221,27 @@ bool Basalt::load_model(const ModelLoad &load) {
     }
     log_write(LEVEL_INFO, "basalt", "load_model: %zu EOS token(s) resolved", _eos_ids.size());
   }
+}
 
-  // Report VRAM to the gpu_info module.
-  {
-    bool known = false;
-    auto cards = basalt::program::visible_gpus(known);
-    if (!cards.empty() && cards[0].vram > 0) {
-      gpu_info::set_vram_bytes(cards[0].vram);
-    }
+void Basalt::report_vram() {
+  bool known = false;
+  auto cards = basalt::program::visible_gpus(known);
+  if (!cards.empty() && cards[0].vram > 0) {
+    gpu_info::set_vram_bytes(cards[0].vram);
   }
+}
 
-  // Reset token state.
-  _tokens.clear();
-  _pos = 0;
-  _prompt_done = false;
-  _finished = false;
-  _tokens_generated = 0;
-
-  // Check for lingering CUDA errors after load.
-  {
-    int ce = cudaGetLastError();
-    if (ce != 0) {
-      log_write(LEVEL_INFO, "basalt", "load_model: CUDA error after load: %s", cudaGetErrorString((cudaError_t) ce));
-    }
-    ce = cudaDeviceSynchronize();
-    if (ce != 0) {
-      log_write(LEVEL_INFO, "basalt", "load_model: CUDA device sync after load: %s", cudaGetErrorString((cudaError_t) ce));
-    }
+void Basalt::check_cuda_errors() {
+  int ce = cudaGetLastError();
+  if (ce != 0) {
+    log_write(LEVEL_INFO, "basalt", "load_model: CUDA error after load: %s",
+              cudaGetErrorString((cudaError_t) ce));
   }
-
-  log_write(LEVEL_INFO, "basalt", "load_model: complete, session=%p", (void *) _session);
-  return true;
+  ce = cudaDeviceSynchronize();
+  if (ce != 0) {
+    log_write(LEVEL_INFO, "basalt", "load_model: CUDA device sync after load: %s",
+              cudaGetErrorString((cudaError_t) ce));
+  }
 }
 
 void Basalt::reset() {
@@ -289,12 +310,15 @@ bool Basalt::add_message(ModelIter &iter, const string &role,
 
 string Basalt::next(ModelIter &iter) {
   if (_finished || !_session) {
+    log_write(LEVEL_DEBUG, "basalt", "next: early exit (finished=%d, session=%p)",
+              (int) _finished, (void *) _session);
     iter._has_next = false;
     return "";
   }
 
   int32_t tok = do_decode();
   if (tok < 0) {
+    log_write(LEVEL_ERROR, "basalt", "next: do_decode returned %d", tok);
     _finished = true;
     iter._has_next = false;
     return "";
@@ -306,6 +330,7 @@ string Basalt::next(ModelIter &iter) {
 
   // Check EOS.
   if (std::find(_eos_ids.begin(), _eos_ids.end(), tok) != _eos_ids.end()) {
+    log_write(LEVEL_INFO, "basalt", "next: EOS token %d at pos %zu", tok, _pos);
     _finished = true;
     iter._has_next = false;
     return "";
@@ -391,12 +416,41 @@ bool Basalt::load_tokenizer() {
     basalt::GgufModel model = basalt::GgufModel::open(_model_path);
     const auto &meta = model.meta();
 
-    const basalt::MetaValue *vocab = meta.get("tokenizer.ggml.vocab");
+    const basalt::MetaValue *vocab = meta.get("tokenizer.ggml.tokens");
     const basalt::MetaValue *merges = meta.get("tokenizer.ggml.merges");
+    const basalt::MetaValue *tok_type = meta.get("tokenizer.ggml.token_type");
+    log_write(LEVEL_INFO, "basalt", "tokenizer: GGUF keys — tokens=%s(%zu) merges=%s(%zu) token_type=%s(%zu)",
+              vocab ? "yes" : "no", vocab ? vocab->count : 0,
+              merges ? "yes" : "no", merges ? merges->count : 0,
+              tok_type ? "yes" : "no", tok_type ? tok_type->count : 0);
     if (!vocab || vocab->type != basalt::MetaType::ARRAY ||
         !merges || merges->type != basalt::MetaType::ARRAY) {
       log_write(LEVEL_INFO, "basalt", "tokenizer: GGUF has no tokenizer data");
       return false;
+    }
+
+    // Diagnostic (added 2026-11-22): inspect raw merge items to diagnose
+    // "merges.txt: line 0 is not a pair" failure seen with Qwen3.5-9B-Q8_0.
+    //
+    // Root cause hypothesis: the GGUF spec stores tokenizer.ggml.merges as
+    // an array where EACH item is a complete "left right" merge pair string
+    // (e.g. "Ġ a"). The code below assumes a flat array of individual tokens
+    // (items[2i]=left, items[2i+1]=right), which is wrong for this format.
+    //
+    // What to look for in the log:
+    //   - If merges[0] contains a space (e.g. "Ġ a"), items are complete pairs
+    //     and the pairing loop below is the bug.
+    //   - If merges[0] has no space (e.g. "Ġ"), items are individual tokens
+    //     and the pairing loop is correct.
+    //   - ODD count strongly suggests complete-pair format (no unpaired token).
+    {
+      size_t n_show = merges->count < 4 ? merges->count : 4;
+      for (size_t i = 0; i < n_show; ++i) {
+        log_write(LEVEL_INFO, "basalt", "tokenizer: merges[%zu] = \"%s\" (len=%zu)",
+                  i, merges->items[i].s.c_str(), merges->items[i].s.size());
+      }
+      log_write(LEVEL_INFO, "basalt", "tokenizer: merges count=%zu parity=%s",
+                merges->count, (merges->count % 2 == 0) ? "even" : "ODD");
     }
 
     // Build vocab_json: {"token": id, ...}
@@ -405,46 +459,136 @@ bool Basalt::load_tokenizer() {
       if (i > 0) vocab_json += ",";
       vocab_json += "\"";
       const std::string &tok = vocab->items[i].s;
-      for (unsigned char c : tok) {
-        switch (c) {
-        case '"':  vocab_json += "\\\""; break;
-        case '\\': vocab_json += "\\\\"; break;
-        case '\n': vocab_json += "\\n";  break;
-        case '\r': vocab_json += "\\r";  break;
-        case '\t': vocab_json += "\\t";  break;
-        default:
-          if (c < 0x20 || c >= 0x80) {
-            char buf[8];
-            snprintf(buf, sizeof(buf), "\\u%04x", c);
-            vocab_json += buf;
-          } else {
-            vocab_json += (char)c;
-          }
-          break;
-        }
-      }
+      json_escape_utf8(vocab_json, tok);
       vocab_json += "\":";
       vocab_json += std::to_string(i);
     }
     vocab_json += "}";
+    log_write(LEVEL_INFO, "basalt", "tokenizer: vocab_json built (%zu bytes, %zu tokens)",
+              vocab_json.size(), vocab->count);
 
-    // Build merges_txt: one "left right" per line.
-    std::string merges_txt;
-    for (size_t i = 0; i < merges->count; ++i) {
-      merges_txt += merges->items[i].s;
-      merges_txt += "\n";
+    // Diagnostic: log first 3 token names to verify the vocab array is being
+    // read correctly. Token 0 should typically be a special token like
+    // "<s>" or "!" — if it looks like a merge pair, the arrays are misaligned.
+    {
+      size_t n_show = vocab->count < 3 ? vocab->count : 3;
+      for (size_t i = 0; i < n_show; ++i) {
+        log_write(LEVEL_INFO, "basalt", "tokenizer: vocab[%zu] = \"%s\"",
+                  i, vocab->items[i].s.c_str());
+      }
     }
 
-    // Build types_json: all type 4 (user-defined).
+    // Build merges_txt: one "left right" per line.
+    //
+    // Format detection: do the raw GGUF merge items already contain a
+    // space (i.e. they are complete "left right" pair strings)?
+    bool merges_are_pairs = false;
+    {
+      size_t n_check = merges->count < 8 ? merges->count : 8;
+      for (size_t i = 0; i < n_check; ++i) {
+        if (merges->items[i].s.find(' ') != std::string::npos) {
+          merges_are_pairs = true;
+          break;
+        }
+      }
+      log_write(LEVEL_INFO, "basalt",
+                "tokenizer: merges format: items %s contain a space (checked %zu items)",
+                merges_are_pairs ? "DO" : "do NOT", n_check);
+    }
+
+    std::string merges_txt;
+    if (merges_are_pairs) {
+      // Each item is already a complete "left right" pair string.
+      for (size_t i = 0; i < merges->count; ++i) {
+        merges_txt += merges->items[i].s;
+        merges_txt += "\n";
+      }
+      log_write(LEVEL_INFO, "basalt",
+                "tokenizer: using direct-pair format (%zu lines)", merges->count);
+    } else {
+      // Flat array of individual tokens: pair them up.
+      for (size_t i = 0; i + 1 < merges->count; i += 2) {
+        merges_txt += merges->items[i].s;
+        merges_txt += " ";
+        merges_txt += merges->items[i + 1].s;
+        merges_txt += "\n";
+      }
+      if (merges->count % 2 != 0) {
+        log_write(LEVEL_INFO, "basalt",
+                  "tokenizer: WARNING: merges count %zu is ODD; last item \"%s\" is dropped",
+                  merges->count, merges->items[merges->count - 1].s.c_str());
+      }
+    }
+
+    // 2) Actual line count from the constructed string (not count/2).
+    {
+      size_t line_count = 0;
+      for (size_t i = 0; i < merges_txt.size(); ++i) {
+        if (merges_txt[i] == '\n') line_count++;
+      }
+      log_write(LEVEL_INFO, "basalt",
+                "tokenizer: merges_txt actual line count = %zu (count/2 = %zu)",
+                line_count, merges->count / 2);
+    }
+
+    // 3) Token count in the first line (split by space).
+    {
+      size_t first_nl = merges_txt.find('\n');
+      std::string first_line = (first_nl != std::string::npos)
+                                 ? merges_txt.substr(0, first_nl)
+                                 : merges_txt;
+      size_t tok_count = 1;
+      for (char c : first_line) {
+        if (c == ' ') tok_count++;
+      }
+      log_write(LEVEL_INFO, "basalt",
+                "tokenizer: merges_txt first line = \"%s\" (%zu tokens, expected 2)",
+                first_line.c_str(), tok_count);
+    }
+
+    // 4) Sample middle and last lines to check for consistency.
+    {
+      size_t last_nl = merges_txt.rfind('\n');
+      size_t prev_nl = (last_nl > 0) ? merges_txt.rfind('\n', last_nl - 1) : std::string::npos;
+      std::string last_line = (prev_nl != std::string::npos)
+                                ? merges_txt.substr(prev_nl + 1, last_nl - prev_nl - 1)
+                                : merges_txt.substr(0, last_nl);
+      log_write(LEVEL_INFO, "basalt", "tokenizer: merges_txt last line = \"%s\"",
+                last_line.c_str());
+
+      size_t mid_pos = merges_txt.size() / 2;
+      size_t mid_before = merges_txt.rfind('\n', mid_pos);
+      size_t mid_after = merges_txt.find('\n', mid_pos);
+      if (mid_before != std::string::npos && mid_after != std::string::npos) {
+        std::string mid_line = merges_txt.substr(mid_before + 1, mid_after - mid_before - 1);
+        log_write(LEVEL_INFO, "basalt", "tokenizer: merges_txt middle line = \"%s\"",
+                  mid_line.c_str());
+      }
+    }
+
+    // Build types_json from the GGUF token_type array, defaulting to 4.
     std::string types_json = "[";
     for (size_t i = 0; i < vocab->count; ++i) {
       if (i > 0) types_json += ",";
-      types_json += "4";
+      if (tok_type && tok_type->type == basalt::MetaType::ARRAY && i < tok_type->count) {
+        types_json += std::to_string((int) tok_type->items[i].u);
+      } else {
+        types_json += "4";
+      }
     }
     types_json += "]";
 
+    log_write(LEVEL_INFO, "basalt", "tokenizer: types_json built (%zu bytes, %zu entries)",
+              types_json.size(), vocab->count);
+
+    // Diagnostic: final summary of all three inputs before the load call.
+    // If load fails, this line plus the error message above it give the full
+    // picture of what was passed in. Cross-reference with the merges/vocab
+    // diagnostics earlier in this function to pinpoint which input is bad.
     auto pre = _adapter->pretokenizer();
     _tokenizer->set_pretokenize(pre.split);
+    log_write(LEVEL_INFO, "basalt", "tokenizer: calling load(vocab=%zuB, merges=%zuB, types=%zuB)",
+              vocab_json.size(), merges_txt.size(), types_json.size());
     if (!_tokenizer->load(vocab_json, merges_txt, types_json, err)) {
       log_write(LEVEL_INFO, "basalt", "tokenizer: GGUF load failed: %s", err.c_str());
       return false;
@@ -522,6 +666,7 @@ int32_t Basalt::do_decode() {
     return -1;
   }
 
+  log_write(LEVEL_DEBUG, "basalt", "do_decode: ok, token=%d pos=%zu", next_tok, _pos);
   return next_tok;
 }
 

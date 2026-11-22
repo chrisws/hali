@@ -134,6 +134,8 @@ int main(int argc, char **argv) {
     log_open(cfg.log_level_str_, cfg.log_file_, cfg.log_filter_, cfg.log_erase_);
   }
 
+  log_write(LEVEL_INFO, "main", "hali starting");
+  
   // ── Init curl globally ────────────────────────────────────────────
   curl_init();
 
@@ -217,7 +219,6 @@ int main(int argc, char **argv) {
   }
 
   // ── Main loop ─────────────────────────────────────────────────────
-  log_write(LEVEL_INFO, "main", "hali starting");
   for (;;) {
     if (cfg.web_enabled_) {
       if (webview::has_message()) {
