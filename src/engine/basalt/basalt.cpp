@@ -12,9 +12,11 @@
 
 #include "basalt.h"
 
+#include <algorithm>
 #include <cstdarg>
 #include <cstdio>
 #include <string>
+#include <cuda_runtime.h>
 
 #include "logging.h"
 
@@ -175,6 +177,20 @@ bool Basalt::load_model(const ModelLoad &load) {
   _tokenizer = std::make_unique<basalt::program::Tokenizer>();
   _tokenizer_loaded = load_tokenizer();
 
+  // Resolve EOS token IDs from the adapter's token names.
+  _eos_ids.clear();
+  if (_tokenizer_loaded && _tokenizer) {
+    const TokenNames names = _adapter->token_names();
+    for (const auto &eos_name : names.eos) {
+      std::vector<int32_t> ids;
+      std::string terr;
+      if (_tokenizer->encode(eos_name, true, {}, ids, terr) && !ids.empty()) {
+        _eos_ids.insert(_eos_ids.end(), ids.begin(), ids.end());
+      }
+    }
+    log_write(LEVEL_INFO, "basalt", "load_model: %zu EOS token(s) resolved", _eos_ids.size());
+  }
+
   // Report VRAM to the gpu_info module.
   {
     bool known = false;
@@ -191,6 +207,19 @@ bool Basalt::load_model(const ModelLoad &load) {
   _finished = false;
   _tokens_generated = 0;
 
+  // Check for lingering CUDA errors after load.
+  {
+    int ce = cudaGetLastError();
+    if (ce != 0) {
+      log_write(LEVEL_INFO, "basalt", "load_model: CUDA error after load: %s", cudaGetErrorString((cudaError_t) ce));
+    }
+    ce = cudaDeviceSynchronize();
+    if (ce != 0) {
+      log_write(LEVEL_INFO, "basalt", "load_model: CUDA device sync after load: %s", cudaGetErrorString((cudaError_t) ce));
+    }
+  }
+
+  log_write(LEVEL_INFO, "basalt", "load_model: complete, session=%p", (void *) _session);
   return true;
 }
 
@@ -275,6 +304,13 @@ string Basalt::next(ModelIter &iter) {
   _pos++;
   _tokens_generated++;
 
+  // Check EOS.
+  if (std::find(_eos_ids.begin(), _eos_ids.end(), tok) != _eos_ids.end()) {
+    _finished = true;
+    iter._has_next = false;
+    return "";
+  }
+
   // Check max tokens.
   if (_tokens_generated >= _max_tokens) {
     _finished = true;
@@ -324,39 +360,107 @@ bool Basalt::is_memory_flush() const {
 bool Basalt::load_tokenizer() {
   if (!_adapter || _model_path.empty()) return false;
 
-  // Only .basalt packs carry the tokenizer sections.
-  basalt::core::ModelFile file;
   std::string err;
-  if (!file.open(_model_path, err)) {
-    log_write(LEVEL_INFO, "basalt", "tokenizer: not a .basalt file, skipping");
-    return false;
+
+  // --- Path 1: .basalt pack ---
+  {
+    basalt::core::ModelFile file;
+    if (file.open(_model_path, err) && file.load_meta(err)) {
+      std::vector<uint8_t> vj, mj, tj;
+      if (basalt::core::read_range(file.range("tokenizer/vocab.json"), vj, err) &&
+          basalt::core::read_range(file.range("tokenizer/merges.txt"), mj, err) &&
+          basalt::core::read_range(file.range("tokenizer/token_type.json"), tj, err)) {
+        auto pre = _adapter->pretokenizer();
+        _tokenizer->set_pretokenize(pre.split);
+        if (_tokenizer->load(std::string_view((const char *)vj.data(), vj.size()),
+                             std::string_view((const char *)mj.data(), mj.size()),
+                             std::string_view((const char *)tj.data(), tj.size()), err)) {
+          log_write(LEVEL_INFO, "basalt", "tokenizer: loaded %zu tokens from .basalt", _tokenizer->vocab_size());
+          return true;
+        }
+        log_write(LEVEL_INFO, "basalt", "tokenizer: .basalt load failed: %s", err.c_str());
+        return false;
+      }
+      log_write(LEVEL_INFO, "basalt", "tokenizer: .basalt missing sections (%s)", err.c_str());
+      // Fall through to GGUF.
+    }
   }
 
-  // Read the tokenizer sections.
-  std::vector<uint8_t> vj, mj, tj;
-  if (!basalt::core::read_range(file.range("tokenizer/vocab.json"), vj, err) ||
-      !basalt::core::read_range(file.range("tokenizer/merges.txt"), mj, err) ||
-      !basalt::core::read_range(file.range("tokenizer/token_type.json"), tj, err)) {
-    log_write(LEVEL_INFO, "basalt", "tokenizer: missing sections (%s)", err.c_str());
+  // --- Path 2: GGUF ---
+  try {
+    basalt::GgufModel model = basalt::GgufModel::open(_model_path);
+    const auto &meta = model.meta();
+
+    const basalt::MetaValue *vocab = meta.get("tokenizer.ggml.vocab");
+    const basalt::MetaValue *merges = meta.get("tokenizer.ggml.merges");
+    if (!vocab || vocab->type != basalt::MetaType::ARRAY ||
+        !merges || merges->type != basalt::MetaType::ARRAY) {
+      log_write(LEVEL_INFO, "basalt", "tokenizer: GGUF has no tokenizer data");
+      return false;
+    }
+
+    // Build vocab_json: {"token": id, ...}
+    std::string vocab_json = "{";
+    for (size_t i = 0; i < vocab->count; ++i) {
+      if (i > 0) vocab_json += ",";
+      vocab_json += "\"";
+      const std::string &tok = vocab->items[i].s;
+      for (unsigned char c : tok) {
+        switch (c) {
+        case '"':  vocab_json += "\\\""; break;
+        case '\\': vocab_json += "\\\\"; break;
+        case '\n': vocab_json += "\\n";  break;
+        case '\r': vocab_json += "\\r";  break;
+        case '\t': vocab_json += "\\t";  break;
+        default:
+          if (c < 0x20 || c >= 0x80) {
+            char buf[8];
+            snprintf(buf, sizeof(buf), "\\u%04x", c);
+            vocab_json += buf;
+          } else {
+            vocab_json += (char)c;
+          }
+          break;
+        }
+      }
+      vocab_json += "\":";
+      vocab_json += std::to_string(i);
+    }
+    vocab_json += "}";
+
+    // Build merges_txt: one "left right" per line.
+    std::string merges_txt;
+    for (size_t i = 0; i < merges->count; ++i) {
+      merges_txt += merges->items[i].s;
+      merges_txt += "\n";
+    }
+
+    // Build types_json: all type 4 (user-defined).
+    std::string types_json = "[";
+    for (size_t i = 0; i < vocab->count; ++i) {
+      if (i > 0) types_json += ",";
+      types_json += "4";
+    }
+    types_json += "]";
+
+    auto pre = _adapter->pretokenizer();
+    _tokenizer->set_pretokenize(pre.split);
+    if (!_tokenizer->load(vocab_json, merges_txt, types_json, err)) {
+      log_write(LEVEL_INFO, "basalt", "tokenizer: GGUF load failed: %s", err.c_str());
+      return false;
+    }
+    log_write(LEVEL_INFO, "basalt", "tokenizer: loaded %zu tokens from GGUF", _tokenizer->vocab_size());
+    return true;
+  } catch (const std::exception &e) {
+    log_write(LEVEL_INFO, "basalt", "tokenizer: GGUF open failed: %s", e.what());
     return false;
   }
-
-  // Set the pre-tokenizer from the adapter and load the tables.
-  auto pre = _adapter->pretokenizer();
-  _tokenizer->set_pretokenize(pre.split);
-  if (!_tokenizer->load(std::string_view((const char *)vj.data(), vj.size()),
-                        std::string_view((const char *)mj.data(), mj.size()),
-                        std::string_view((const char *)tj.data(), tj.size()), err)) {
-    log_write(LEVEL_INFO, "basalt", "tokenizer: load failed: %s", err.c_str());
-    return false;
-  }
-
-  log_write(LEVEL_INFO, "basalt", "tokenizer: loaded %zu tokens", _tokenizer->vocab_size());
-  return true;
 }
 
 bool Basalt::do_prefill() {
   if (_tokens.empty() || !_session) return true;
+
+  log_write(LEVEL_INFO, "basalt", "do_prefill: %zu tokens, pos=0", _tokens.size());
 
   PrefillRequest pr;
   pr.tokens = _tokens.data();
@@ -371,8 +475,10 @@ bool Basalt::do_prefill() {
     return false;
   }
 
+  log_write(LEVEL_INFO, "basalt", "do_prefill: prefill_chunk ok, calling end_prompt");
   _pos = _tokens.size();
   _session->end_prompt();
+  log_write(LEVEL_INFO, "basalt", "do_prefill: done, pos=%zu", _pos);
   return true;
 }
 
@@ -401,9 +507,18 @@ int32_t Basalt::do_decode() {
   dr.next_token = &next_tok;
   dr.sampling = &sp;
 
+  // Pass recent token history so the sampler can apply penalties.
+  int hist_len = _sampling.penalty_last_n;
+  if (hist_len > 0 && _pos > 0) {
+    if (hist_len > (int) _pos) hist_len = (int) _pos;
+    dr.history = _tokens.data() + _pos - hist_len;
+    dr.history_len = hist_len;
+  }
+
   Result r = _session->decode_window(dr);
   if (!r.ok()) {
     set_error("decode failed: %s", r.message.c_str());
+    log_write(LEVEL_ERROR, "basalt", "do_decode: %s", r.message.c_str());
     return -1;
   }
 

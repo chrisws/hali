@@ -85,6 +85,9 @@ private:
   std::vector<int32_t> _tokens;
   int64_t _pos = 0;
 
+  // EOS token IDs (resolved from adapter at load time)
+  std::vector<int32_t> _eos_ids;
+
   // sampling params (passed to DecodeRequest::sampling)
   struct Sampling {
     int   top_k = 20;
