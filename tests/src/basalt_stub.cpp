@@ -3,10 +3,7 @@
 
 #include <cstring>
 
-// Provide complete types so unique_ptr destructor can be instantiated.
-namespace basalt::model {
-  struct Started { int _stub; };
-}
+// (Started is now provided by the real header via basalt/dense/model.hpp include below)
 namespace basalt::program {
   class Tokenizer {
   public:
@@ -87,3 +84,33 @@ bool Basalt::do_prefill() {
 int32_t Basalt::do_decode() {
   return -1;
 }
+
+// Stub for Geometry::check() - basic structural validation without kernel deps.
+#include "basalt/dense/model.hpp"
+
+namespace basalt::dense {
+std::string Geometry::check() const {
+    if ((int) kinds.size() != n_layers || n_layers <= 0) return "the layer kinds do not cover the layers";
+    if (n_embd % 256 || n_ff % 256) return "widths must be whole 256-value blocks";
+    if (attn_layers() > 0) {
+        if (head_dim != 256) return "attention heads must be 256 wide";
+        if (n_kv <= 0 || n_head % n_kv || n_head / n_kv > 8) return "attention head grouping not supported";
+        if (rope.rot <= 0 || rope.rot > head_dim || rope.rot % 2 || rope.rot / 2 > 64) return "rotary width not supported";
+    }
+    // Skip kernel-specific checks (gdn_prompt_supported, dec_gdn_rec_supported)
+    return {};
+}
+}  // namespace basalt::dense
+
+// Stubs for non-inline Geometry methods
+namespace basalt::dense {
+int Geometry::gdn_layers() const { return (int) std::count(kinds.begin(), kinds.end(), Mixer::Gdn); }
+int Geometry::attn_layers() const { return (int) std::count(kinds.begin(), kinds.end(), Mixer::Attention); }
+}  // namespace basalt::dense
+
+// Stub for the basalt platform's fwrite wrapper
+namespace std {
+size_t hali_basalt_fwrite(const void* ptr, size_t size, size_t nmemb, FILE* stream) {
+    return fwrite(ptr, size, nmemb, stream);
+}
+}  // namespace std

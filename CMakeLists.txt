@@ -113,7 +113,7 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/gen_skills.cmake)
 # hali executable
 # -----------------------------
 file(GLOB HALI_CORE_SOURCES  ${CMAKE_CURRENT_SOURCE_DIR}/src/core/*.cpp)
-file(GLOB HALI_MODEL_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/src/model/*.cpp)
+file(GLOB HALI_ENGINE_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/src/engine/*.cpp)
 file(GLOB HALI_UI_SOURCES    ${CMAKE_CURRENT_SOURCE_DIR}/src/ui/*.cpp)
 file(GLOB HALI_TOOLS_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/src/tools/*.cpp)
 file(GLOB HALI_UTIL_SOURCES  ${CMAKE_CURRENT_SOURCE_DIR}/src/util/*.cpp)
@@ -122,7 +122,7 @@ add_executable(hali
   src/main.cpp
   yyjson/src/yyjson.c
   ${HALI_CORE_SOURCES}
-  ${HALI_MODEL_SOURCES}
+  ${HALI_ENGINE_SOURCES}
   ${HALI_UI_SOURCES}
   ${HALI_TOOLS_SOURCES}
   ${HALI_UTIL_SOURCES}
@@ -131,7 +131,7 @@ add_executable(hali
 target_include_directories(hali PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/src
   ${CMAKE_CURRENT_SOURCE_DIR}/src/core
-  ${CMAKE_CURRENT_SOURCE_DIR}/src/model
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/engine
   ${CMAKE_CURRENT_SOURCE_DIR}/src/ui
   ${CMAKE_CURRENT_SOURCE_DIR}/src/tools
   ${CMAKE_CURRENT_SOURCE_DIR}/src/util

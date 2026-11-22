@@ -12,6 +12,8 @@
 #include <cstdio>
 #include <cstring>
 #include "basalt/basalt.h"
+#include "basalt/artifact/gguf_reader.hpp"
+#include "models/qwen35/meta.hpp"
 #include "engine.h"
 
 static int tests_run = 0;
@@ -184,6 +186,64 @@ static bool test_engine_virtual_dispatch() {
   return true;
 }
 
+// --- qwen35 geometry: prediction layer kind ----------------------------------
+
+static bool test_qwen35_geom_prediction_layer() {
+  const char* path = "/tmp/hali_test_qwen35_geom.gguf";
+  {
+    FILE* f = fopen(path, "wb");
+    assert(f);
+    // Write a minimal byte so the file is mappable (GgufFile maps before checking virtual registry)
+    fputc('x', f);
+    fclose(f);
+  }
+
+  auto v = std::make_shared<basalt::VirtualGguf>();
+  auto u32 = [](uint32_t x) { basalt::MetaValue m; m.type = basalt::MetaType::U32; m.u = x; return m; };
+  auto str = [](const char* s) { basalt::MetaValue m; m.type = basalt::MetaType::STRING; m.s = s; return m; };
+
+  v->meta["general.architecture"] = str("qwen35");
+  v->meta["qwen35.block_count"] = u32(33);
+  v->meta["qwen35.embedding_length"] = u32(4096);
+  v->meta["qwen35.feed_forward_length"] = u32(12288);
+  v->meta["qwen35.attention.head_count"] = u32(16);
+  v->meta["qwen35.attention.head_count_kv"] = u32(4);
+  v->meta["qwen35.attention.key_length"] = u32(256);
+  v->meta["qwen35.context_length"] = u32(32768);
+  v->meta["qwen35.rope.dimension_count"] = u32(128);
+  v->meta["qwen35.ssm.state_size"] = u32(128);
+  v->meta["qwen35.ssm.group_count"] = u32(16);
+  v->meta["qwen35.ssm.time_step_rank"] = u32(32);
+  v->meta["qwen35.ssm.conv_kernel"] = u32(4);
+  v->meta["qwen35.full_attention_interval"] = u32(4);
+  v->meta["qwen35.nextn_predict_layers"] = u32(1);
+  basalt::MetaValue toks;
+  toks.type = basalt::MetaType::ARRAY;
+  toks.elem = basalt::MetaType::STRING;
+  toks.count = 100;
+  v->meta["tokenizer.ggml.tokens"] = toks;
+
+  basalt::gguf_register_virtual(path, v);
+
+  basalt::GgufFile gg(path);
+  std::string err;
+  auto g = basalt::models::qwen35::geometry(gg, err);
+
+  assert(g.n_layers == 33);
+  assert(g.kinds.size() == 33);
+
+  // Main layers (0..31): 3 GDN + 1 ATTN repeating
+  for (int il = 0; il < 32; ++il) {
+    const bool expect_gdn = (il + 1) % 4 != 0;
+    assert(g.kinds[(size_t) il] == (expect_gdn ? basalt::dense::Mixer::Gdn : basalt::dense::Mixer::Attention));
+  }
+
+  // Prediction layer (32) must be Attention, not GDN
+  assert(g.kinds[32] == basalt::dense::Mixer::Attention);
+
+  return true;
+}
+
 // --- entry point -------------------------------------------------------------
 
 void basalt_test() {
@@ -207,6 +267,7 @@ void basalt_test() {
   TEST(model_load_defaults);
   TEST(kv_cache_preset_values);
   TEST(engine_virtual_dispatch);
+  TEST(qwen35_geom_prediction_layer);
 
   printf("\n%d/%d tests passed\n", tests_passed, tests_run);
 }

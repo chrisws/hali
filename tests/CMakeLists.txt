@@ -16,8 +16,8 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 file(GLOB TEST_CORE_SOURCES  ${CMAKE_CURRENT_SOURCE_DIR}/../src/core/*.cpp)
-file(GLOB TEST_MODEL_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/../src/model/*.cpp)
-file(GLOB TEST_MODEL_LLAMA_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/../src/model/llama/*.cpp)
+file(GLOB TEST_ENGINE_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/../src/engine/*.cpp)
+file(GLOB TEST_ENGINE_LLAMA_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/../src/engine/llama/*.cpp)
 file(GLOB TEST_UI_SOURCES    ${CMAKE_CURRENT_SOURCE_DIR}/../src/ui/*.cpp)
 file(GLOB TEST_TOOLS_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/../src/tools/*.cpp)
 file(GLOB TEST_UTIL_SOURCES  ${CMAKE_CURRENT_SOURCE_DIR}/../src/util/*.cpp)
@@ -86,8 +86,8 @@ add_subdirectory(${LLAMA_DIR} ${CMAKE_BINARY_DIR}/llama.cpp)
 add_executable(hali_tests
   ../yyjson/src/yyjson.c
   ${TEST_CORE_SOURCES}
-  ${TEST_MODEL_SOURCES}
-  ${TEST_MODEL_LLAMA_SOURCES}
+  ${TEST_ENGINE_SOURCES}
+  ${TEST_ENGINE_LLAMA_SOURCES}
   ${TEST_UI_SOURCES}
   ${TEST_TOOLS_SOURCES}
   ${TEST_UTIL_SOURCES}
@@ -147,10 +147,12 @@ target_include_directories(hali_tests PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/../yyjson/src
   ${CMAKE_CURRENT_SOURCE_DIR}/../src
   ${CMAKE_CURRENT_SOURCE_DIR}/../src/core
-  ${CMAKE_CURRENT_SOURCE_DIR}/../src/model
+  ${CMAKE_CURRENT_SOURCE_DIR}/../src/engine
   ${CMAKE_CURRENT_SOURCE_DIR}/../src/ui
   ${CMAKE_CURRENT_SOURCE_DIR}/../src/tools
   ${CMAKE_CURRENT_SOURCE_DIR}/../src/util
+  ${CMAKE_CURRENT_SOURCE_DIR}/../engine/basalt/include
+  ${CMAKE_CURRENT_SOURCE_DIR}/../engine/basalt/src
   ${CMAKE_CURRENT_SOURCE_DIR}/../engine/llama.cpp/include
   ${CMAKE_CURRENT_SOURCE_DIR}/../engine/llama.cpp/ggml/include
   ${CMAKE_CURRENT_SOURCE_DIR}/../engine/llama.cpp/common
@@ -167,6 +169,7 @@ target_link_libraries(hali_tests PRIVATE
   OpenSSL::Crypto
   CURL::libcurl
   ${NC_TARGET}
+  ${CMAKE_CURRENT_SOURCE_DIR}/../build/basalt/libplatform.a
 )
 
 set_target_properties(hali_tests PROPERTIES
