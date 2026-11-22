@@ -27,8 +27,8 @@ set(CMAKE_CUDA_ARCHITECTURES "120" CACHE STRING "CUDA architectures" FORCE)
 # the -include does not leak into hali's own compilation.
 set(_hali_saved_cxx_flags "${CMAKE_CXX_FLAGS}")
 set(_hali_saved_c_flags   "${CMAKE_C_FLAGS}")
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -include ${CMAKE_SOURCE_DIR}/src/model/basalt/basalt_printf_redirect.h")
-set(CMAKE_C_FLAGS   "${CMAKE_C_FLAGS}   -include ${CMAKE_SOURCE_DIR}/src/model/basalt/basalt_printf_redirect.h")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -include ${CMAKE_SOURCE_DIR}/src/engine/basalt/basalt_printf_redirect.h")
+set(CMAKE_C_FLAGS   "${CMAKE_C_FLAGS}   -include ${CMAKE_SOURCE_DIR}/src/engine/basalt/basalt_printf_redirect.h")
 
 add_subdirectory(${BASALT_DIR} ${CMAKE_BINARY_DIR}/basalt)
 
@@ -37,7 +37,7 @@ set(CMAKE_C_FLAGS   "${_hali_saved_c_flags}")
 
 # --- Printf redirect wrappers (static lib for all basalt targets) ---
 add_library(basalt_printf_redirect STATIC
-  ${CMAKE_SOURCE_DIR}/src/model/basalt/basalt_printf_redirect.cpp
+  ${CMAKE_SOURCE_DIR}/src/engine/basalt/basalt_printf_redirect.cpp
 )
 target_include_directories(basalt_printf_redirect PRIVATE
   ${CMAKE_SOURCE_DIR}/src/util
@@ -62,13 +62,13 @@ endforeach()
 target_link_libraries(hali PRIVATE models basalt_printf_redirect)
 target_include_directories(hali PRIVATE
   ${BASALT_DIR}/include
-  ${CMAKE_SOURCE_DIR}/src/model/basalt
+  ${CMAKE_SOURCE_DIR}/src/engine/basalt
 )
 target_compile_definitions(hali PRIVATE HALI_ENGINE_BASALT)
 
 # Compile basalt.cpp + no-op RAG stubs + printf redirect wrappers
 target_sources(hali PRIVATE
-  ${CMAKE_SOURCE_DIR}/src/model/basalt/basalt.cpp
-  ${CMAKE_SOURCE_DIR}/src/model/basalt/basalt_rag.cpp
-  ${CMAKE_SOURCE_DIR}/src/model/basalt/basalt_printf_redirect.cpp
+  ${CMAKE_SOURCE_DIR}/src/engine/basalt/basalt.cpp
+  ${CMAKE_SOURCE_DIR}/src/engine/basalt/basalt_rag.cpp
+  ${CMAKE_SOURCE_DIR}/src/engine/basalt/basalt_printf_redirect.cpp
 )
