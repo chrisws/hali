@@ -674,8 +674,8 @@ bool Agent::run_turn(const std::string &user_message) {
   turn_tokens += iter_->_tokens_generated;
 
   if (turn_tokens == 0) {
-    log_write(LEVEL_ERROR, "agent", "run_turn: zero tokens generated (decode likely failed)");
-    tui_.append_line(ICON_ERR + "No response generated. Check basalt.log for decode errors.");
+    log_write(LEVEL_ERROR, "agent", "run_turn: zero tokens generated (model emitted EOS immediately)");
+    tui_.append_line(ICON_ERR + "No response generated - model stopped immediately. Check basalt.log for decode diagnostics.");
   }
 
   auto turn_end = std::chrono::high_resolution_clock::now();

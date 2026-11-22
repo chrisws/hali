@@ -85,8 +85,16 @@ private:
   std::vector<int32_t> _tokens;
   int64_t _pos = 0;
 
+  // reusable logits buffer for decode diagnostics (sized to n_vocab at load)
+  std::vector<float> _logits_buf;
+
   // EOS token IDs (resolved from adapter at load time)
   std::vector<int32_t> _eos_ids;
+
+  // Chat template tokens (from adapter TokenNames)
+  std::string _turn_token;
+  std::string _eos_token;
+  std::string _reply_role;
 
   // sampling params (passed to DecodeRequest::sampling)
   struct Sampling {

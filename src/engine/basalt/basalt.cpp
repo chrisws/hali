@@ -109,6 +109,9 @@ bool Basalt::load_model(const ModelLoad &load) {
   _finished = false;
   _tokens_generated = 0;
 
+  // Allocate the reusable logits buffer for decode diagnostics.
+  _logits_buf.resize(_started->model->desc().n_vocab);
+
   check_cuda_errors();
 
   log_write(LEVEL_INFO, "basalt", "load_model: complete, session=%p", (void *) _session);
@@ -219,7 +222,12 @@ void Basalt::resolve_eos_tokens() {
         _eos_ids.insert(_eos_ids.end(), ids.begin(), ids.end());
       }
     }
-    log_write(LEVEL_INFO, "basalt", "load_model: %zu EOS token(s) resolved", _eos_ids.size());
+    // Store chat template tokens for message formatting.
+    _turn_token = names.turn;
+    _eos_token = names.eos.empty() ? "" : names.eos[0];
+    _reply_role = names.reply_role;
+    log_write(LEVEL_INFO, "basalt", "load_model: %zu EOS token(s) resolved, turn=[%s] eos=[%s] reply_role=[%s]",
+              _eos_ids.size(), _turn_token.c_str(), _eos_token.c_str(), _reply_role.c_str());
   }
 }
 
@@ -278,19 +286,29 @@ void Basalt::set_log_level(int) { /* no-op */ }
 
 bool Basalt::add_message(ModelIter &iter, const string &role,
                          const string &content) {
-  (void)role;
+  // Apply the chat template based on role.
+  std::string formatted;
+  if (role == "tool_result") {
+    // Continuation of the assistant turn - append raw.
+    formatted = content;
+  } else if (!_turn_token.empty() && !_eos_token.empty()) {
+    formatted = _turn_token + role + "\n" + content + _eos_token + "\n";
+  } else {
+    // No chat template available - send raw.
+    formatted = content;
+  }
 
-  // Tokenize the content.
+  // Tokenize the formatted content.
   std::vector<int32_t> new_tokens;
   if (_tokenizer_loaded && _tokenizer) {
     std::string terr;
-    if (!_tokenizer->encode(content, true, {}, new_tokens, terr)) {
+    if (!_tokenizer->encode(formatted, true, {}, new_tokens, terr)) {
       set_error("tokenization failed: %s", terr.c_str());
       return false;
     }
   } else {
     // Fallback: byte-level (experimental, produces garbage for the model).
-    for (unsigned char c : content) {
+    for (unsigned char c : formatted) {
       new_tokens.push_back(static_cast<int32_t>(c));
     }
   }
@@ -330,7 +348,13 @@ string Basalt::next(ModelIter &iter) {
 
   // Check EOS.
   if (std::find(_eos_ids.begin(), _eos_ids.end(), tok) != _eos_ids.end()) {
-    log_write(LEVEL_INFO, "basalt", "next: EOS token %d at pos %zu", tok, _pos);
+    if (_tokens_generated == 1) {
+      log_write(LEVEL_ERROR, "basalt",
+                "next: EOS token %d at pos %zu on FIRST decode step (model refused to generate)",
+                tok, _pos);
+    } else {
+      log_write(LEVEL_INFO, "basalt", "next: EOS token %d at pos %zu", tok, _pos);
+    }
     _finished = true;
     iter._has_next = false;
     return "";
@@ -642,6 +666,9 @@ int32_t Basalt::do_decode() {
   sp.seed = _sampling.seed;
   sp.counter = static_cast<uint64_t>(_pos);
 
+  log_write(LEVEL_DEBUG, "basalt", "do_decode: pos=%zu tok_in=%d top_k=%d top_p=%.2f min_p=%.2f temp=%.2f",
+            _pos, _tokens[_pos - 1], sp.top_k, sp.top_p, sp.min_p, sp.temperature);
+
   // Build the decode request.
   int32_t next_tok = 0;
   DecodeRequest dr;
@@ -650,6 +677,7 @@ int32_t Basalt::do_decode() {
   dr.pos = _pos - 1;
   dr.next_token = &next_tok;
   dr.sampling = &sp;
+  dr.logits = _logits_buf.data();
 
   // Pass recent token history so the sampler can apply penalties.
   int hist_len = _sampling.penalty_last_n;
@@ -664,6 +692,41 @@ int32_t Basalt::do_decode() {
     set_error("decode failed: %s", r.message.c_str());
     log_write(LEVEL_ERROR, "basalt", "do_decode: %s", r.message.c_str());
     return -1;
+  }
+
+  // Check for silent CUDA errors.
+  cudaError_t cerr = cudaGetLastError();
+  if (cerr != cudaSuccess) {
+    log_write(LEVEL_ERROR, "basalt", "do_decode: CUDA error: %s", cudaGetErrorString(cerr));
+  }
+
+  // Log top-5 logits for diagnostics (single O(n) pass).
+  {
+    int top5[5] = {-1, -1, -1, -1, -1};
+    float top5v[5] = {-1e30f, -1e30f, -1e30f, -1e30f, -1e30f};
+    int64_t n_vocab = (int64_t) _logits_buf.size();
+    for (int64_t i = 0; i < n_vocab; i++) {
+      float v = _logits_buf[i];
+      if (v > top5v[0]) {
+        for (int j = 4; j > 0; j--) { top5[j] = top5[j - 1]; top5v[j] = top5v[j - 1]; }
+        top5[0] = (int) i; top5v[0] = v;
+      } else if (v > top5v[1]) {
+        for (int j = 4; j > 1; j--) { top5[j] = top5[j - 1]; top5v[j] = top5v[j - 1]; }
+        top5[1] = (int) i; top5v[1] = v;
+      } else if (v > top5v[2]) {
+        for (int j = 4; j > 2; j--) { top5[j] = top5[j - 1]; top5v[j] = top5v[j - 1]; }
+        top5[2] = (int) i; top5v[2] = v;
+      } else if (v > top5v[3]) {
+        for (int j = 4; j > 3; j--) { top5[j] = top5[j - 1]; top5v[j] = top5v[j - 1]; }
+        top5[3] = (int) i; top5v[3] = v;
+      } else if (v > top5v[4]) {
+        top5[4] = (int) i; top5v[4] = v;
+      }
+    }
+    log_write(LEVEL_DEBUG, "basalt",
+              "do_decode: top5: [%d=%.2f] [%d=%.2f] [%d=%.2f] [%d=%.2f] [%d=%.2f] -> picked %d",
+              top5[0], top5v[0], top5[1], top5v[1], top5[2], top5v[2],
+              top5[3], top5v[3], top5[4], top5v[4], next_tok);
   }
 
   log_write(LEVEL_DEBUG, "basalt", "do_decode: ok, token=%d pos=%zu", next_tok, _pos);
