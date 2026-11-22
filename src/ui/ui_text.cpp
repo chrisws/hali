@@ -252,7 +252,7 @@ void usage() {
             "\n"
             "Settings are persisted to .hali/settings.json under the sandbox.\n"
             "\n"
-            "Slash commands inside hali:\n");
+            "Slash commands inside hali:");
   for (const auto &cmd : slash_commands()) {
     std::string line = "  ";
     line += cmd.name;
@@ -262,7 +262,6 @@ void usage() {
     }
     while (line.size() < 26) { line += ' '; }
     line += cmd.description;
-    line += '\n';
     std::puts(line.c_str());
   }
 }
