@@ -259,6 +259,22 @@ static void test_strip_code_fences_edge_cases() {
   cout << "test_strip_code_fences_edge_cases passed" << endl;
 }
 
+static void test_strip_code_fences_midline_backticks() {
+  // Shell script with echo '```' mid-line — should NOT be treated as fences
+  string src = "#!/usr/bin/env bash\necho '```'\ncat file\necho '```'\n";
+  assert(strip_code_fences("test.sh", src) == src);
+
+  // Code file with ``` only mid-line (not at line start)
+  string src2 = "int x = 1;\nprintf(\"```\");\n";
+  assert(strip_code_fences("test.c", src2) == src2);
+
+  // Proper fence at line start should still be stripped
+  string src3 = FENCE + "bash\necho hello\n" + FENCE;
+  assert(strip_code_fences("test.sh", src3) == "echo hello\n");
+
+  cout << "test_strip_code_fences_midline_backticks passed" << endl;
+}
+
 //
 // Extended hasDangerousPatterns tests (P1-1 security fix)
 //
@@ -1140,6 +1156,7 @@ void agent_utils_test() {
   RUN_TEST(test_strip_code_fences_code_file);
   RUN_TEST(test_strip_code_fences_non_code_file);
   RUN_TEST(test_strip_code_fences_edge_cases);
+  RUN_TEST(test_strip_code_fences_midline_backticks);
   RUN_TEST(test_search_flags);
   RUN_TEST(test_search_flags_space_separated);
   RUN_TEST(test_search_multiword_pattern);

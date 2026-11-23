@@ -109,7 +109,14 @@ std::string strip_code_fences(const std::string &filename, const std::string &sr
   if (!is_code) {
     return utils::unwrap(src);
   }
+  // Only treat ``` as a fence if it starts a line (pos 0 or after \n)
   auto pos = src.find("```");
+  while (pos != std::string::npos) {
+    if (pos == 0 || src[pos - 1] == '\n') {
+      break;
+    }
+    pos = src.find("```", pos + 1);
+  }
   if (pos == std::string::npos) {
     return src;
   }
@@ -118,7 +125,14 @@ std::string strip_code_fences(const std::string &filename, const std::string &sr
     return src;
   }
   std::string inner = src.substr(nl + 1);
+  // Find closing fence: ``` at start of a line
   auto end = inner.rfind("```");
+  while (end != std::string::npos) {
+    if (end == 0 || inner[end - 1] == '\n') {
+      break;
+    }
+    end = inner.rfind("```", end - 1);
+  }
   if (end != std::string::npos) {
     inner = inner.substr(0, end);
   }
