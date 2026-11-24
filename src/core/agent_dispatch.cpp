@@ -758,7 +758,11 @@ ToolMap Agent::build_tool_dispatch() {
   };
   tools["TOOL:INTROSPECT"] = [this](const std::string &a1, const std::string &) -> std::string {
     tui_.show_tool("introspecting: " + a1);
-    return cfg_.introspect();
+    std::string result = cfg_.introspect();
+    if (a1 == "session") {
+      result += "\n\n" + format_session_md(tui_.get_chat());
+    }
+    return result;
   };
   tools["TOOL:ASK"] = [this](const std::string &a1, const std::string &a2) -> std::string {
     tui_.set_thinking(false);

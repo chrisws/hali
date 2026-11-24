@@ -73,6 +73,10 @@ std::string Tui::save_session(const std::string &file) const {
   return "";
 }
 
+std::vector<std::string> Tui::get_chat() const {
+  return {};
+}
+
 std::string Tui::file_picker(const std::string &sandbox, const std::string &title) {
   return "";
 }
