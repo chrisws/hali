@@ -29,7 +29,8 @@ static const std::vector<std::string> BRACE_EXTENSIONS = {
 };
 
 static const std::vector<std::string> SEARCH_EXTENSIONS = {
-  ".cpp", ".h", ".hpp", ".c", ".py", ".sh", ".js", ".ts", ".java",
+  ".cpp", ".h", ".hpp", ".c", ".cc", ".py", ".sh", ".js", ".ts",
+  ".java", ".kt", ".rs", ".go",
 };
 
 static const std::vector<std::string> CODE_EXTENSIONS = {
