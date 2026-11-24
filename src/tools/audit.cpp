@@ -13,6 +13,7 @@
 #include <filesystem>
 #include <fstream>
 #include <sstream>
+#include "util/file_ext.h"
 #include <string>
 #include <vector>
 #include <utility>
@@ -758,18 +759,15 @@ AuditResult audit_codebase(const std::string &root) {
   auto is_source_file = [](const std::string &ext, ProjectLanguage l) {
     switch (l) {
       case ProjectLanguage::CPLUS:
-        return ext == ".cpp" || ext == ".h" || ext == ".hpp" ||
-               ext == ".cc" || ext == ".c";
+        return file_ext::is_cpp(ext);
       case ProjectLanguage::JAVA:
-        return ext == ".java";
+        return file_ext::is_java(ext);
       case ProjectLanguage::KOTLIN:
-        return ext == ".kt" || ext == ".kts";
+        return file_ext::is_kotlin(ext);
       case ProjectLanguage::PYTHON:
-        return ext == ".py";
+        return file_ext::is_python(ext);
       default:
-        return ext == ".cpp" || ext == ".h" || ext == ".hpp" ||
-               ext == ".cc" || ext == ".c" || ext == ".java" ||
-               ext == ".kt" || ext == ".py";
+        return file_ext::is_source(ext);
     }
   };
 

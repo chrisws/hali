@@ -130,6 +130,7 @@ add_executable(hali_tests
   src/line_edit_test.cpp
   src/pom_test.cpp
   src/security_scan_test.cpp
+  src/file_ext_test.cpp
   src/main.cpp
 )
 

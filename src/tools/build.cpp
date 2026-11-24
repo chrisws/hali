@@ -19,6 +19,7 @@
 #include "build.h"
 #include "pom.h"
 #include "util/shell_util.h"
+#include "util/file_ext.h"
 
 namespace fs = std::filesystem;
 
@@ -192,10 +193,7 @@ int scan_test_count(const std::string &sandbox) {
   if (test_dir.empty()) return -1;
 
   // Source extensions we recognise.
-  const std::set<std::string> src_exts = {
-    ".c", ".cpp", ".cc", ".h", ".hpp",
-    ".go", ".py", ".rs", ".java", ".kt", ".ts", ".js",
-  };
+  const auto &src_exts = file_ext::source_extensions();
 
   // Patterns that indicate a test function in various languages.
   // Each entry: {substring to search for, minimum count weight}
@@ -223,7 +221,7 @@ int scan_test_count(const std::string &sandbox) {
   for (const auto &entry : fs::recursive_directory_iterator(test_dir)) {
     if (!entry.is_regular_file()) continue;
     auto ext = entry.path().extension().string();
-    if (src_exts.find(ext) == src_exts.end()) continue;
+    if (!file_ext::is_source(ext)) continue;
 
     std::ifstream f(entry.path());
     if (!f) continue;
@@ -849,7 +847,7 @@ static BuildResult build_cmake_lint(const std::string &sandbox,
     for (const auto &entry : fs::recursive_directory_iterator(src_dir)) {
       if (entry.is_regular_file()) {
         auto ext = entry.path().extension();
-        if (ext == ".cpp" || ext == ".cc" || ext == ".c") {
+        if (file_ext::is_cpp(ext)) {
           files_arg += entry.path().string() + " ";
           file_count++;
         }

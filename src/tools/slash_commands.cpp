@@ -13,6 +13,7 @@
 #include <ctime>
 #include <filesystem>
 #include <fstream>
+#include "util/file_ext.h"
 #include <functional>
 #include <set>
 #include <sstream>
@@ -579,7 +580,7 @@ static void slash_security_audit(const std::string &rest, HaliConfig &cfg,
   {
     auto raw = run_with_spinner(tui, [&]() -> std::string {
       return tool_search(cfg.sandbox_, ".", root,
-                         "--recursive --files-only --include=*.cpp --include=*.h --include=*.hpp --include=*.c --include=*.py --include=*.sh --include=*.js --include=*.ts --include=*.java");
+                         "--recursive --files-only " + file_ext::build_search_include_flags());
     });
     if (!raw.empty() && raw != "no matches") {
       std::istringstream iss(raw);
@@ -606,7 +607,7 @@ static void slash_security_audit(const std::string &rest, HaliConfig &cfg,
   for (const auto &sp : SEC_PATTERNS) {
     auto raw = run_with_spinner(tui, [&]() -> std::string {
       return tool_search(cfg.sandbox_, sp.pattern, root,
-                         "--recursive --line-numbers --include=*.cpp --include=*.h --include=*.hpp --include=*.c --include=*.py --include=*.sh --include=*.js --include=*.ts --include=*.java");
+                         "--recursive --line-numbers " + file_ext::build_search_include_flags());
     });
     if (raw == "no matches" || raw.empty()) {
       continue;
@@ -770,7 +771,7 @@ static void slash_lint(const std::string &, HaliConfig &cfg, Agent &agent, Tui &
     for (const auto &entry : fs::recursive_directory_iterator(src_dir)) {
       if (entry.is_regular_file()) {
         auto ext = entry.path().extension();
-        if (ext == ".cpp" || ext == ".cc" || ext == ".c") {
+        if (file_ext::is_cpp(ext)) {
           files.push_back(entry.path().string());
         }
       }

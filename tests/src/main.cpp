@@ -79,6 +79,7 @@ void llama_iter_test();
 void line_edit_test();
 void run_pom_tests();
 void security_scan_test();
+void file_ext_test();
 
 int main() {
   log_open_console();
@@ -120,6 +121,7 @@ int main() {
   run_htp_test("line_edit", line_edit_test);
   run_htp_test("pom", run_pom_tests);
   run_htp_test("security_scan", security_scan_test);
+  run_htp_test("file_ext", file_ext_test);
 
   return g_failures ? 1 : 0;
 }

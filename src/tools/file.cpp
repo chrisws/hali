@@ -24,6 +24,7 @@
 #include "patch.h"
 #include "ui/icon.h"
 #include "util/logging.h"
+#include "util/file_ext.h"
 
 namespace fs = std::filesystem;
 
@@ -48,17 +49,8 @@ static bool path_is_valid(const std::string &path) {
   return tstr == base.string() || tstr.compare(0, bstr.size(), bstr) == 0;
 }
 
-static const std::vector<std::string> braceExtensions = {
-  ".c", ".cpp", ".h", ".hpp",
-  ".js", ".jsx", ".ts", ".tsx", ".java"
-};
-
 static bool isBraceLanguage(const fs::path &path) {
-  const std::string ext = path.extension().string();
-  for (const auto &e : braceExtensions) {
-    if (ext == e) return true;
-  }
-  return false;
+  return file_ext::is_brace(path.extension().string());
 }
 
 //

@@ -25,6 +25,7 @@
 #include "config.h"
 #include "tools/file.h"
 #include "ui/webview.h"
+#include "util/file_ext.h"
 
 namespace fs = std::filesystem;
 
@@ -42,11 +43,6 @@ std::string run_with_spinner(Tui &tui, const std::function<std::string()> &fn) {
 //
 // handling for strip_code_fences
 //
-static const std::vector<std::string> CODE_EXTENSIONS = {
-  ".py",".c",".cpp",".h",".bas",".java",".html",".js",".ts",
-  ".json",".yaml",".toml",".sh",".go",".rs",".jsx",".tsx",".xml",".svg"
-};
-
 static const std::vector<std::string> TEXT_EXTENSIONS = {
   ".md",".txt",".json",".yaml",".toml",".xml",".svg",
   ".cfg",".ini",".conf",".lock",".env"
@@ -60,7 +56,7 @@ static const std::vector<std::string> TEXT_EXTENSIONS = {
 //
 static int file_category(const std::string &filename) {
   auto ext = fs::path(filename).extension().string();
-  if (std::ranges::any_of(CODE_EXTENSIONS, [&](const std::string &e){ return ext == e; })) {
+  if (file_ext::is_code(ext)) {
     return 0;
   }
   if (std::ranges::any_of(TEXT_EXTENSIONS, [&](const std::string &e){ return ext == e; })) {
@@ -105,7 +101,7 @@ bool hasDangerousPatterns(const std::string &command, const std::vector<std::str
 //
 std::string strip_code_fences(const std::string &filename, const std::string &src) {
   auto ext = fs::path(filename).extension().string();
-  bool is_code = std::ranges::any_of(CODE_EXTENSIONS, [&](const std::string &e){ return ext == e; });
+  bool is_code = file_ext::is_code(ext);
   if (!is_code) {
     return utils::unwrap(src);
   }

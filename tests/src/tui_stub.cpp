@@ -139,3 +139,7 @@ void help(Tui &tui) {
   // no-op in tests
 }
 }
+
+void Tui::cleanup() {
+  // no-op in tests
+}
