@@ -1,8 +1,19 @@
 #!/usr/bin/env bash
 set -euo pipefail
-BUILD_DIR="${BUILD_DIR:-build}"
+BUILD_DIR="${BUILD_DIR:-build-cuda}"
 BENCH="${BUILD_DIR}/bin/llama-bench"
-NCU="${NCU:-ncu}"
+NCU="${NCU:-}"
+if [[ -z "$NCU" ]]; then
+    if [[ -x /usr/local/cuda/bin/ncu ]]; then
+        NCU="/usr/local/cuda/bin/ncu"
+    elif [[ -x /usr/local/cuda/targets/x86_64-linux/bin/ncu ]]; then
+        NCU="/usr/local/cuda/targets/x86_64-linux/bin/ncu"
+    elif command -v ncu &>/dev/null; then
+        NCU="$(command -v ncu)"
+    else
+        NCU="ncu"
+    fi
+fi
 SETTINGS=".hali/settings.json"
 RESULTS_DIR=".hali/tuning"
 PROMPT_LEN="${PROMPT_LEN:-512}"
@@ -45,8 +56,8 @@ check_deps() {
 
 parse_bench() {
     local f="$1" p d
-    p=$(grep -oP '[0-9.]+\s+t/s' "$f" | head -1 | grep -oP '[0-9.]+' || echo "N/A")
-    d=$(grep -oP '[0-9.]+\s+t/s' "$f" | tail -1 | grep -oP '[0-9.]+' || echo "N/A")
+    p=$(awk -F'|' '/pp[0-9]/ {print $8}' "$f" | grep -oP '[0-9]+\.[0-9]+' | head -1 || echo "N/A")
+    d=$(awk -F'|' '/tg[0-9]/ {print $8}' "$f" | grep -oP '[0-9]+\.[0-9]+' | head -1 || echo "N/A")
     echo "$p $d"
 }
 
@@ -103,14 +114,27 @@ append_compare() {
 
 cmd_setup() {
     echo "=== Build Setup: Blackwell sm_120 ==="
-    command -v nvcc &>/dev/null || { echo "ERROR: nvcc not found" >&2; exit 1; }
-    echo "    CUDA: $(nvcc --version | grep -oP '\d+\.\d+' | tail -1)"
+    # --- nvcc discovery (mirrors CMakeLists.txt fallback) ---
+    local NVCC=""
+    if [[ -n "${CUDACXX:-}" && -x "$CUDACXX" ]]; then
+        NVCC="$CUDACXX"
+    elif [[ -x /usr/local/cuda/bin/nvcc ]]; then
+        NVCC="/usr/local/cuda/bin/nvcc"
+    elif [[ -x /usr/local/cuda/targets/x86_64-linux/bin/nvcc ]]; then
+        NVCC="/usr/local/cuda/targets/x86_64-linux/bin/nvcc"
+    elif command -v nvcc &>/dev/null; then
+        NVCC="$(command -v nvcc)"
+    fi
+    [[ -n "$NVCC" ]] || { echo "ERROR: nvcc not found (set CUDACXX or install cuda-toolkit)" >&2; exit 1; }
+    echo "    NVCC: $NVCC"
+    echo "    CUDA: $("$NVCC" --version | grep -oP '\d+\.\d+' | tail -1)"
     command -v nvidia-smi &>/dev/null && \
         echo "    GPU:  $(nvidia-smi --query-gpu=name,compute_cap --format=csv,noheader 2>/dev/null | head -1)"
     echo "    Arch: 120a-real"
     echo ""
     echo "Configuring..."
     cmake -B "$BUILD_DIR" \
+        -DCMAKE_CUDA_COMPILER="$NVCC" \
         -DCMAKE_CUDA_ARCHITECTURES=120a-real \
         -DGGML_CUDA_FORCE_MMQ=ON \
         -DGGML_CUDA_FA=ON \
@@ -143,17 +167,25 @@ cmd_profile() {
     local t r
     t="$(ts)"; r="${RESULTS_DIR}/report_profile_${t}.md"
     write_header "$r"
-    for pair in "ggml_cuda_mmq:mmq" "ggml_cuda_mmvq:mmvq" "ggml_cuda_fattn:fattn"; do
-        local kr lbl nf
+    for pair in "mul_mat_q:mmq" "mul_mat_vec_q:mmvq" "flash_attn:fattn"; do
+        local kr lbl nf log
         kr="${pair%%:*}"; lbl="${pair##*:}"; nf="${RESULTS_DIR}/profile_${lbl}.ncu-rep"
+        log="${RESULTS_DIR}/profile_${lbl}.log"
         echo "  Profiling: ${lbl}"
-        "$NCU" --set full --kernel-name "regex:${kr}" \
+        "$NCU" --set detailed --kernel-name "regex:${kr}" \
+            --launch-skip 10 --launch-count 30 \
             --export "${nf%.ncu-rep}" --force-overwrite \
-            "$BENCH" -m "$MODEL_PATH" -p "$PROMPT_LEN" -n 1 2>&1 | tail -3
+            "$BENCH" -m "$MODEL_PATH" -p "$PROMPT_LEN" -n 1 2>&1 | tee "$log"
+        if [[ -f "$nf" ]]; then
+            echo "  OK: ${nf} ($(du -h "$nf" | cut -f1))"
+        else
+            echo "  WARN: ${nf} not created — check ${log}"
+        fi
         {
             echo "## Profile: ${lbl}"
             echo ""
             echo "- File: ${nf}"
+            echo "- Log: ${log}"
             echo "- Open: ncu --input ${nf}"
             echo ""
         } >> "$r"

@@ -85,6 +85,17 @@ add_subdirectory(${LLAMA_DIR}/ggml)
 add_subdirectory(${LLAMA_DIR})
 
 # -----------------------------
+# llama-bench (for CUDA tuning)
+# -----------------------------
+if(GGML_CUDA)
+  find_package(Threads REQUIRED)
+  add_subdirectory(${LLAMA_DIR}/tools/llama-bench)
+  set_target_properties(llama-bench PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin
+  )
+endif()
+
+# -----------------------------
 # Link into hali
 # -----------------------------
 target_link_libraries(hali PRIVATE
