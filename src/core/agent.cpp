@@ -464,7 +464,13 @@ std::string Agent::process_tool(const std::string &cmd) {
   if (it == tools_.end()) {
     return "ERROR: unknown tool: [" + op + "]";
   }
-  return it->second(arg1, arg2);
+  try {
+    return it->second(arg1, arg2);
+  } catch (const std::exception &e) {
+    return std::string("ERROR: tool threw: ") + e.what();
+  } catch (...) {
+    return "ERROR: tool threw unknown exception";
+  }
 }
 
 void Agent::invoke_tool(const std::string &buffer, const std::string_view template_str) {

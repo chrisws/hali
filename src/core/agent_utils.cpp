@@ -37,7 +37,13 @@ std::string run_with_spinner(Tui &tui, const std::function<std::string()> &fn) {
   while (fut.wait_for(std::chrono::milliseconds(100)) == std::future_status::timeout) {
     tui.tick_spinner();
   }
-  return fut.get();
+  try {
+    return fut.get();
+  } catch (const std::exception &e) {
+    return std::string("ERROR: ") + e.what();
+  } catch (...) {
+    return "ERROR: unknown exception in async task";
+  }
 }
 
 //
