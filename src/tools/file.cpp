@@ -20,10 +20,10 @@
 #include <sstream>
 
 #include "file.h"
-#include "string_utils.h"
+#include "util/string_utils.h"
 #include "patch.h"
-#include "icon.h"
-#include "logging.h"
+#include "ui/icon.h"
+#include "util/logging.h"
 
 namespace fs = std::filesystem;
 

@@ -41,8 +41,8 @@
 #include <unistd.h>
 
 #include "webview.h"
-#include "sha1.h"
-#include "logging.h"
+#include "util/sha1.h"
+#include "util/logging.h"
 
 namespace fs = std::filesystem;
 

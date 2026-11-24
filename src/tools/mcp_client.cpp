@@ -22,10 +22,10 @@
 #include "mcp_format.h"
 #include "curl.h"
 #include "util/json.h"
-#include "logging.h"
-#include "string_utils.h"
-#include "agent_utils.h"
-#include "shell_util.h"
+#include "util/logging.h"
+#include "util/string_utils.h"
+#include "core/agent_utils.h"
+#include "util/shell_util.h"
 
 // https://modelcontextprotocol.io/specification/2025-03-26/basic/lifecycle
 

@@ -19,12 +19,12 @@
 #include <format>
 
 #include "agent_utils.h"
-#include "string_utils.h"
-#include "shell_util.h"
-#include "tui.h"
+#include "util/string_utils.h"
+#include "util/shell_util.h"
+#include "ui/tui.h"
 #include "config.h"
-#include "file.h"
-#include "webview.h"
+#include "tools/file.h"
+#include "ui/webview.h"
 
 namespace fs = std::filesystem;
 

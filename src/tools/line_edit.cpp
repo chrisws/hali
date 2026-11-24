@@ -15,8 +15,8 @@
 #include <format>
 
 #include "line_edit.h"
-#include "config.h"
-#include "string_utils.h"
+#include "core/config.h"
+#include "util/string_utils.h"
 
 namespace fs = std::filesystem;
 

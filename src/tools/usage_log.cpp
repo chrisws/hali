@@ -13,7 +13,7 @@
 #include <string>
 
 #include "usage_log.h"
-#include "logging.h"
+#include "util/logging.h"
 #include "util/json.h"
 
 void UsageLog::record_turn(const TurnMetrics &m) {

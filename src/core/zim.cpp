@@ -22,9 +22,9 @@
 
 #include "knowledge.h"
 #include "util/platform.h"
-#include "shell_util.h"
+#include "util/shell_util.h"
 #include "util/logging.h"
-#include "string_utils.h"
+#include "util/string_utils.h"
 #include "ui/tui.h"
 #include "agent_utils.h"
 

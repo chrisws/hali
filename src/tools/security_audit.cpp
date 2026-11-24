@@ -15,7 +15,7 @@
 #include <fstream>
 #include <sstream>
 
-#include "sha1.h"
+#include "util/sha1.h"
 
 namespace fs = std::filesystem;
 

@@ -21,13 +21,13 @@
 #include <utility>
 #include <system_error>
 
-#include "config.h"
-#include "agent.h"
-#include "agent_utils.h"
-#include "tui.h"
-#include "icon.h"
-#include "webview.h"
-#include "audio.h"
+#include "core/config.h"
+#include "core/agent.h"
+#include "core/agent_utils.h"
+#include "ui/tui.h"
+#include "ui/icon.h"
+#include "ui/webview.h"
+#include "ui/audio.h"
 #include "ui_text.h"
 #include "audit.h"
 #include "build.h"
@@ -567,14 +567,31 @@ static const SecPattern SEC_PATTERNS[] = {
 static void slash_security_audit(const std::string &rest, HaliConfig &cfg,
                                  Tui &tui, Agent &agent) {
   if (sec_audit::is_audited(cfg.sandbox_)) {
-    tui.append_line(ICON_SYS + "Sandbox is already marked as security-audited.");
-    tui.append_line(ICON_SYS + sec_audit::status_message(cfg.sandbox_));
-    tui.redraw_all();
-    return;
+    tui.append_line(ICON_SYS + "Note: sandbox was previously marked as security-audited. Re-running…");
   }
 
   const std::string root = rest.empty() ? cfg.sandbox_ : cfg.sandbox_ + "/" + rest;
   tui.append_line(ICON_SYS + "Scanning " + root + " for suspicious patterns…");
+  tui.redraw_all();
+
+  // ── Count files to be scanned ────────────────────────────────────────
+  int file_count = 0;
+  {
+    auto raw = run_with_spinner(tui, [&]() -> std::string {
+      return tool_search(cfg.sandbox_, ".", root,
+                         "--recursive --files-only --include=*.cpp --include=*.h --include=*.hpp --include=*.c --include=*.py --include=*.sh --include=*.js --include=*.ts --include=*.java");
+    });
+    if (!raw.empty() && raw != "no matches") {
+      std::istringstream iss(raw);
+      std::string line;
+      while (std::getline(iss, line)) {
+        if (!utils::trim(line).empty()) {
+          file_count++;
+        }
+      }
+    }
+  }
+  tui.append_line(ICON_SYS + "Scanning " + std::to_string(file_count) + " file(s)");
   tui.redraw_all();
 
   // ── Mechanical scan ──────────────────────────────────────────────────

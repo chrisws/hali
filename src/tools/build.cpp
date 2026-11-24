@@ -18,7 +18,7 @@
 
 #include "build.h"
 #include "pom.h"
-#include "shell_util.h"
+#include "util/shell_util.h"
 
 namespace fs = std::filesystem;
 

@@ -11,7 +11,7 @@
 #include <vector>
 
 #include "git_tool.h"
-#include "shell_util.h"
+#include "util/shell_util.h"
 
 static const std::vector<std::string> GIT_ALLOWED = {
   "status", "log", "diff", "add", "commit", "branch", "show",

@@ -15,8 +15,8 @@
 
 #include "ui_text.h"
 #include "icon.h"
-#include "slash_commands.h"
-#include "security_audit.h"
+#include "tools/slash_commands.h"
+#include "tools/security_audit.h"
 
 namespace ui {
 

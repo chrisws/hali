@@ -26,8 +26,8 @@
 
 #include "tui.h"
 #include "icon.h"
-#include "string_utils.h"
-#include "logging.h"
+#include "util/string_utils.h"
+#include "util/logging.h"
 #include "file.h"
 #include "engine.h"
 

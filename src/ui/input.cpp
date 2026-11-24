@@ -7,8 +7,8 @@
 //
 
 #include "input.h"
-#include "logging.h"
-#include "slash_commands.h"
+#include "util/logging.h"
+#include "tools/slash_commands.h"
 
 #include <functional>
 #include <unordered_map>

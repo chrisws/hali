@@ -15,7 +15,7 @@
 
 #include "knowledge.h"
 #include "util/platform.h"
-#include "shell_util.h"
+#include "util/shell_util.h"
 #include "util/json.h"
 #include "util/logging.h"
 #include "engine_factory.h"

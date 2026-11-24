@@ -1,23 +1,17 @@
 {
-  "total_turns": 8,
-  "total_llm_ms": 3.32245e+06,
-  "total_tool_calls": 45,
-  "total_tool_errors": 4,
-  "peak_kv_pct": 86.7462,
-  "total_tokens": 27783,
-  "cumulative_tokens": 2156049,
-  "cumulative_tool_calls": 8254,
-  "cumulative_tool_errors": 237,
-  "cumulative_turns": 890,
-  "cumulative_llm_ms": 8.7727e+07,
+  "total_turns": 2,
+  "total_llm_ms": 126003,
+  "total_tool_calls": 8,
+  "total_tool_errors": 0,
+  "peak_kv_pct": 18.5272,
+  "total_tokens": 2053,
+  "cumulative_tokens": 2430570,
+  "cumulative_tool_calls": 8845,
+  "cumulative_tool_errors": 254,
+  "cumulative_turns": 959,
+  "cumulative_llm_ms": 1.01322e+08,
   "turns": [
-    {"turn": 1, "llm_ms": 1496.35, "tokens": 87, "tool_calls": 0, "tool_errors": 0, "kv_pct": 4.91333, "files_read": 0, "files_written": 0},
-    {"turn": 2, "llm_ms": 7429.56, "tokens": 445, "tool_calls": 1, "tool_errors": 0, "kv_pct": 6.49872, "files_read": 1, "files_written": 0},
-    {"turn": 3, "llm_ms": 63400.8, "tokens": 2740, "tool_calls": 2, "tool_errors": 0, "kv_pct": 24.9191, "files_read": 2, "files_written": 0},
-    {"turn": 4, "llm_ms": 97490.7, "tokens": 3454, "tool_calls": 4, "tool_errors": 0, "kv_pct": 31.5918, "files_read": 0, "files_written": 1},
-    {"turn": 5, "llm_ms": 2.71834e+06, "tokens": 3820, "tool_calls": 5, "tool_errors": 2, "kv_pct": 38.9343, "files_read": 2, "files_written": 1},
-    {"turn": 6, "llm_ms": 150744, "tokens": 7385, "tool_calls": 14, "tool_errors": 2, "kv_pct": 51.8372, "files_read": 2, "files_written": 8},
-    {"turn": 7, "llm_ms": 225936, "tokens": 7777, "tool_calls": 13, "tool_errors": 0, "kv_pct": 81.134, "files_read": 9, "files_written": 2},
-    {"turn": 8, "llm_ms": 57611, "tokens": 2075, "tool_calls": 6, "tool_errors": 0, "kv_pct": 86.7462, "files_read": 2, "files_written": 3}
+    {"turn": 1, "llm_ms": 122678, "tokens": 1873, "tool_calls": 8, "tool_errors": 0, "kv_pct": 18.2327, "files_read": 5, "files_written": 1},
+    {"turn": 2, "llm_ms": 3325.58, "tokens": 180, "tool_calls": 0, "tool_errors": 0, "kv_pct": 18.5272, "files_read": 0, "files_written": 0}
   ]
 }
