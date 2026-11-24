@@ -15,20 +15,21 @@
 #include <format>
 #include <system_error>
 
-#include "engine.h"
+#include "engine/engine.h"
 
-#include "config.h"
-#include "tui.h"
-#include "agent.h"
-#include "logging.h"
-#include "curl.h"
-#include "mcp_client.h"
-#include "run_allowed.h"
-#include "ui_text.h"
-#include "webview.h"
-#include "icon.h"
-#include "audio.h"
-#include "slash_commands.h"
+#include "core/config.h"
+#include "ui/tui.h"
+#include "core/agent.h"
+#include "util/logging.h"
+#include "tools/curl.h"
+#include "tools/mcp_client.h"
+#include "core/run_allowed.h"
+#include "ui/ui_text.h"
+#include "ui/webview.h"
+#include "ui/icon.h"
+#include "ui/audio.h"
+#include "tools/slash_commands.h"
+#include "util/crash_handler.h"
 
 //
 // Parse command-line arguments into config and local state.
@@ -111,6 +112,8 @@ extern "C" void abort_callback(const char *error_message) {
 // main()
 //
 int main(int argc, char **argv) {
+  crash_handler_install();
+
   HaliConfig cfg;
 
   engine_set_abort_callback(abort_callback);
