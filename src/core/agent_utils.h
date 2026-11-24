@@ -43,7 +43,7 @@ struct SearchFlags {
   bool line_count = false;
   bool files_only = false;
   bool name = false;
-  std::string include_glob;
+  std::vector<std::string> include_globs;
   int context = 0;
   int lines_start = 0;
   int lines_end = 0;
@@ -56,7 +56,7 @@ struct SearchArgs {
 
 SearchArgs parse_search_args(const std::string &arg1, const std::string &arg2);
 SearchFlags parse_search_flags(const std::string &flags_str);
-bool matches_include(const std::string &filename, const std::string &glob);
+bool matches_include(const std::string &filename, const std::vector<std::string> &globs);
 std::string search_single_file(const std::string &filepath, const std::string &pattern, const SearchFlags &flags);
 std::string tool_search(const std::string &sandbox, const std::string &pattern, const std::string &path_arg, const std::string &flags_str, const std::vector<std::string> &extra_dirs = {});
 

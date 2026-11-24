@@ -224,9 +224,10 @@ SearchFlags parse_search_flags(const std::string &flags_str) {
     } else if (token == "--name") {
       f.name = true;
     } else if (token.rfind("--include=", 0) == 0) {
-      f.include_glob = token.substr(10);
+      f.include_globs.push_back(token.substr(10));
     } else if (token == "--include") {
-      iss >> f.include_glob;
+      std::string val;
+      if (iss >> val) f.include_globs.push_back(val);
     } else if (token.rfind("--context=", 0) == 0) {
       f.context = std::stoi(token.substr(10));
     } else if (token == "--context") {
@@ -301,9 +302,12 @@ bool local_glob_match(const std::string &str, const std::string &pattern, size_t
   return si == str.size();
 }
 
-bool matches_include(const std::string &filename, const std::string &glob) {
-  if (glob.empty()) return true;
-  return local_glob_match(filename, glob);
+bool matches_include(const std::string &filename, const std::vector<std::string> &globs) {
+  if (globs.empty()) return true;
+  for (const auto &g : globs) {
+    if (local_glob_match(filename, g)) return true;
+  }
+  return false;
 }
 
 std::string search_single_file(const std::string &filepath, const std::string &pattern, const SearchFlags &flags) {
@@ -435,13 +439,13 @@ std::string tool_search(const std::string &sandbox, const std::string &pattern, 
 
   if (flags.recursive) {
     for (const auto &entry : fs::recursive_directory_iterator(path, ec)) {
-      if (entry.is_regular_file() && matches_include(entry.path().filename().string(), flags.include_glob)) {
+      if (entry.is_regular_file() && matches_include(entry.path().filename().string(), flags.include_globs)) {
         files.push_back(entry.path().string());
       }
     }
   } else {
     for (const auto &entry : fs::directory_iterator(path, ec)) {
-      if (entry.is_regular_file() && matches_include(entry.path().filename().string(), flags.include_glob)) {
+      if (entry.is_regular_file() && matches_include(entry.path().filename().string(), flags.include_globs)) {
         files.push_back(entry.path().string());
       }
     }

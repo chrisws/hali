@@ -253,6 +253,55 @@ static void test_java_files_scanned() {
   fs::remove_all(dir);
 }
 
+// ── Kotlin files are scanned ──────────────────────────────────────────────
+
+static void test_kotlin_files_scanned() {
+  std::string dir = "/tmp/sec_scan_test_kotlin";
+  fs::remove_all(dir);
+
+  // Deep subdirectory structure like a real Android project
+  write_test_file(dir + "/app/src/main/java/com/example", "Net.kt",
+    "import java.net.URL\n"
+    "class Net {\n"
+    "  fun fetch() {\n"
+    "    val u = URL(\"http://example.com\")\n"
+    "    u.openStream()\n"
+    "  }\n"
+    "}\n");
+
+  std::string result = scan_dir(dir, SEC_PATTERNS[0].pattern);
+  assert(result != "no matches");
+  assert(result.find("Net.kt") != std::string::npos);
+  assert(result.find("http://") != std::string::npos);
+  std::cout << "test_kotlin_files_scanned passed" << std::endl;
+  fs::remove_all(dir);
+}
+
+// ── Multiple --include flags all work ─────────────────────────────────────
+
+static void test_multi_include_flags() {
+  std::string dir = "/tmp/sec_scan_test_multi_include";
+  fs::remove_all(dir);
+
+  write_test_file(dir, "a.cpp",
+    "void f() { curl(\"http://x.com\"); }\n");
+  write_test_file(dir, "b.java",
+    "class B { void g() { /* http://y.com */ } }\n");
+  write_test_file(dir, "c.kt",
+    "fun h() { /* http://z.com */ }\n");
+  write_test_file(dir, "d.txt",
+    "this should NOT be found: http://nope.com\n");
+
+  std::string result = tool_search(dir, "http://", dir,
+    "--recursive --files-only --include=*.cpp --include=*.java --include=*.kt");
+  assert(result.find("a.cpp") != std::string::npos);
+  assert(result.find("b.java") != std::string::npos);
+  assert(result.find("c.kt") != std::string::npos);
+  assert(result.find("d.txt") == std::string::npos);
+  std::cout << "test_multi_include_flags passed" << std::endl;
+  fs::remove_all(dir);
+}
+
 // ── Pattern table integrity ───────────────────────────────────────────────
 
 static void test_pattern_table_integrity() {
@@ -277,5 +326,7 @@ void security_scan_test() {
   test_clean_file_no_matches();
   test_recursive_scan();
   test_java_files_scanned();
+  test_kotlin_files_scanned();
+  test_multi_include_flags();
   std::cout << "All security scan tests passed." << std::endl;
 }
