@@ -23,6 +23,7 @@
 #include "util/logging.h"
 #include "tools/curl.h"
 #include "tools/mcp_client.h"
+#include "tools/mcp_test.h"
 #include "core/run_allowed.h"
 #include "ui/ui_text.h"
 #include "ui/webview.h"
@@ -142,13 +143,9 @@ int main(int argc, char **argv) {
   // ── Init curl globally ────────────────────────────────────────────
   curl_init();
 
-  // ── Init MCP ──────────────────────────────────────────────────────
+  // ── MCP diagnostic test (early exit) ──────────────────────────────
   if (do_mcp_test) {
-    log_open_console();
-    log_write(LEVEL_INFO, "main", mcp_client.get_system_context(cfg.mcp_filter_).c_str());
-    curl_close();
-    log_close();
-    return 0;
+    return run_mcp_test(cfg, mcp_client);
   }
 
   if (mcp_client.enabled()) {

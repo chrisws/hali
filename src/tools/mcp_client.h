@@ -39,6 +39,7 @@ class Client {
     settings_.host_ = host;
     settings_.port_ = port;
   }
+  const Settings &get_settings() const { return settings_; }
 
   bool connect();
   void disconnect();
