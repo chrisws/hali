@@ -125,6 +125,9 @@ struct Agent {
   std::string music_handle_add(const std::string &arg,
                                const std::string &proj_dir);
   std::string handle_gui(const std::string &a1, const std::string &a2);
+  std::string handle_introspect(const std::string &a1);
+  std::string handle_read(const std::string &a1, const std::string &a2);
+  std::string handle_move(const std::string &a1, const std::string &a2);
   std::string rag_tool(const std::string &agent_query);
   std::string rag_inspect() const;
   std::string handle_ragindex(const std::string &zim_path);

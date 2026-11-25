@@ -591,6 +591,80 @@ std::string Agent::handle_gui(const std::string &a1, const std::string &a2) {
   return "OK: displayed (saved to " + save_path + ")";
 }
 
+std::string Agent::handle_introspect(const std::string &a1) {
+  tui_.show_tool("introspecting: " + a1);
+  std::string result = cfg_.introspect();
+  if (a1 == "all") {
+    result += "\n\n" + ui::about_info();
+    result += "\n\n=== Built-in Skills ===\n";
+    for (int i = 0; i < SKILL_COUNT; i++) {
+      result += "  " + std::string(SKILLS[i].name) + " — " + SKILLS[i].summary + "\n";
+    }
+    result += "\n\n" + project_types_summary();
+    result += "\n\n" + format_session_md(tui_.get_chat());
+    result += "\n\n" + slash_commands_summary();
+  } else if (a1 == "session") {
+    result += "\n\n" + format_session_md(tui_.get_chat());
+  } else if (a1 == "slash") {
+    result += "\n\n" + slash_commands_summary();
+  } else if (a1 == "skills") {
+    result += "\n\n=== Built-in Skills ===\n";
+    for (int i = 0; i < SKILL_COUNT; i++) {
+      result += "  " + std::string(SKILLS[i].name) + " — " + SKILLS[i].summary + "\n";
+    }
+  } else if (a1 == "about") {
+    result += "\n\n" + ui::about_info();
+  } else if (a1 == "projects") {
+    result += "\n\n" + project_types_summary();
+  }
+  return result;
+}
+
+std::string Agent::handle_read(const std::string &a1, const std::string &a2) {
+  tui_.show_tool("reading: " + a1);
+  turn_.files_read++;
+  std::string p = utils::resolve_path(cfg_.sandbox_, a1);
+  if (!utils::path_allowed(cfg_.sandbox_, cfg_.extra_dirs_, p)) {
+    return "ERROR: path outside sandbox";
+  }
+  auto lines_pos = a2.find("--lines=");
+  if (lines_pos != std::string::npos) {
+    auto val = a2.substr(lines_pos + 8);
+    auto comma = val.find(',');
+    if (comma != std::string::npos) {
+      int start = std::stoi(val.substr(0, comma));
+      int end = std::stoi(val.substr(comma + 1));
+      return read_file_range(p, start, end);
+    }
+  }
+  return read_file(p);
+}
+
+std::string Agent::handle_move(const std::string &a1, const std::string &a2) {
+  if (cfg_.disable_move_) {
+    return "ERROR: TOOL:MOVE is disabled by configuration";
+  }
+  if (a2.empty()) {
+    return "ERROR: usage: TOOL:MOVE <source> <destination>";
+  }
+  if (auto err = utils::validate_path_arg(a1); !err.empty()) {
+    return err;
+  }
+  if (auto err = utils::validate_path_arg(a2); !err.empty()) {
+    return err;
+  }
+  const auto src = utils::resolve_path(cfg_.sandbox_, a1);
+  const auto dst = utils::resolve_path(cfg_.sandbox_, a2);
+  tui_.show_tool("move: " + a1 + " -> " + a2);
+  if (!utils::path_in_sandbox(cfg_.sandbox_, src)) {
+    return "ERROR: source path outside sandbox";
+  }
+  if (!utils::path_in_sandbox(cfg_.sandbox_, dst)) {
+    return "ERROR: destination path outside sandbox";
+  }
+  return tool_move(src, dst);
+}
+
 ToolMap Agent::build_tool_dispatch() {
   ToolMap tools;
 
@@ -645,23 +719,7 @@ ToolMap Agent::build_tool_dispatch() {
     return fs::exists(p) ? "YES" : "NO";
   };
   tools["TOOL:READ"] = [this](const std::string &a1, const std::string &a2) -> std::string {
-    tui_.show_tool("reading: " + a1);
-    turn_.files_read++;
-    std::string p = utils::resolve_path(cfg_.sandbox_, a1);
-    if (!utils::path_allowed(cfg_.sandbox_, cfg_.extra_dirs_, p)) {
-      return "ERROR: path outside sandbox";
-    }
-    auto lines_pos = a2.find("--lines=");
-    if (lines_pos != std::string::npos) {
-      auto val = a2.substr(lines_pos + 8);
-      auto comma = val.find(',');
-      if (comma != std::string::npos) {
-        int start = std::stoi(val.substr(0, comma));
-        int end = std::stoi(val.substr(comma + 1));
-        return read_file_range(p, start, end);
-      }
-    }
-    return read_file(p);
+    return handle_read(a1, a2);
   };
   tools["TOOL:SEARCH"] = [this](const std::string &a1, const std::string &a2) -> std::string {
     SearchArgs sa = parse_search_args(a1, a2);
@@ -720,28 +778,7 @@ ToolMap Agent::build_tool_dispatch() {
     return make_dir(p) ? "OK: created " + a1 : "ERROR: mkdir failed for " + a1;
   };
   tools["TOOL:MOVE"] = [this](const std::string &a1, const std::string &a2) -> std::string {
-    if (cfg_.disable_move_) {
-      return "ERROR: TOOL:MOVE is disabled by configuration";
-    }
-    if (a2.empty()) {
-      return "ERROR: usage: TOOL:MOVE <source> <destination>";
-    }
-    if (auto err = utils::validate_path_arg(a1); !err.empty()) {
-      return err;
-    }
-    if (auto err = utils::validate_path_arg(a2); !err.empty()) {
-      return err;
-    }
-    const auto src = utils::resolve_path(cfg_.sandbox_, a1);
-    const auto dst = utils::resolve_path(cfg_.sandbox_, a2);
-    tui_.show_tool("move: " + a1 + " -> " + a2);
-    if (!utils::path_in_sandbox(cfg_.sandbox_, src)) {
-      return "ERROR: source path outside sandbox";
-    }
-    if (!utils::path_in_sandbox(cfg_.sandbox_, dst)) {
-      return "ERROR: destination path outside sandbox";
-    }
-    return tool_move(src, dst);
+    return handle_move(a1, a2);
   };
   tools["TOOL:CURL"] = [this](const std::string &a1, const std::string &a2) -> std::string {
     if (cfg_.disable_curl_) {
@@ -761,23 +798,7 @@ ToolMap Agent::build_tool_dispatch() {
     return tool_curl(a1);
   };
   tools["TOOL:INTROSPECT"] = [this](const std::string &a1, const std::string &) -> std::string {
-    tui_.show_tool("introspecting: " + a1);
-    std::string result = cfg_.introspect();
-    if (a1 == "session") {
-      result += "\n\n" + format_session_md(tui_.get_chat());
-    } else if (a1 == "slash") {
-      result += "\n\n" + slash_commands_summary();
-    } else if (a1 == "skills") {
-      result += "\n\n=== Built-in Skills ===\n";
-      for (int i = 0; i < SKILL_COUNT; i++) {
-        result += "  " + std::string(SKILLS[i].name) + " — " + SKILLS[i].summary + "\n";
-      }
-    } else if (a1 == "about") {
-      result += "\n\n" + ui::about_info();
-    } else if (a1 == "projects") {
-      result += "\n\n" + project_types_summary();
-    }
-    return result;
+    return handle_introspect(a1);
   };
   tools["TOOL:ASK"] = [this](const std::string &a1, const std::string &a2) -> std::string {
     tui_.set_thinking(false);
