@@ -123,6 +123,9 @@ struct HaliConfig {
   // TOOL:RUN allowlist - if non-empty, only these program base names may run.
   // Empty means "allow anything inside the sandbox" (original behaviour).
   std::vector<std::string> run_allowed_;
+
+  // External tool paths (tools section in settings.json)
+  std::string adb_path_;
   std::vector<std::string> knowledge_files_;
   std::vector<std::string> rag_files_;
 

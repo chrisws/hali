@@ -236,6 +236,12 @@ void HaliConfig::load_settings() {
     web.get_int("port", web_port_);
   }
 
+  // ── tools section ──────────────────────────────────────────────
+  auto tools = root.get_child("tools");
+  if (tools.is_object()) {
+    tools.get_str("adb", adb_path_);
+  }
+
   // ──  paths / access ────────────────────────────────────────────
   std::vector<json::JsonValue> kfs;
   if (root.get_array("knowledge_files", kfs)) {
@@ -757,6 +763,10 @@ std::string HaliConfig::introspect() const {
   web.set_bool("enabled", web_enabled_);
   web.set_int("port", web_port_);
 
+  // tools
+  auto tools = root.get_child("tools");
+  tools.set_str("adb", adb_path_);
+
   // extra_dirs
   root.set_arr("extra_dirs", extra_dirs_);
 
@@ -845,6 +855,8 @@ int HaliConfig::set_value(const std::string &key, const std::string &val,
       }
     } else if (key == "audio_theme") {
       audio_theme_ = val;
+    } else if (key == "tools.adb") {
+      adb_path_ = val;
     } else {
       return 1;
     }

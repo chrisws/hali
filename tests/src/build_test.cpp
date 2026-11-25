@@ -824,6 +824,163 @@ static void test_gradle_setup_android_manifest() {
   teardown_sandbox();
 }
 
+//
+// test: Android build with APK present triggers adb install
+//
+static void test_android_adb_deploy() {
+  setup_sandbox();
+  write_file(SANDBOX + "/build.gradle",
+    "plugins {\n"
+    "    id 'com.android.application'\n"
+    "}\n");
+  write_file(SANDBOX + "/gradlew",
+    "#!/bin/sh\necho 'gradle build: $@'\n");
+  fs::permissions(SANDBOX + "/gradlew",
+                   fs::perms::owner_all | fs::perms::group_read | fs::perms::others_read);
+
+  // Create a fake APK at the expected location
+  fs::create_directories(SANDBOX + "/app/build/outputs/apk/debug");
+  write_file(SANDBOX + "/app/build/outputs/apk/debug/app-debug.apk", "fake-apk");
+
+  auto r = build_run(SANDBOX, "build", [](const string &) {}, "", "adb");
+  assert(r.success_);
+  assert(r.output_.find("Deploying to device via adb") != string::npos);
+  assert(r.output_.find("adb install -r") != string::npos);
+  teardown_sandbox();
+}
+
+//
+// test: Android build without APK skips adb deploy gracefully
+//
+static void test_android_adb_no_apk() {
+  setup_sandbox();
+  write_file(SANDBOX + "/build.gradle",
+    "plugins {\n"
+    "    id 'com.android.application'\n"
+    "}\n");
+  write_file(SANDBOX + "/gradlew",
+    "#!/bin/sh\necho 'gradle build: $@'\n");
+  fs::permissions(SANDBOX + "/gradlew",
+                   fs::perms::owner_all | fs::perms::group_read | fs::perms::others_read);
+
+  // No APK file present
+  auto r = build_run(SANDBOX, "build", [](const string &) {}, "", "adb");
+  assert(r.success_);
+  assert(r.output_.find("APK not found") != string::npos);
+  assert(r.output_.find("Skipping adb deploy") != string::npos);
+  teardown_sandbox();
+}
+
+//
+// test: Android build uses custom adb path from config
+//
+static void test_android_adb_custom_path() {
+  setup_sandbox();
+  write_file(SANDBOX + "/build.gradle",
+    "plugins {\n"
+    "    id 'com.android.application'\n"
+    "}\n");
+  write_file(SANDBOX + "/gradlew",
+    "#!/bin/sh\necho 'gradle build: $@'\n");
+  fs::permissions(SANDBOX + "/gradlew",
+                   fs::perms::owner_all | fs::perms::group_read | fs::perms::others_read);
+
+  // Create a fake APK
+  fs::create_directories(SANDBOX + "/app/build/outputs/apk/debug");
+  write_file(SANDBOX + "/app/build/outputs/apk/debug/app-debug.apk", "fake-apk");
+
+  // Use a custom adb path
+  auto r = build_run(SANDBOX, "build", [](const string &) {}, "",
+                     "/opt/android/platform-tools/adb");
+  assert(r.success_);
+  assert(r.output_.find("/opt/android/platform-tools/adb install -r") != string::npos);
+  teardown_sandbox();
+}
+
+//
+// test: Android build launches app after successful adb install
+//
+static void test_android_adb_launch() {
+  setup_sandbox();
+  write_file(SANDBOX + "/build.gradle",
+    "plugins {\n"
+    "    id 'com.android.application'\n"
+    "}\n");
+  write_file(SANDBOX + "/gradlew",
+    "#!/bin/sh\necho 'gradle build: $@'\n");
+  fs::permissions(SANDBOX + "/gradlew",
+                   fs::perms::owner_all | fs::perms::group_read | fs::perms::others_read);
+
+  // Create a fake APK
+  fs::create_directories(SANDBOX + "/app/build/outputs/apk/debug");
+  write_file(SANDBOX + "/app/build/outputs/apk/debug/app-debug.apk", "fake-apk");
+
+  // Create AndroidManifest.xml with a package name
+  fs::create_directories(SANDBOX + "/app/src/main");
+  write_file(SANDBOX + "/app/src/main/AndroidManifest.xml",
+    "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n"
+    "<manifest xmlns:android=\"http://schemas.android.com/apk/res/android\"\n"
+    "    package=\"com.example.myapp\">\n"
+    "</manifest>\n");
+
+  // Fake adb that reports Success for install
+  write_file(SANDBOX + "/fake_adb",
+    "#!/bin/sh\n"
+    "if [ \"$1\" = \"install\" ]; then\n"
+    "  echo 'Performing Streamed Install\n"
+    "  echo 'Success'\n"
+    "else\n"
+    "  echo 'monkey launched ok'\n"
+    "fi\n");
+  fs::permissions(SANDBOX + "/fake_adb",
+                   fs::perms::owner_all | fs::perms::group_read | fs::perms::others_read);
+
+  auto r = build_run(SANDBOX, "build", [](const string &) {}, "",
+                     SANDBOX + "/fake_adb");
+  assert(r.success_);
+  assert(r.output_.find("APK installed successfully") != string::npos);
+  assert(r.output_.find("Launching com.example.myapp") != string::npos);
+  assert(r.output_.find("monkey -p com.example.myapp") != string::npos);
+  assert(r.output_.find("android.intent.category.LAUNCHER") != string::npos);
+  assert(r.output_.find("App launched") != string::npos);
+  teardown_sandbox();
+}
+
+//
+// test: Android build skips launch when no manifest / package found
+//
+static void test_android_adb_launch_no_manifest() {
+  setup_sandbox();
+  write_file(SANDBOX + "/build.gradle",
+    "plugins {\n"
+    "    id 'com.android.application'\n"
+    "}\n");
+  write_file(SANDBOX + "/gradlew",
+    "#!/bin/sh\necho 'gradle build: $@'\n");
+  fs::permissions(SANDBOX + "/gradlew",
+                   fs::perms::owner_all | fs::perms::group_read | fs::perms::others_read);
+
+  // Create a fake APK but NO AndroidManifest.xml
+  fs::create_directories(SANDBOX + "/app/build/outputs/apk/debug");
+  write_file(SANDBOX + "/app/build/outputs/apk/debug/app-debug.apk", "fake-apk");
+
+  // Fake adb that reports Success
+  write_file(SANDBOX + "/fake_adb",
+    "#!/bin/sh\n"
+    "echo 'Performing Streamed Install\n"
+    "echo 'Success'\n");
+  fs::permissions(SANDBOX + "/fake_adb",
+                   fs::perms::owner_all | fs::perms::group_read | fs::perms::others_read);
+
+  auto r = build_run(SANDBOX, "build", [](const string &) {}, "",
+                     SANDBOX + "/fake_adb");
+  assert(r.success_);
+  assert(r.output_.find("APK installed successfully") != string::npos);
+  assert(r.output_.find("could not determine package name") != string::npos);
+  assert(r.output_.find("Skipping launch") != string::npos);
+  teardown_sandbox();
+}
+
 void build_test() {
   RUN_TEST(test_no_build_system);
   RUN_TEST(test_unknown_mode);
@@ -871,4 +1028,9 @@ void build_test() {
   RUN_TEST(test_gradle_setup_android);
   RUN_TEST(test_gradle_setup_kotlin_count);
   RUN_TEST(test_gradle_setup_android_manifest);
+  RUN_TEST(test_android_adb_deploy);
+  RUN_TEST(test_android_adb_no_apk);
+  RUN_TEST(test_android_adb_custom_path);
+  RUN_TEST(test_android_adb_launch);
+  RUN_TEST(test_android_adb_launch_no_manifest);
 }

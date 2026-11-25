@@ -522,6 +522,72 @@ static void test_introspect_knowledge_files_filter() {
   cout << "test_introspect_knowledge_files_filter passed" << endl;
 }
 
+static void test_tools_adb_set_value() {
+  HaliConfig cfg;
+  bool reparam = false;
+  string msg;
+
+  // Default should be empty
+  assert(cfg.adb_path_.empty());
+
+  int rc = cfg.set_value("tools.adb", "/usr/local/bin/adb", reparam, msg);
+  assert(rc == 0);
+  assert(cfg.adb_path_ == "/usr/local/bin/adb");
+
+  // Can be cleared
+  rc = cfg.set_value("tools.adb", "", reparam, msg);
+  assert(rc == 0);
+  assert(cfg.adb_path_.empty());
+
+  cout << "test_tools_adb_set_value passed" << endl;
+}
+
+static void test_tools_adb_introspect() {
+  HaliConfig cfg;
+  cfg.adb_path_ = "/opt/android/platform-tools/adb";
+
+  string json_str = cfg.introspect();
+  auto doc = json::parse(json_str);
+  assert(doc.is_valid());
+
+  auto root = doc.get_root();
+  auto tools = root.get_child("tools");
+  assert(tools.is_object());
+
+  string adb;
+  tools.get_str("adb", adb);
+  assert(adb == "/opt/android/platform-tools/adb");
+
+  cout << "test_tools_adb_introspect passed" << endl;
+}
+
+static void test_tools_adb_load() {
+  // Write a settings file with tools.adb
+  namespace fs = std::filesystem;
+  string sandbox = "/tmp/hali_test_tools_adb";
+  fs::create_directories(sandbox + "/.hali");
+  string path = sandbox + "/.hali/settings.json";
+
+  {
+    ofstream f(path);
+    f << "{\n"
+      << "  \"tools\": {\n"
+      << "    \"adb\": \"/usr/bin/adb\"\n"
+      << "  }\n"
+      << "}\n";
+  }
+
+  HaliConfig cfg;
+  cfg.sandbox_ = sandbox;
+  cfg.load_settings();
+  assert(cfg.adb_path_ == "/usr/bin/adb");
+
+  // Cleanup
+  fs::remove_all(sandbox);
+
+  cout << "test_tools_adb_load passed" << endl;
+}
+
 void config_test() {
   cout << "=== Config Tests (plan 12) ===\n\n";
   test_set_value_float();
@@ -545,5 +611,8 @@ void config_test() {
   test_disable_move_prompt();
   test_system_prompt_extra_dirs();
   test_introspect_knowledge_files_filter();
+  test_tools_adb_set_value();
+  test_tools_adb_introspect();
+  test_tools_adb_load();
   cout << "\nAll config tests passed!\n" << endl;
 }

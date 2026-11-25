@@ -401,6 +401,36 @@ static bool is_android_project(const std::string &sandbox) {
 }
 
 //
+// Extract the Android package name from AndroidManifest.xml.
+// Returns the package string (e.g. "com.example.app") or "" if not found.
+//
+static std::string extract_android_package(const std::string &sandbox) {
+  const std::string app_dir = sandbox + "/app";
+  if (!fs::exists(app_dir) || !fs::is_directory(app_dir)) return "";
+  std::string manifest_path;
+  for (const auto &entry : fs::recursive_directory_iterator(app_dir)) {
+    if (entry.is_regular_file() &&
+        entry.path().filename() == "AndroidManifest.xml") {
+      manifest_path = entry.path().string();
+      break;
+    }
+  }
+  if (manifest_path.empty()) return "";
+  std::ifstream f(manifest_path);
+  if (!f) return "";
+  std::string content((std::istreambuf_iterator<char>(f)),
+                      std::istreambuf_iterator<char>());
+  f.close();
+  const std::string key = "package=\"";
+  size_t pos = content.find(key);
+  if (pos == std::string::npos) return "";
+  pos += key.size();
+  size_t end = content.find('"', pos);
+  if (end == std::string::npos) return "";
+  return content.substr(pos, end - pos);
+}
+
+//
 // Parse JUnit XML test results from Gradle build/test-results/ directory.
 // Returns {total_tests, total_failures, total_errors}.
 //
@@ -455,7 +485,8 @@ static GradleTestSummary parse_gradle_test_results(const std::string &sandbox) {
 }
 
 static BuildResult build_gradle(const std::string &sandbox, const std::string &mode,
-                                 const std::function<void(const std::string &)> &status) {
+                                 const std::function<void(const std::string &)> &status,
+                                 const std::string &adb_path = "") {
   // Prefer the Gradle wrapper over a system install
   const std::string gradle = fs::exists(sandbox + "/gradlew")
                                 ? sandbox + "/gradlew"
@@ -489,6 +520,42 @@ static BuildResult build_gradle(const std::string &sandbox, const std::string &m
     }
     result += out;
     result += "==> Build complete.\n";
+
+    // Deploy to device via adb for Android projects
+    if (android && ok) {
+      const std::string adb = adb_path.empty() ? "adb" : adb_path;
+      // Standard APK output location for a single-module Android project
+      const std::string apk = sandbox + "/app/build/outputs/apk/debug/app-debug.apk";
+      if (fs::exists(apk)) {
+        result += "==> Deploying to device via adb...\n";
+        auto adb_out = run_command(adb + " install -r " + apk, status);
+        if (adb_out.find("Success") != std::string::npos) {
+          result += "==> APK installed successfully.\n";
+          std::string pkg = extract_android_package(sandbox);
+          if (!pkg.empty()) {
+            result += "==> Launching " + pkg + "...\n";
+            auto launch_out = run_command(
+                adb + " shell monkey -p " + pkg +
+                " -c android.intent.category.LAUNCHER 1", status);
+            if (launch_out.find("Exception") == std::string::npos) {
+              result += "==> App launched.\n";
+            } else {
+              result += "==> WARNING: app launch may have failed.\n";
+              result += launch_out;
+            }
+          } else {
+            result += "==> WARNING: could not determine package name. "
+                      "Skipping launch.\n";
+          }
+        } else {
+          result += "==> WARNING: adb install may have failed.\n";
+          result += adb_out;
+        }
+      } else {
+        result += "==> WARNING: APK not found at " + apk +
+                  ". Skipping adb deploy.\n";
+      }
+    }
   }
 
   if (mode == "test" || mode == "all") {
@@ -1088,7 +1155,8 @@ static BuildResult build_gradle_lint(const std::string &sandbox,
 
 BuildResult build_run(const std::string &sandbox, const std::string &mode,
                       const std::function<void(const std::string &)> &status,
-                      const std::string &subdir) {
+                      const std::string &subdir,
+                      const std::string &adb_path) {
   std::string m = mode;
   if (m.empty()) {
     m = "all";
@@ -1145,7 +1213,7 @@ BuildResult build_run(const std::string &sandbox, const std::string &mode,
     case BuildSystem::CMAKE:
       return build_cmake(root, m, status);
     case BuildSystem::GRADLE:
-      return build_gradle(root, m, status);
+      return build_gradle(root, m, status, adb_path);
     case BuildSystem::MAVEN:
       return build_maven(root, m, status);
     case BuildSystem::PYTHON:

@@ -1,16 +1,16 @@
 {
   "total_turns": 1,
-  "total_llm_ms": 21546.8,
-  "total_tool_calls": 3,
-  "total_tool_errors": 0,
-  "peak_kv_pct": 10.9818,
-  "total_tokens": 1047,
-  "cumulative_tokens": 2436959,
-  "cumulative_tool_calls": 8867,
-  "cumulative_tool_errors": 254,
-  "cumulative_turns": 963,
-  "cumulative_llm_ms": 1.01476e+08,
+  "total_llm_ms": 223777,
+  "total_tool_calls": 36,
+  "total_tool_errors": 4,
+  "peak_kv_pct": 37.6328,
+  "total_tokens": 10863,
+  "cumulative_tokens": 2521175,
+  "cumulative_tool_calls": 9275,
+  "cumulative_tool_errors": 267,
+  "cumulative_turns": 987,
+  "cumulative_llm_ms": 1.03789e+08,
   "turns": [
-    {"turn": 1, "llm_ms": 21546.8, "tokens": 1047, "tool_calls": 3, "tool_errors": 0, "kv_pct": 10.9818, "files_read": 1, "files_written": 0}
+    {"turn": 1, "llm_ms": 223777, "tokens": 10863, "tool_calls": 36, "tool_errors": 4, "kv_pct": 37.6328, "files_read": 27, "files_written": 4}
   ]
 }

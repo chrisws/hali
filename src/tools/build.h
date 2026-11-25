@@ -38,8 +38,10 @@ int scan_test_count(const std::string &sandbox);
 // sandbox: root directory of the project
 // subdir: optional subdirectory to build as a sub-project (e.g. "tests")
 // status: callback for progress messages (e.g. tui.show_tool)
+// adb_path: path to the adb binary (empty = use "adb" from PATH)
 BuildResult build_run(const std::string &sandbox, const std::string &mode,
                       const std::function<void(const std::string &)> &status,
-                      const std::string &subdir = "");
+                      const std::string &subdir = "",
+                      const std::string &adb_path = "");
 
 #endif

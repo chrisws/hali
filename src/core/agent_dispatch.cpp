@@ -88,7 +88,7 @@ std::string Agent::handle_build(const std::string &a1, const std::string &a2) {
   return run_with_spinner(tui_, [this, &a1, &a2]() -> std::string {
     auto result = build_run(cfg_.sandbox_, a1, [&](const std::string &msg) {
       tui_.show_tool(msg);
-    }, a2);
+    }, a2, cfg_.adb_path_);
     std::string out = result.output_;
 
     // Format lint warnings as a table
