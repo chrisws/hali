@@ -1,5 +1,20 @@
 cmake_minimum_required(VERSION 3.15)
-project(hali C CXX)
+project(hali VERSION 1.0.0 LANGUAGES C CXX)
+
+set(HALI_PROJECT_URL "https://github.com/chrisws/hali")
+set(HALI_PROJECT_AUTHOR "Chris Warren-Smith")
+set(HALI_PROJECT_LICENSE "GPL v2.0")
+
+# Generate project metadata header
+file(WRITE ${CMAKE_BINARY_DIR}/hali_project.h
+"#ifndef HALI_PROJECT_H\n"
+"#define HALI_PROJECT_H\n\n"
+"#define HALI_VERSION \"${PROJECT_VERSION}\"\n"
+"#define HALI_PROJECT_URL \"${HALI_PROJECT_URL}\"\n"
+"#define HALI_PROJECT_AUTHOR \"${HALI_PROJECT_AUTHOR}\"\n"
+"#define HALI_PROJECT_LICENSE \"${HALI_PROJECT_LICENSE}\"\n\n"
+"#endif\n"
+)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_CXX_STANDARD 20)

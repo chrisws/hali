@@ -72,3 +72,17 @@ ProjectLanguage detect_project_language(const std::string &sandbox) {
   }
   return ProjectLanguage::NONE;
 }
+
+//
+// Return a formatted summary of supported project types.
+//
+std::string project_types_summary() {
+  std::string out;
+  out += "=== Supported Project Types ===\n";
+  out += "  C/C++     — CMakeLists.txt detected\n";
+  out += "  Java      — pom.xml or build.gradle (no .kt sources)\n";
+  out += "  Kotlin    — build.gradle.kts, settings.gradle.kts, or .kt sources\n";
+  out += "  Python    — pyproject.toml, setup.py, requirements.txt, or .py files\n";
+  out += "  None      — no recognised build system found\n";
+  return out;
+}

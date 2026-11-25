@@ -21,3 +21,6 @@ enum class ProjectLanguage {
 // Detect the primary language of a project by inspecting well-known
 // build-system files in the sandbox root (and one level of subdirectories).
 ProjectLanguage detect_project_language(const std::string &sandbox);
+
+// Return a formatted summary of supported project types.
+std::string project_types_summary();

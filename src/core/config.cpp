@@ -435,7 +435,7 @@ std::string HaliConfig::prompt_core() const {
     "  TOOL:ASK    <query>        ask the user for clarification or additional context\n"
     "  TOOL:CHOICE <question>|<opt1>|<opt2>|...  multiple-choice popup (pipe-delimited)\n"
     "  TOOL:TABLE  <R>x<C> <rows>  format pipe-delimited rows into an aligned table\n"
-    "  TOOL:INTROSPECT [session]  show model settings; add 'session' for interaction summary\n";
+    "  TOOL:INTROSPECT [session|slash|skills|about|projects]  show model settings; add a keyword for extra detail\n";
   if (!disable_curl_) {
     p += "  TOOL:CURL   <url> [path]   HTTP GET; with path, downloads to file\n";
   }

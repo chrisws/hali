@@ -26,6 +26,11 @@ struct SlashCommand {
 const std::vector<SlashCommand> &slash_commands();
 
 /**
+ * @brief Return a formatted summary of all slash commands grouped by category.
+ */
+std::string slash_commands_summary();
+
+/**
  * @brief Dispatch a slash command (input starts with '/').
  */
 void handle_slash(const std::string &input, HaliConfig &cfg, Agent &agent, Tui &tui);

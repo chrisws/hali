@@ -20,6 +20,7 @@ namespace ui {
   void usage();
   void no_model(Tui &tui);
   void welcome(Tui &tui, const std::string &sandbox);
+  std::string about_info();
 }
 
 #endif

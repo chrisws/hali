@@ -34,6 +34,10 @@
 #include "ui/webview.h"
 #include "tools/line_edit.h"
 #include "tools/screen.h"
+#include "tools/slash_commands.h"
+#include "ui/ui_text.h"
+#include "util/project.h"
+#include "skills_generated.h"
 
 namespace fs = std::filesystem;
 
@@ -761,6 +765,17 @@ ToolMap Agent::build_tool_dispatch() {
     std::string result = cfg_.introspect();
     if (a1 == "session") {
       result += "\n\n" + format_session_md(tui_.get_chat());
+    } else if (a1 == "slash") {
+      result += "\n\n" + slash_commands_summary();
+    } else if (a1 == "skills") {
+      result += "\n\n=== Built-in Skills ===\n";
+      for (int i = 0; i < SKILL_COUNT; i++) {
+        result += "  " + std::string(SKILLS[i].name) + " — " + SKILLS[i].summary + "\n";
+      }
+    } else if (a1 == "about") {
+      result += "\n\n" + ui::about_info();
+    } else if (a1 == "projects") {
+      result += "\n\n" + project_types_summary();
     }
     return result;
   };

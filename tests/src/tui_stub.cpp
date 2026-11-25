@@ -138,6 +138,10 @@ void settings(Tui &tui, HaliConfig &cfg) {
 void help(Tui &tui) {
   // no-op in tests
 }
+
+std::string about_info() {
+  return "=== About Hali ===\nName: Hali\nVersion: 1.0\n";
+}
 }
 
 void Tui::cleanup() {

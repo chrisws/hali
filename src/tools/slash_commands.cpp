@@ -1516,3 +1516,24 @@ const std::vector<SlashCommand> &slash_commands() {
   };
   return commands;
 }
+
+//
+// Return a formatted summary of all slash commands grouped by category.
+//
+std::string slash_commands_summary() {
+  std::string out = "=== Slash Commands ===\n";
+  const auto &cmds = slash_commands();
+  std::string current_group;
+  for (const auto &c : cmds) {
+    if (c.group != current_group) {
+      current_group = c.group;
+      out += "\n[" + current_group + "]\n";
+    }
+    out += "  " + std::string(c.name);
+    if (c.usage[0]) {
+      out += " " + std::string(c.usage);
+    }
+    out += "  — " + std::string(c.description) + "\n";
+  }
+  return out;
+}

@@ -17,6 +17,7 @@
 #include "icon.h"
 #include "tools/slash_commands.h"
 #include "tools/security_audit.h"
+#include "hali_project.h"
 
 namespace ui {
 
@@ -286,6 +287,21 @@ void welcome(Tui &tui, const std::string &sandbox) {
   tui.append_line(ICON_SYS + " /help for commands, exit to quit");
   tui.append_line("");
   tui.redraw_all();
+}
+
+//
+// Return about-box information as a formatted string.
+//
+std::string about_info() {
+  std::string out;
+  out += "=== About Hali ===\n";
+  out += "Name:        Hali\n";
+  out += "Version:     " + std::string(HALI_VERSION) + "\n";
+  out += "Description: Agentic LLM shell\n";
+  out += "Author:      " + std::string(HALI_PROJECT_AUTHOR) + "\n";
+  out += "License:     " + std::string(HALI_PROJECT_LICENSE) + "\n";
+  out += "Repository:  " + std::string(HALI_PROJECT_URL) + "\n";
+  return out;
 }
 
 }
