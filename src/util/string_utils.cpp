@@ -6,11 +6,9 @@
 // Download the GNU Public License (GPL) from www.gnu.org
 //
 
-#include <algorithm>
 #include <cctype>
 #include <cstddef>
 #include <filesystem>
-#include <ranges>
 #include <string>
 #include <string_view>
 #include <vector>

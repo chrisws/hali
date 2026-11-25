@@ -381,7 +381,7 @@ namespace Color {
 class Tui final: TuiContext {
   public:
   Tui();
-  virtual ~Tui();
+  virtual ~Tui() override;
 
   // ── lifecycle ─────────────────────────────────────────────────────
   void init();

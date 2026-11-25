@@ -9,7 +9,6 @@
 #include "file_ext.h"
 
 #include <algorithm>
-#include <set>
 #include <sstream>
 
 namespace file_ext {
