@@ -65,4 +65,15 @@ void index_load(KnowledgeManager &km, HaliConfig &cfg, Tui &tui);
 void index_unload(KnowledgeManager &km, HaliConfig &cfg, std::string &arg, Tui &tui);
 void index_list(KnowledgeManager &km, Tui &tui);
 
+//
+// ── Slash command implementations ────────────────────────────────────────
+//
+void slash_audio(const std::string &rest, HaliConfig &cfg, Agent &agent, Tui &tui);
+void slash_audit(const std::string &rest, HaliConfig &cfg, Tui &tui, Agent &agent);
+void slash_security_audit(const std::string &rest, HaliConfig &cfg,
+                          Tui &tui, Agent &agent);
+void slash_lint(const std::string &rest, HaliConfig &cfg, Agent &agent, Tui &tui);
+void slash_plan(const std::string &rest, HaliConfig &cfg, Agent &agent, Tui &tui);
+void slash_task(const std::string &rest, HaliConfig &cfg, Agent &agent, Tui &tui);
+
 #endif
