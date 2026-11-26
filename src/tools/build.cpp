@@ -542,6 +542,18 @@ static BuildResult build_gradle(const std::string &sandbox, const std::string &m
   }
 
   if (mode == "test" || mode == "all") {
+    // For Android, ensure a fresh APK exists before tests + deploy
+    if (android && mode == "test") {
+      result += "==> Building APK (assembleDebug) for deploy...\n";
+      auto build_out = run_command(
+          gradle + " -p " + sandbox + " --console=plain assembleDebug", status);
+      if (build_out.find("BUILD FAILED") != std::string::npos) {
+        ok = false;
+        result += build_out;
+        result += "==> Build failed, skipping tests.\n";
+        return {false, result};
+      }
+    }
     std::string task = android ? "testDebugUnitTest" : "test";
     result += "==> Running Gradle tests" +
               (android ? " (Android: " + task + ")" : "") + "...\n";
