@@ -8,6 +8,7 @@
 
 #include <filesystem>
 #include <fstream>
+#include <sstream>
 #include <thread>
 #include <string>
 #include <cstddef>
@@ -18,6 +19,7 @@
 
 #include "build.h"
 #include "pom.h"
+#include "util/project.h"
 #include "util/shell_util.h"
 #include "util/file_ext.h"
 
@@ -361,43 +363,10 @@ static BuildResult build_maven(const std::string &sandbox, const std::string &mo
 }
 
 //
-// Check if a Gradle project is an Android project by scanning
-// build files for the com.android plugin.
+// Check if a project is an Android project using shared detection.
 //
 static bool is_android_project(const std::string &sandbox) {
-  const std::vector<std::string> build_files = {
-    sandbox + "/build.gradle",
-    sandbox + "/build.gradle.kts",
-  };
-  for (const auto &bf : build_files) {
-    if (!fs::exists(bf)) continue;
-    std::ifstream f(bf);
-    if (!f) continue;
-    std::string content((std::istreambuf_iterator<char>(f)),
-                        std::istreambuf_iterator<char>());
-    f.close();
-    if (content.find("com.android.application") != std::string::npos ||
-        content.find("com.android.library") != std::string::npos) {
-      return true;
-    }
-  }
-  // Also check settings.gradle for android modules
-  const std::vector<std::string> settings_files = {
-    sandbox + "/settings.gradle",
-    sandbox + "/settings.gradle.kts",
-  };
-  for (const auto &sf : settings_files) {
-    if (!fs::exists(sf)) continue;
-    std::ifstream f(sf);
-    if (!f) continue;
-    std::string content((std::istreambuf_iterator<char>(f)),
-                        std::istreambuf_iterator<char>());
-    f.close();
-    if (content.find("com.android") != std::string::npos) {
-      return true;
-    }
-  }
-  return false;
+  return detect_project_language(sandbox) == ProjectLanguage::ANDROID;
 }
 
 //
@@ -484,6 +453,51 @@ static GradleTestSummary parse_gradle_test_results(const std::string &sandbox) {
   return summary;
 }
 
+//
+// Deploy an Android APK to a connected device via adb and launch it.
+// Returns a status string to append to the result.
+//
+static std::string deploy_android(const std::string &sandbox,
+                                   const std::string &adb_path,
+                                   const std::function<void(const std::string &)> &status,
+                                   bool &ok) {
+  if (!ok) return "";
+  const std::string adb = adb_path.empty() ? "adb" : adb_path;
+  const std::string apk =
+      sandbox + "/app/build/outputs/apk/debug/app-debug.apk";
+  if (!fs::exists(apk)) {
+    return "==> WARNING: APK not found at " + apk +
+           ". Skipping adb deploy.\n";
+  }
+  std::string result;
+  result += "==> Deploying to device via adb...\n";
+  auto adb_out = run_command(adb + " install -r " + apk, status);
+  if (adb_out.find("Success") != std::string::npos) {
+    result += "==> APK installed successfully.\n";
+    std::string pkg = extract_android_package(sandbox);
+    if (!pkg.empty()) {
+      result += "==> Launching " + pkg + "...\n";
+      auto launch_out = run_command(
+          adb + " shell monkey -p " + pkg +
+          " -c android.intent.category.LAUNCHER 1", status);
+      if (launch_out.find("Exception") == std::string::npos) {
+        result += "==> App launched.\n";
+      } else {
+        result += "==> WARNING: app launch may have failed.\n";
+        result += launch_out;
+      }
+    } else {
+      result += "==> WARNING: could not determine package name. "
+                "Skipping launch.\n";
+    }
+  } else {
+    ok = false;
+    result += "==> WARNING: adb install may have failed.\n";
+    result += adb_out;
+  }
+  return result;
+}
+
 static BuildResult build_gradle(const std::string &sandbox, const std::string &mode,
                                  const std::function<void(const std::string &)> &status,
                                  const std::string &adb_path = "") {
@@ -522,39 +536,8 @@ static BuildResult build_gradle(const std::string &sandbox, const std::string &m
     result += "==> Build complete.\n";
 
     // Deploy to device via adb for Android projects
-    if (android && ok) {
-      const std::string adb = adb_path.empty() ? "adb" : adb_path;
-      // Standard APK output location for a single-module Android project
-      const std::string apk = sandbox + "/app/build/outputs/apk/debug/app-debug.apk";
-      if (fs::exists(apk)) {
-        result += "==> Deploying to device via adb...\n";
-        auto adb_out = run_command(adb + " install -r " + apk, status);
-        if (adb_out.find("Success") != std::string::npos) {
-          result += "==> APK installed successfully.\n";
-          std::string pkg = extract_android_package(sandbox);
-          if (!pkg.empty()) {
-            result += "==> Launching " + pkg + "...\n";
-            auto launch_out = run_command(
-                adb + " shell monkey -p " + pkg +
-                " -c android.intent.category.LAUNCHER 1", status);
-            if (launch_out.find("Exception") == std::string::npos) {
-              result += "==> App launched.\n";
-            } else {
-              result += "==> WARNING: app launch may have failed.\n";
-              result += launch_out;
-            }
-          } else {
-            result += "==> WARNING: could not determine package name. "
-                      "Skipping launch.\n";
-          }
-        } else {
-          result += "==> WARNING: adb install may have failed.\n";
-          result += adb_out;
-        }
-      } else {
-        result += "==> WARNING: APK not found at " + apk +
-                  ". Skipping adb deploy.\n";
-      }
+    if (android) {
+      result += deploy_android(sandbox, adb_path, status, ok);
     }
   }
 
@@ -589,6 +572,52 @@ static BuildResult build_gradle(const std::string &sandbox, const std::string &m
 
     result += "==> Tests complete.\n";
     result += make_test_badge(sandbox, ok);
+
+    // Deploy to device after tests for Android projects
+    if (android) {
+      result += deploy_android(sandbox, adb_path, status, ok);
+    }
+  }
+
+  if (mode == "deploy") {
+    if (!android) {
+      result += "==> Deploy is only available for Android projects.\n";
+      return {false, result};
+    }
+    result += deploy_android(sandbox, adb_path, status, ok);
+    result += "==> Deploy complete.\n";
+  }
+
+  if (mode == "devices") {
+    if (!android) {
+      result += "==> Devices is only available for Android projects.\n";
+      return {false, result};
+    }
+    const std::string adb = adb_path.empty() ? "adb" : adb_path;
+    result += "==> Checking connected devices...\n";
+    auto out = run_command(adb + " devices", status);
+    result += out;
+    // Count connected devices (lines containing "device" but not headers)
+    int count = 0;
+    std::istringstream stream(out);
+    std::string line;
+    while (std::getline(stream, line)) {
+      if (line.empty() || line.rfind("List of devices", 0) == 0 ||
+          line.rfind("*)", 0) == 0) {
+        continue;
+      }
+      if (line.find("device") != std::string::npos) {
+        count++;
+      }
+    }
+    if (count > 0) {
+      result += "==> " + std::to_string(count) +
+                " device(s) connected.\n";
+    } else {
+      result += "==> WARNING: no devices connected. "
+                "Start an emulator or connect a device.\n";
+      ok = false;
+    }
   }
 
   if (mode == "clean") {

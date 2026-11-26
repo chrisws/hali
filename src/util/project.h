@@ -15,6 +15,7 @@ enum class ProjectLanguage {
   CPLUS,
   JAVA,
   KOTLIN,
+  ANDROID,
   PYTHON,
 };
 

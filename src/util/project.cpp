@@ -9,6 +9,9 @@
 #include "project.h"
 
 #include <filesystem>
+#include <fstream>
+#include <iterator>
+#include <vector>
 
 namespace fs = std::filesystem;
 
@@ -38,9 +41,52 @@ static bool has_kotlin_sources(const std::string &sandbox) {
   return false;
 }
 
+//
+// Check if a Gradle project uses the Android plugin by scanning
+// build files for com.android.application or com.android.library.
+//
+static bool has_android_plugin(const std::string &sandbox) {
+  const std::vector<std::string> build_files = {
+    sandbox + "/build.gradle",
+    sandbox + "/build.gradle.kts",
+  };
+  for (const auto &bf : build_files) {
+    if (!fs::exists(bf)) continue;
+    std::ifstream f(bf);
+    if (!f) continue;
+    std::string content((std::istreambuf_iterator<char>(f)),
+                        std::istreambuf_iterator<char>());
+    f.close();
+    if (content.find("com.android.application") != std::string::npos ||
+        content.find("com.android.library") != std::string::npos) {
+      return true;
+    }
+  }
+  const std::vector<std::string> settings_files = {
+    sandbox + "/settings.gradle",
+    sandbox + "/settings.gradle.kts",
+  };
+  for (const auto &sf : settings_files) {
+    if (!fs::exists(sf)) continue;
+    std::ifstream f(sf);
+    if (!f) continue;
+    std::string content((std::istreambuf_iterator<char>(f)),
+                        std::istreambuf_iterator<char>());
+    f.close();
+    if (content.find("com.android") != std::string::npos) {
+      return true;
+    }
+  }
+  return false;
+}
+
 ProjectLanguage detect_project_language(const std::string &sandbox) {
   if (fs::exists(sandbox + "/CMakeLists.txt")) {
     return ProjectLanguage::CPLUS;
+  }
+  // Android projects also have build.gradle — check before generic Gradle
+  if (has_android_plugin(sandbox)) {
+    return ProjectLanguage::ANDROID;
   }
   // Kotlin DSL is a strong signal for Kotlin
   if (fs::exists(sandbox + "/build.gradle.kts") ||
@@ -55,8 +101,17 @@ ProjectLanguage detect_project_language(const std::string &sandbox) {
     }
     return ProjectLanguage::JAVA;
   }
+  // Check root and immediate subdirectories (matches find_pom behaviour)
   if (fs::exists(sandbox + "/pom.xml")) {
     return ProjectLanguage::JAVA;
+  }
+  if (fs::is_directory(sandbox)) {
+    for (const auto &entry : fs::directory_iterator(sandbox)) {
+      if (entry.is_directory() &&
+          fs::exists(entry.path().string() + "/pom.xml")) {
+        return ProjectLanguage::JAVA;
+      }
+    }
   }
   if (fs::exists(sandbox + "/pyproject.toml") ||
       fs::exists(sandbox + "/setup.py") ||
@@ -82,6 +137,7 @@ std::string project_types_summary() {
   out += "  C/C++     — CMakeLists.txt detected\n";
   out += "  Java      — pom.xml or build.gradle (no .kt sources)\n";
   out += "  Kotlin    — build.gradle.kts, settings.gradle.kts, or .kt sources\n";
+  out += "  Android   — Gradle with com.android plugin\n";
   out += "  Python    — pyproject.toml, setup.py, requirements.txt, or .py files\n";
   out += "  None      — no recognised build system found\n";
   return out;

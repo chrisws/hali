@@ -17,6 +17,7 @@
 
 #include "config.h"
 #include "util/json.h"
+#include "util/project.h"
 #include "gpu_info.h"
 #include "tools/build.h"
 
@@ -497,7 +498,9 @@ std::string HaliConfig::prompt_project_context() const {
   std::string p;
   p += "## Project Context\n";
 
-  if (fs::exists(sandbox_ + "/CMakeLists.txt")) {
+  ProjectLanguage lang = detect_project_language(sandbox_);
+
+  if (lang == ProjectLanguage::CPLUS) {
     p +=
       "Detected: C/C++ project (CMake)\n"
       "- Build: TOOL:BUILD (setup, build, test, clean, lint)\n"
@@ -505,30 +508,62 @@ std::string HaliConfig::prompt_project_context() const {
       "- Standard: C++20, compiler: GCC/Clang\n"
       "- Prefer TOOL:BUILD over raw cmake/make commands\n"
       "- Always consider adding unit tests for code changes\n\n";
-  } else if (!find_pom(sandbox_).empty()) {
+  } else if (lang == ProjectLanguage::JAVA) {
+    if (!find_pom(sandbox_).empty()) {
+      p +=
+        "Detected: Java project (Maven)\n"
+        "- Build: TOOL:BUILD (setup, build, test, clean)\n"
+        "- Layout: src/main/java/, src/test/java/\n"
+        "- For Maven pom.xml modifications, use TOOL:BUILD pom <operation>:\n"
+        "  - TOOL:BUILD pom show                          — display current pom state\n"
+        "  - TOOL:BUILD pom add-dep <g>:<a>:<v>[:<scope>] — add a dependency\n"
+        "  - TOOL:BUILD pom remove-dep <g>:<a>            — remove a dependency\n"
+        "  - TOOL:BUILD pom set-property <name> <value>   — set a property\n"
+        "  - TOOL:BUILD pom set-version <version>         — change project version\n"
+        "  - TOOL:BUILD pom set-group-id <groupId>        — change groupId\n"
+        "  - TOOL:BUILD pom set-artifact-id <artifactId>  — change artifactId\n"
+        "  - TOOL:BUILD pom add-plugin <g>:<a>:<v>       — add a build plugin\n"
+        "  - NEVER use TOOL:PATCH on pom.xml — always use the pom mode above\n"
+        "- Prefer TOOL:BUILD over raw mvn commands\n"
+        "- Always consider adding unit tests for code changes\n\n";
+    } else {
+      p +=
+        "Detected: Java project (Gradle)\n"
+        "- Build: TOOL:BUILD (setup, build, test, clean)\n"
+        "- Layout: src/main/java/, src/test/java/\n"
+        "- Prefer TOOL:BUILD over raw gradle commands\n"
+        "- Always consider adding unit tests for code changes\n\n";
+    }
+  } else if (lang == ProjectLanguage::KOTLIN) {
     p +=
-      "Detected: Java project (Maven)\n"
+      "Detected: Kotlin project (Gradle)\n"
       "- Build: TOOL:BUILD (setup, build, test, clean)\n"
-      "- Layout: src/main/java/, src/test/java/\n"
-      "- For Maven pom.xml modifications, use TOOL:BUILD pom <operation>:\n"
-      "  - TOOL:BUILD pom show                          — display current pom state\n"
-      "  - TOOL:BUILD pom add-dep <g>:<a>:<v>[:<scope>] — add a dependency\n"
-      "  - TOOL:BUILD pom remove-dep <g>:<a>            — remove a dependency\n"
-      "  - TOOL:BUILD pom set-property <name> <value>   — set a property\n"
-      "  - TOOL:BUILD pom set-version <version>         — change project version\n"
-      "  - TOOL:BUILD pom set-group-id <groupId>        — change groupId\n"
-      "  - TOOL:BUILD pom set-artifact-id <artifactId>  — change artifactId\n"
-      "  - TOOL:BUILD pom add-plugin <g>:<a>:<v>       — add a build plugin\n"
-      "  - NEVER use TOOL:PATCH on pom.xml — always use the pom mode above\n"
-      "- Prefer TOOL:BUILD over raw mvn commands\n"
-      "- Always consider adding unit tests for code changes\n\n";
-  } else if (fs::exists(sandbox_ + "/build.gradle") ||
-             fs::exists(sandbox_ + "/build.gradle.kts")) {
-    p +=
-      "Detected: Java/Kotlin project (Gradle)\n"
-      "- Build: TOOL:BUILD (setup, build, test, clean)\n"
-      "- Layout: src/main/java/ or src/main/kotlin/, src/test/\n"
+      "- Layout: src/main/kotlin/, src/test/kotlin/\n"
       "- Prefer TOOL:BUILD over raw gradle commands\n"
+      "- Always consider adding unit tests for code changes\n\n";
+  } else if (lang == ProjectLanguage::ANDROID) {
+    p +=
+      "Detected: Android project (Gradle)\n"
+      "- Build: TOOL:BUILD (setup, build, test, deploy, devices, clean)\n"
+      "- Layout: app/src/main/java/ or app/src/main/kotlin/, "
+      "app/src/test/, app/src/androidTest/\n"
+      "- TOOL:BUILD build = assembleDebug + deploy (adb install + launch)\n"
+      "- TOOL:BUILD test = testDebugUnitTest + deploy\n"
+      "- TOOL:BUILD deploy = adb install + launch (no rebuild)\n"
+      "- TOOL:BUILD devices = check connected adb devices\n"
+      "- \"Build and run the app\" = TOOL:BUILD build\n"
+      "- \"Run the tests\" = TOOL:BUILD test\n"
+      "- \"Deploy the app\" = TOOL:BUILD deploy\n"
+      "- Check devices with TOOL:BUILD devices before deployment\n"
+      "- APK output: app/build/outputs/apk/debug/app-debug.apk\n"
+      "- Prefer TOOL:BUILD over raw gradle/adb commands\n"
+      "- Always consider adding unit tests for code changes\n\n";
+  } else if (lang == ProjectLanguage::PYTHON) {
+    p +=
+      "Detected: Python project\n"
+      "- Build: TOOL:BUILD (setup, build, test)\n"
+      "- Layout: src/ or package dir, tests/\n"
+      "- Prefer TOOL:BUILD over raw pip/python commands\n"
       "- Always consider adding unit tests for code changes\n\n";
   } else if (fs::exists(sandbox_ + "/package.json") && !disable_run_) {
     p +=
@@ -550,14 +585,6 @@ std::string HaliConfig::prompt_project_context() const {
       "- Build: TOOL:RUN cargo build\n"
       "- Test: TOOL:RUN cargo test\n"
       "- Layout: src/ (lib.rs or main.rs), tests/ (integration), #[cfg(test)] (unit)\n"
-      "- Always consider adding unit tests for code changes\n\n";
-  } else if (fs::exists(sandbox_ + "/pyproject.toml") ||
-             fs::exists(sandbox_ + "/setup.py")) {
-    p +=
-      "Detected: Python project\n"
-      "- Build: TOOL:BUILD (setup, build, test)\n"
-      "- Layout: src/ or package dir, tests/\n"
-      "- Prefer TOOL:BUILD over raw pip/python commands\n"
       "- Always consider adding unit tests for code changes\n\n";
   } else if (fs::exists(sandbox_ + "/Makefile") && !disable_run_) {
     p +=

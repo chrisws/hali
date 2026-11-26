@@ -1098,6 +1098,18 @@ static void test_detect_language_maven() {
   std::cout << "test_detect_language_maven passed" << std::endl;
 }
 
+static void test_detect_language_maven_subdir() {
+  // pom.xml in a subdirectory, not at root
+  fs::create_directories("/tmp/audit_test_lang_maven_subdir/module");
+  {
+    std::ofstream f("/tmp/audit_test_lang_maven_subdir/module/pom.xml");
+    f << "<project></project>\n";
+  }
+  assert(detect_project_language("/tmp/audit_test_lang_maven_subdir") ==
+         ProjectLanguage::JAVA);
+  std::cout << "test_detect_language_maven_subdir passed" << std::endl;
+}
+
 static void test_detect_language_python() {
   fs::create_directories("/tmp/audit_test_lang_py");
   {
@@ -1169,7 +1181,8 @@ void audit_test() {
     "/tmp/audit_test_java_imp_high", "/tmp/audit_test_java_imp_25",
     "/tmp/audit_test_java_noifdef",
     "/tmp/audit_test_lang_cmake", "/tmp/audit_test_lang_gradle",
-    "/tmp/audit_test_lang_maven", "/tmp/audit_test_lang_py",
+    "/tmp/audit_test_lang_maven", "/tmp/audit_test_lang_maven_subdir",
+    "/tmp/audit_test_lang_py",
     "/tmp/audit_test_lang_none",
     "/tmp/audit_test_java_class", "/tmp/audit_test_java_method",
     "/tmp/audit_test_cpp_class", "/tmp/audit_test_cpp_struct",
@@ -1222,6 +1235,7 @@ void audit_test() {
   test_detect_language_cmake();
   test_detect_language_gradle();
   test_detect_language_maven();
+  test_detect_language_maven_subdir();
   test_detect_language_python();
   test_detect_language_none();
   test_detect_language_monorepo_gradle_kotlin();
