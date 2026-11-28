@@ -26,14 +26,13 @@
 #include "knowledge.h"
 #include "slash_utils.h"
 #include "util/shell_util.h"
+#include "util/logging.h"
 
 namespace fs = std::filesystem;
 
 //
 // ── Slash command support functions ──────────────────────────────────────
 //
-
-
 
 //
 // /model – pick or set the inference model
@@ -439,9 +438,46 @@ static void slash_index(const std::string &rest, HaliConfig &cfg, Agent &agent, 
   tui.redraw_all();
 }
 
-
-
 //
+// Discover the Android package name from gradle build files.
+// Looks for applicationId in app/build.gradle.kts or app/build.gradle.
+static std::string discover_android_package(const std::string &sandbox) {
+  const std::vector<std::string> candidates = {
+    sandbox + "/app/build.gradle.kts",
+    sandbox + "/app/build.gradle",
+  };
+  for (const auto &path : candidates) {
+    if (!fs::exists(path)) {
+      continue;
+    }
+    std::ifstream f(path);
+    if (!f) {
+      continue;
+    }
+    std::string content((std::istreambuf_iterator<char>(f)),
+                        std::istreambuf_iterator<char>());
+    f.close();
+    // Match: applicationId = "com.example.app"  or  applicationId "com.example.app"
+    const std::string key = "applicationId";
+    size_t pos = content.find(key);
+    if (pos == std::string::npos) {
+      continue;
+    }
+    // Skip to the opening quote after the key (and optional =)
+    pos = content.find('"', pos);
+    if (pos == std::string::npos) {
+      continue;
+    }
+    pos++;
+    size_t end = content.find('"', pos);
+    if (end == std::string::npos) {
+      continue;
+    }
+    return content.substr(pos, end - pos);
+  }
+  return "";
+}
+
 // /logcat [package] [lines] – capture Android logcat output and feed to agent
 //
 static void slash_logcat(const std::string &rest, HaliConfig &cfg, Agent &agent, Tui &tui) {
@@ -476,47 +512,37 @@ static void slash_logcat(const std::string &rest, HaliConfig &cfg, Agent &agent,
     }
   }
 
-  // If no package given, try to extract from AndroidManifest.xml
+  // If no package given, try to discover from gradle build files
   if (pkg.empty()) {
-    const std::string app_dir = cfg.sandbox_ + "/app";
-    if (fs::exists(app_dir) && fs::is_directory(app_dir)) {
-      for (const auto &entry : fs::recursive_directory_iterator(app_dir)) {
-        if (entry.is_regular_file() &&
-            entry.path().filename() == "AndroidManifest.xml") {
-          std::ifstream f(entry.path());
-          if (f) {
-            std::string content((std::istreambuf_iterator<char>(f)),
-                                std::istreambuf_iterator<char>());
-            f.close();
-            const std::string key = "package=\"";
-            size_t pos = content.find(key);
-            if (pos != std::string::npos) {
-              pos += key.size();
-              size_t end = content.find('"', pos);
-              if (end != std::string::npos) {
-                pkg = content.substr(pos, end - pos);
-              }
-            }
-            break;
-          }
-        }
-      }
-    }
+    pkg = discover_android_package(cfg.sandbox_);
   }
 
-  // Require a package – unfiltered logcat is too noisy to be useful
+  // If still no package, proceed with date-only filter (no package-specific filter)
   if (pkg.empty()) {
-    tui.append_line(ICON_ERR + "Could not determine package name. "
-      "Specify it explicitly: /logcat <package> [lines]");
-    tui.redraw_all();
-    return;
+    tui.append_line(ICON_SYS + "No package found – using date-only crash filter.");
   }
 
-  // Build the logcat command (filtered to app package only)
-  std::string cmd = adb + " logcat -d -t " + std::to_string(lines) + " -s " + pkg;
+  // Build the logcat command (crash-focused: AndroidRuntime errors, suppress all else)
+  // Append today's date (YYYYMMDD) to filter out stale logs from prior runs
+  char date_buf[16] = {};
+  {
+    std::time_t now = std::time(nullptr);
+    std::tm tm_buf {};
+    localtime_r(&now, &tm_buf);
+    std::strftime(date_buf, sizeof(date_buf), "%Y%m%d", &tm_buf);
+  }
+  std::string cmd = adb + " logcat -d -t " + std::to_string(lines) +
+                     " AndroidRuntime:E *:S " + date_buf;
 
-  tui.append_line(ICON_SYS + "Capturing logcat for " + pkg +
-                  " (last " + std::to_string(lines) + " lines)…");
+  log_write(LEVEL_INFO, "logcat", "exec: %s", cmd.c_str());
+
+  if (pkg.empty()) {
+    tui.append_line(ICON_SYS + "Capturing crash logs (last " +
+                    std::to_string(lines) + " lines)…");
+  } else {
+    tui.append_line(ICON_SYS + "Capturing crash logs for " + pkg +
+                    " (last " + std::to_string(lines) + " lines)…");
+  }
   tui.redraw_all();
 
   std::string output = run_shell_command(cmd);
@@ -564,12 +590,15 @@ static void slash_logcat(const std::string &rest, HaliConfig &cfg, Agent &agent,
   tui.redraw_all();
 
   // Build a contextual preamble for the agent
+  std::string pkg_line = pkg.empty()
+    ? "Package: (not detected)\n"
+    : "Package: " + pkg + "\n";
   std::string prompt =
     "You are debugging an Android application.\n"
-    "Package: " + pkg + "\n"
+    + pkg_line +
     "Project root: " + cfg.sandbox_ + "\n"
     "Source code is in: " + cfg.sandbox_ + "/app/src/main/java/\n\n"
-    "Below is the recent logcat output (filtered to this app only, last " +
+    "Below is the recent logcat output (crash-focused: AndroidRuntime:E, last " +
     std::to_string(lines) + " lines). Analyze it for:\n"
     "  - Crashes (FATAL EXCEPTION, AndroidRuntime)\n"
     "  - Errors (E/ tags, stack traces)\n"
